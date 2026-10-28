@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.1.4"
+version = "0.1.5"
 edition = "2024"
 license = "MIT"
 rust-version = "1.88"
@@ -16,10 +16,10 @@ homepage = "https://github.com/itshak/cbvault"
 readme = "README.md"
 
 [workspace.dependencies]
-gigachess = "0.1.9"
-cbvault-format = { version = "0.1.4", path = "crates/cbvault-format" }
-cbvault-chess = { version = "0.1.4", path = "crates/cbvault-chess" }
-cbvault = { version = "0.1.4", path = "crates/cbvault" }
+gigachess = "0.1.10"
+cbvault-format = { version = "0.1.5", path = "crates/cbvault-format" }
+cbvault-chess = { version = "0.1.5", path = "crates/cbvault-chess" }
+cbvault = { version = "0.1.5", path = "crates/cbvault" }
 # Path-only on purpose. `cbvault-fixtures` is `publish = false`, so it will never
 # exist on crates.io — and a dev-dependency that carries a version requirement
 # makes cargo resolve it from the registry when preparing a package for upload,

@@ -273,3 +273,69 @@ fn move_less_historical_record_3855_exports_valid_score_only_pgn() {
     assert!(pgn.contains("[PlyCount \"0\"]"));
     assert!(pgn.ends_with("\n\n1-0\n\n"));
 }
+
+#[test]
+fn namebase_key_table_timing_and_accuracy() {
+    let base = set_or_skip!();
+    let db = Database::open(base).expect("the reference set opens");
+    let entities = db.entities();
+
+    let t0 = Instant::now();
+    let found = entities.find_players("Mueller").expect("find_players");
+    let build_and_lookup = t0.elapsed();
+
+    let t1 = Instant::now();
+    let found2 = entities.find_players("Mueller").expect("find_players warm");
+    let warm_lookup = t1.elapsed();
+
+    eprintln!(
+        "Namebase table build + lookup: {:.2} ms; warm lookup: {:.2} ms (found {} players)",
+        build_and_lookup.as_secs_f64() * 1000.0,
+        warm_lookup.as_secs_f64() * 1000.0,
+        found.len()
+    );
+
+    assert_eq!(found, found2);
+    assert!(!found.is_empty(), "Mueller should be in Mega Database");
+    assert!(
+        warm_lookup.as_millis() <= 5,
+        "warm lookup must be <= 5 ms, took {:?}",
+        warm_lookup
+    );
+    assert!(
+        build_and_lookup.as_millis() <= 300,
+        "table build + lookup must be <= 300 ms, took {:?}",
+        build_and_lookup
+    );
+}
+
+#[test]
+fn early_stop_reach_signature_agrees_with_full_walk_on_real_set() {
+    let base = set_or_skip!();
+    let db = Database::open(base).expect("the reference set opens");
+
+    // Test on a slice of the real database: first 5,000 games
+    let ranges = [(1u32, 5000u32)];
+    let target = gigachess::Board::startpos();
+    let target_key = target.zobrist();
+    let reach = gigachess::reach::ReachSignature::from_board(&target);
+
+    let mut hits_full = Vec::new();
+    let q_full = PositionQuery::of(target_key);
+    search::for_each_position_key_range(&db, &ranges, &q_full, 2, &mut |h| hits_full.push(h))
+        .expect("full search");
+
+    let mut hits_reach = Vec::new();
+    let stop_fn = |b: &gigachess::Board| {
+        if reach.unreachable_from(b) {
+            Flow::SkipGame
+        } else {
+            Flow::Continue
+        }
+    };
+    let q_reach = PositionQuery::of(target_key).early_stop_with(&stop_fn);
+    search::for_each_position_key_range(&db, &ranges, &q_reach, 2, &mut |h| hits_reach.push(h))
+        .expect("reach search");
+
+    assert_eq!(hits_reach, hits_full, "ReachSignature pruning must agree with full walk on real games");
+}

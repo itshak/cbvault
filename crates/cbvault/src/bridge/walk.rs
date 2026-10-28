@@ -98,6 +98,17 @@ impl MovesBuf {
     }
 }
 
+/// Flow control for early-stopping a position walk or replay within a game or across the database.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Flow {
+    /// Continue walking moves in this game.
+    Continue,
+    /// Stop walking further moves in this game and proceed to the next game.
+    SkipGame,
+    /// Stop the search entirely.
+    Stop,
+}
+
 /// The `MoveSink` the walk reports through: it keeps the main line and, when
 /// keys are wanted, the key of every position it reaches on that line.
 ///
@@ -106,16 +117,19 @@ impl MovesBuf {
 /// done — and the start position's own key comes from the board the walk
 /// started at, which the caller pushes before the walk begins. A move that is
 /// not on the main line updates nothing: variations are walked, not kept.
-struct Line<'k> {
+struct Line<'k, 'p> {
     moves: &'k mut Vec<u16>,
     keys: &'k mut Vec<u64>,
     /// Whether the walk keeps keys at all, asked of the sink once per run.
     keep: bool,
     /// Whether the move just reported continues the main line, for `played`.
     main: bool,
+    predicate: Option<&'p (dyn Fn(&Board) -> Flow + Sync)>,
+    stopped: bool,
+    stop_all: bool,
 }
 
-impl MoveSink for Line<'_> {
+impl MoveSink for Line<'_, '_> {
     #[inline]
     fn play(&mut self, _board: &Board, mv: u16, main: bool) {
         if main {
@@ -129,6 +143,25 @@ impl MoveSink for Line<'_> {
         if self.keep && self.main {
             self.keys.push(board.zobrist());
         }
+        if self.main {
+            if let Some(pred) = self.predicate {
+                match pred(board) {
+                    Flow::Continue => {}
+                    Flow::SkipGame => {
+                        self.stopped = true;
+                    }
+                    Flow::Stop => {
+                        self.stopped = true;
+                        self.stop_all = true;
+                    }
+                }
+            }
+        }
+    }
+
+    #[inline]
+    fn stopped(&self) -> bool {
+        self.stopped
     }
 
     fn branch(&mut self) {}
@@ -310,7 +343,22 @@ impl GameBuf {
     /// position, or a FEN for a game that does not start from the standard
     /// one. A database of ordinary games therefore builds no board outside the
     /// walk itself, and the moves-only pass stays the measured 48.3 ns/ply.
+    /// Decodes the main line of one game into this buffer, which is emptied first.
     pub fn walk(&mut self, id: u32, at: u64, game: &GameMoves<'_>) -> Result<()> {
+        self.walk_with(id, at, game, None).map(|_| ())
+    }
+
+    /// Decodes the main line of one game with an optional early-stop predicate.
+    ///
+    /// Returns `Ok(true)` if the search should continue with subsequent games,
+    /// or `Ok(false)` if `Flow::Stop` was signaled.
+    pub fn walk_with(
+        &mut self,
+        id: u32,
+        at: u64,
+        game: &GameMoves<'_>,
+        predicate: Option<&(dyn Fn(&Board) -> Flow + Sync)>,
+    ) -> Result<bool> {
         let what = Walked::at(id, at);
         let start = start_as_played(what, game)?;
         self.line.clear();
@@ -320,23 +368,42 @@ impl GameBuf {
         // reference database's 199,418 games in the first 200,000.
         self.fen.clear();
 
-        if !matches!(start, Start::Standard) {
+        let board = if !matches!(start, Start::Standard) {
             let board = start_board_cached(&start, &mut self.starts)?;
             if self.want_keys {
-                // The start position is a position the game reaches, so its key
-                // heads the sequence: `keys.len() == moves.len() + 1`, which is
-                // what `replay_moves2_hashes` returns for the same `moves`.
                 self.line.push_key(board.zobrist());
             }
             self.fen.push_str(&board.to_fen());
-        } else if self.want_keys {
-            self.line.push_key(cbvault_chess::start::standard_board().zobrist());
+            board
+        } else {
+            let board = cbvault_chess::start::standard_board();
+            if self.want_keys {
+                self.line.push_key(board.zobrist());
+            }
+            board
+        };
+
+        if let Some(pred) = predicate {
+            match pred(&board) {
+                Flow::Continue => {}
+                Flow::SkipGame => return Ok(true),
+                Flow::Stop => return Ok(false),
+            }
         }
 
         let keep = self.want_keys;
         let MovesBuf { moves, keys } = &mut self.line;
-        let mut line = Line { moves, keys, keep, main: true };
-        walk_from(what, game, &start, &mut line).map(|_| ())
+        let mut line = Line {
+            moves,
+            keys,
+            keep,
+            main: true,
+            predicate,
+            stopped: false,
+            stop_all: false,
+        };
+        walk_from(what, game, &start, &mut line)?;
+        Ok(!line.stop_all)
     }
 
     /// The sink's view of the last game walked: the payload and the names out

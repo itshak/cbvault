@@ -43,7 +43,7 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cbvault"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "cbvault-chess",
  "cbvault-fixtures",
@@ -55,7 +55,7 @@ dependencies = [
 
 [[package]]
 name = "cbvault-chess"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "cbvault-fixtures",
  "cbvault-format",
@@ -64,7 +64,7 @@ dependencies = [
 
 [[package]]
 name = "cbvault-cli"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "cbvault",
  "cbvault-chess",
@@ -74,7 +74,7 @@ dependencies = [
 
 [[package]]
 name = "cbvault-fixtures"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "cbvault-format",
  "gigachess",
@@ -82,7 +82,7 @@ dependencies = [
 
 [[package]]
 name = "cbvault-format"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "cbvault-fixtures",
  "memmap2",
@@ -219,9 +219,9 @@ checksum = "252afb9ae5eaa683babdc6a068b3f5726eb19e05070c731f9b2a23a7c3e8ed34"
 
 [[package]]
 name = "gigachess"
-version = "0.1.9"
+version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6366e9b1f6f704190fa49749963b838d02f858ef3f06f69ab98540f43394ac38"
+checksum = "232c54ef6e9aea4c0e0056b662e0f2ac2e6f0d7f99e254174995205e2b106fec"
 dependencies = [
  "arrayvec",
  "rayon",

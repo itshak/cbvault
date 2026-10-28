@@ -644,6 +644,8 @@ pub struct PositionQuery<'p> {
     /// Asked after every chunk: a `true` answer stops the replay, which takes
     /// effect within one chunk.
     pub cancelled: Option<&'p (dyn Fn() -> bool + Sync)>,
+    /// Early-stop predicate evaluated per move during replay.
+    pub early_stop: Option<&'p (dyn Fn(&gigachess::Board) -> super::walk::Flow + Sync)>,
 }
 
 impl std::fmt::Debug for PositionQuery<'_> {
@@ -652,6 +654,7 @@ impl std::fmt::Debug for PositionQuery<'_> {
             .field("key", &format_args!("{:#018x}", self.key))
             .field("every", &self.every)
             .field("cancelled", &self.cancelled.is_some())
+            .field("early_stop", &self.early_stop.is_some())
             .finish()
     }
 }
@@ -660,14 +663,14 @@ impl Default for PositionQuery<'_> {
     /// A query for a key of 0, with no progress and no cancel: a fresh query
     /// the caller is expected to fill in.
     fn default() -> PositionQuery<'static> {
-        PositionQuery { key: 0, every: 0, cancelled: None }
+        PositionQuery { key: 0, every: 0, cancelled: None, early_stop: None }
     }
 }
 
 impl<'p> PositionQuery<'p> {
     /// A query for one key, with no progress and no way to cancel.
     pub fn of(key: u64) -> PositionQuery<'static> {
-        PositionQuery { key, every: 0, cancelled: None }
+        PositionQuery { key, every: 0, cancelled: None, early_stop: None }
     }
 
     /// Reports progress every `every` games.
@@ -679,6 +682,15 @@ impl<'p> PositionQuery<'p> {
     /// Asks `cancelled` after every chunk, and stops when it answers `true`.
     pub fn cancel_with(mut self, cancelled: &'p (dyn Fn() -> bool + Sync)) -> PositionQuery<'p> {
         self.cancelled = Some(cancelled);
+        self
+    }
+
+    /// Early-stop predicate evaluated per move during replay.
+    pub fn early_stop_with(
+        mut self,
+        early_stop: &'p (dyn Fn(&gigachess::Board) -> super::walk::Flow + Sync),
+    ) -> PositionQuery<'p> {
+        self.early_stop = Some(early_stop);
         self
     }
 }
@@ -748,16 +760,22 @@ pub fn for_each_position_key_range(
                 out.stats.failures += 1;
                 continue;
             };
-            if buf.walk(header.id(), at, &game).is_err() {
-                out.stats.failures += 1;
-                continue;
-            }
+            let keep_going = match buf.walk_with(header.id(), at, &game, query.early_stop) {
+                Ok(cont) => cont,
+                Err(_) => {
+                    out.stats.failures += 1;
+                    continue;
+                }
+            };
             out.stats.games += 1;
             out.stats.plies += buf.moves().len() as u64;
             for (ply, key) in buf.keys().iter().enumerate() {
                 if *key == want {
                     out.hits.push(Hit { game: header.id(), ply: ply as u32, key: *key });
                 }
+            }
+            if !keep_going {
+                break;
             }
         }
         Ok(out)

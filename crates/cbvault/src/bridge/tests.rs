@@ -1029,3 +1029,85 @@ fn a_scan_gives_the_same_answer_at_every_thread_count() {
         assert_eq!(many, one, "{threads} workers must agree with one");
     }
 }
+
+#[test]
+fn namebase_every_holder_returned_on_damaged_tree() {
+    let mut builder = Builder::new();
+    let k_0 = builder.player("Kasparov", "Garry");
+    let k_1 = builder.player("Kasparov", "Garry Kasparov Jr");
+    let k_2 = builder.player("Kasparov", "Rustam");
+    let fischer = builder.player("Fischer", "Robert");
+    let karpov = builder.player("Karpov", "Anatoly");
+    builder.game(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+    let db = builder.write("namebase-damaged-tree");
+
+    // Intentionally break the binary tree links in the .cbp file on disk.
+    // Overwrite the root pointer (bytes 0x04..0x08) with -1, severing the tree root.
+    let cbp_path = db.base().with_extension("cbp");
+    let mut bytes = std::fs::read(&cbp_path).expect("read cbp");
+    bytes[4..8].copy_from_slice(&(-1i32).to_le_bytes());
+    std::fs::write(&cbp_path, &bytes).expect("write broken cbp");
+
+    let database = Database::open(db.base()).expect("open");
+    let entities = database.entities();
+
+    let found = entities.find_players("Kasparov").expect("find_players");
+    assert_eq!(found, vec![k_0, k_1, k_2], "all Kasparov IDs must be returned even with severed tree links");
+    assert_eq!(entities.find_players("Fischer").expect("find_players"), vec![fischer]);
+    assert_eq!(entities.find_players("Karpov").expect("find_players"), vec![karpov]);
+}
+
+#[test]
+fn namebase_find_all_equals_exhaustive_scan() {
+    let mut builder = Builder::new();
+    let k0 = builder.player("Kasparov", "Garry");
+    let k1 = builder.player("Kasparov", "Rustam");
+    let k2 = builder.player("Kasparov", "A");
+    let _f0 = builder.player("Fischer", "Robert");
+    let _k3 = builder.player("Karpov", "Anatoly");
+    let k4 = builder.player("Kasparovsky", "Petr");
+    builder.game(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+    let db = builder.write("namebase-scan-eq");
+    let database = Database::open(db.base()).expect("open");
+    let entities = database.entities();
+
+    for name in ["Kasparov", "Fischer", "Karpov", "Kasparovsky", "Nobody", ""] {
+        let find = entities.find_players(name).expect("find");
+        let scan = entities.scan_all_players(name).expect("scan");
+        assert_eq!(find, scan, "find_all must equal exhaustive scan for '{name}'");
+    }
+
+    let prefix_kasp = entities.find_players_prefix("Kasp").expect("find prefix");
+    assert_eq!(prefix_kasp, vec![k0, k1, k2, k4]);
+}
+
+#[test]
+fn early_stop_walk_with_reach_signature_matches_full_walk() {
+    let db = fixture("bridge-reach-agree", 200);
+    let database = Database::open(db.base()).expect("open");
+
+    // Start position key
+    let target = Board::startpos();
+    let target_key = target.zobrist();
+    let reach = gigachess::reach::ReachSignature::from_board(&target);
+
+    // Full walk without early stop
+    let mut hits_full = Vec::new();
+    let q_full = PositionQuery::of(target_key);
+    for_each_position_key(&database, &q_full, 2, |h| hits_full.push(h)).expect("full search");
+
+    // Early-stop walk using ReachSignature
+    let mut hits_reach = Vec::new();
+    let stop_fn = |b: &Board| {
+        if reach.unreachable_from(b) {
+            Flow::SkipGame
+        } else {
+            Flow::Continue
+        }
+    };
+    let q_reach = PositionQuery::of(target_key).early_stop_with(&stop_fn);
+    for_each_position_key(&database, &q_reach, 2, |h| hits_reach.push(h)).expect("reach search");
+
+    assert_eq!(hits_reach, hits_full, "walks with ReachSignature must match full walks");
+    assert_eq!(hits_full.len(), 200, "all 200 fixture games start from startpos");
+}

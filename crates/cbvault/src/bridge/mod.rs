@@ -58,7 +58,7 @@ pub use search::{
     for_each_position_key, scan, scan_range,
 };
 pub use sink::{GameRef, GameSink};
-pub use walk::{GameBuf, MovesBuf, Names};
+pub use walk::{Flow, GameBuf, MovesBuf, Names};
 
 pub use cbvault_format::error::{Error, Result};
 

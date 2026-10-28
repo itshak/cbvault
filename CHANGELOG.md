@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 The project is pre-1.0.
 
+## [0.1.5] - 2026-10-28
+
+Sorted key tables for namebases with prefix lookups, early-stop replay pruning,
+pipelined parallel conversion with an ordered reorder buffer, and `gigachess` 0.1.10.
+
+### Added
+
+- **Namebase sorted key table (`KeyTable`).** Replaced the $O(N)$ tree walk in
+  `Namebase::find_all` with an in-memory flat sorted key table built on first lookup.
+  For ~1M players, builds in < 300 ms and gives $O(\log N)$ binary search lookup
+  (under 5 ms warm), completely resilient against damaged binary tree links in the file.
+- **Prefix lookup on namebases.** Added `Entities::find_players_prefix`,
+  `find_tournaments_prefix`, `find_annotators_prefix`, `find_sources_prefix`, and
+  `find_teams_prefix` for fast prefix searches.
+- **Early-stop walk predicate (`Flow`).** Added `Flow::{Continue, SkipGame, Stop}`
+  and `PositionQuery::early_stop_with`, allowing per-game pruning during unindexed
+  position search (e.g. via `gigachess::reach::ReachSignature`).
+- **Parallel conversion walk with ordered reorder buffer.** Pipelined chunk decoding
+  and delivery through a bounded reorder buffer, eliminating wave-barrier synchronization
+  while preserving strict output order, deduplication, and recycling chunk allocations.
+- **Dependency bump:** Upgraded `gigachess` to `0.1.10`.
+
+---
+
 ## [0.1.4] - 2026-10-02
 
 Cooperative walk cancellation and one PGN game splitter, both driven by the

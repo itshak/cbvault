@@ -34,7 +34,6 @@ use cbvault_format::cbh::moves::GameMoves;
 use cbvault_format::error::{Error, Result};
 use cbvault_format::file::DbFile;
 use cbvault_format::game::RecordKind;
-use rayon::prelude::*;
 
 use super::walk::{self, GameBuf, game_ref};
 use super::{Database, GameSink};
@@ -479,10 +478,44 @@ pub fn convert_parallel(db: &Database, sink: &mut impl GameSink, threads: usize,
     let batch = if batch == 0 { DEFAULT_BATCH } else { batch };
     let total = db.records();
     let ranges = chunks(total, batch);
+    if ranges.is_empty() {
+        return Ok(ConvertStats { complete: true, ..ConvertStats::default() });
+    }
+    if ranges.len() == 1 {
+        return for_each_game(db, sink);
+    }
 
     let keys = sink.wants_keys();
     let want_annotations = sink.wants_annotations();
-    let mut pool: Vec<Chunk> = (0..threads.min(ranges.len().max(1))).map(|_| Chunk::new(batch, keys)).collect();
+    let capacity = (threads.saturating_mul(2)).max(4);
+
+    let free_chunks = std::sync::Mutex::new(
+        (0..capacity).map(|_| Chunk::new(batch, keys)).collect::<Vec<_>>()
+    );
+
+    struct ReorderState {
+        ready: std::collections::BTreeMap<usize, Chunk>,
+        in_flight: usize,
+    }
+
+    struct ReorderBuffer {
+        state: std::sync::Mutex<ReorderState>,
+        chunk_ready: std::sync::Condvar,
+        slot_available: std::sync::Condvar,
+    }
+
+    let reorder = ReorderBuffer {
+        state: std::sync::Mutex::new(ReorderState {
+            ready: std::collections::BTreeMap::new(),
+            in_flight: 0,
+        }),
+        chunk_ready: std::sync::Condvar::new(),
+        slot_available: std::sync::Condvar::new(),
+    };
+
+    let cancelled = std::sync::atomic::AtomicBool::new(false);
+    let next_chunk_idx = std::sync::atomic::AtomicUsize::new(0);
+
     let mut writer = Writer {
         db,
         buf: GameBuf::with_capacity(walk::DEFAULT_PLY_ROOM),
@@ -490,33 +523,94 @@ pub fn convert_parallel(db: &Database, sink: &mut impl GameSink, threads: usize,
         stats: ConvertStats { complete: true, ..ConvertStats::default() },
     };
 
-    // One pool for the run, installed per wave: building it per wave paid pool
-    // construction ~1,361 times on the reference database for no benefit.
     let pool_threads = rayon::ThreadPoolBuilder::new()
         .num_threads(threads)
         .build()
         .map_err(|e| Error::corrupt(db.base(), 0, format!("thread pool creation failed: {e}")))?;
-    for wave in ranges.chunks(pool.len().max(1)) {
-        // Cancellation is checked per wave, before delivery: the wave's chunks
-        // are already decoded (bounded by `threads × batch` records), but the
-        // sink sees nothing further and the stats say `complete: false`.
-        if sink.cancelled() {
-            writer.stats.complete = false;
-            return Ok(writer.stats);
+
+    let mut deliver_err: Option<Error> = None;
+
+    pool_threads.in_place_scope(|s| {
+        for _ in 0..threads {
+            s.spawn(|_| {
+                loop {
+                    if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+                        break;
+                    }
+                    let mut state = reorder.state.lock().unwrap();
+                    while state.in_flight >= capacity && !cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+                        state = reorder.slot_available.wait(state).unwrap();
+                    }
+                    if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+                        break;
+                    }
+                    let chunk_idx = next_chunk_idx.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    if chunk_idx >= ranges.len() {
+                        break;
+                    }
+                    state.in_flight += 1;
+                    drop(state);
+
+                    let (first, last) = ranges[chunk_idx];
+                    let mut chunk = free_chunks
+                        .lock()
+                        .unwrap()
+                        .pop()
+                        .unwrap_or_else(|| Chunk::new(batch, keys));
+                    chunk.decode(db, first, last, want_annotations);
+
+                    let mut state = reorder.state.lock().unwrap();
+                    state.ready.insert(chunk_idx, chunk);
+                    reorder.chunk_ready.notify_all();
+                }
+            });
         }
-        let jobs: Vec<(&mut Chunk, (u32, u32))> = pool.iter_mut().zip(wave.iter().copied()).collect();
-        pool_threads.install(|| {
-            jobs.into_par_iter().for_each(|(chunk, (first, last))| {
-                chunk.decode(db, first, last, want_annotations);
-            })
-        });
-        // Only the chunks this wave filled: a short last wave leaves the rest
-        // of the pool holding the *previous* wave's games, and delivering those
-        // again would hand the sink every game of the wave twice.
-        for chunk in &pool[..wave.len()] {
-            writer.deliver(sink, chunk, want_annotations)?;
+
+        for chunk_idx in 0..ranges.len() {
+            if sink.cancelled() {
+                cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
+                reorder.slot_available.notify_all();
+                reorder.chunk_ready.notify_all();
+                writer.stats.complete = false;
+                break;
+            }
+
+            let mut state = reorder.state.lock().unwrap();
+            while !state.ready.contains_key(&chunk_idx)
+                && !cancelled.load(std::sync::atomic::Ordering::Relaxed)
+            {
+                state = reorder.chunk_ready.wait(state).unwrap();
+            }
+            let chunk = state.ready.remove(&chunk_idx);
+            if let Some(chunk) = chunk {
+                state.in_flight -= 1;
+                reorder.slot_available.notify_all();
+                drop(state);
+
+                if let Err(e) = writer.deliver(sink, &chunk, want_annotations) {
+                    deliver_err = Some(e);
+                    cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
+                    reorder.slot_available.notify_all();
+                    reorder.chunk_ready.notify_all();
+                    break;
+                }
+                free_chunks.lock().unwrap().push(chunk);
+            } else {
+                drop(state);
+                break;
+            }
         }
+
+        // Signal workers to terminate in case writer stopped early
+        cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
+        reorder.slot_available.notify_all();
+        reorder.chunk_ready.notify_all();
+    });
+
+    if let Some(e) = deliver_err {
+        return Err(e);
     }
+
     Ok(writer.stats)
 }
 

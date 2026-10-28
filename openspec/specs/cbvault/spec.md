@@ -56,6 +56,23 @@ The library SHALL resolve player, tournament, annotator, source and team referen
 - **WHEN** a field refers to an empty entity (blank user field)
 - **THEN** an empty string is returned, not an error.
 
+### Requirement: Namebase exact and prefix lookup via key table
+
+The library SHALL build an in-memory sorted key table on first lookup from the mapped file, providing $O(\log N)$ binary search for exact and prefix queries across players, tournaments, annotators, sources, and teams. The lookup SHALL return all matching records in ascending ID order even if the file's binary search tree links are corrupt or severed.
+
+#### Scenario: Damaged namebase tree
+
+- **WHEN** a namebase's root link or child pointers are severed or corrupt
+- **THEN** `find_players` and `find_players_prefix` return every matching record in the file.
+
+### Requirement: Early-stop walk and position search predicate
+
+The position walk and search API SHALL accept an early-stop predicate returning `Flow::Continue`, `Flow::SkipGame`, or `Flow::Stop`. When `SkipGame` is returned, the move walk for the current game SHALL terminate immediately and proceed to the next game without decoding remaining plies.
+
+### Requirement: Pipelined parallel conversion with ordered reorder buffer
+
+The parallel conversion walk SHALL decode chunks concurrently on worker threads and stream them to the sink in strict ascending chunk order through a bounded reorder buffer, recycling chunk allocations and stopping cooperatively on cancellation.
+
 ### Requirement: Games decode to moves2 via gigachess
 
 Game decoding SHALL produce, for each game, a stream of 16-bit `moves2` moves validated on a `gigachess` board — the only chess implementation in the tree. Castling MUST use gigachess king→rook encoding (`e1h1`, `e1a1`, Chess960 included). The variation tree SHALL be exposed with push/pop structure preserved for callers that need the full tree.
