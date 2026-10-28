@@ -69,9 +69,33 @@ The library SHALL build an in-memory sorted key table on first lookup from the m
 
 The position walk and search API SHALL accept an early-stop predicate returning `Flow::Continue`, `Flow::SkipGame`, or `Flow::Stop`. When `SkipGame` is returned, the move walk for the current game SHALL terminate immediately and proceed to the next game without decoding remaining plies.
 
+#### Scenario: Pruned search returns the same hits
+
+- **WHEN** a position search runs with a predicate that answers `SkipGame` only for positions from which the target is unreachable
+- **THEN** it returns exactly the hits of the same search without a predicate
+
+### Requirement: Unindexed position search stops promptly on cancel
+
+`for_each_position_key` and `for_each_position_key_range` SHALL ask the query's cancel before each chunk and at least every 256 games within one, and SHALL stop replaying once it answers `true`. A cancelled search SHALL report `complete = false`, and its hits SHALL be a prefix of the answer per chunk, never presented as the whole of it.
+
+#### Scenario: Cancelled before the search starts
+
+- **WHEN** a position search starts with its cancel already raised
+- **THEN** it replays no game and reports `complete = false`
+
+#### Scenario: Cancelled mid-search
+
+- **WHEN** the cancel is raised while a worker is inside a chunk
+- **THEN** the worker stops within 256 games and the search reports `complete = false`
+
 ### Requirement: Pipelined parallel conversion with ordered reorder buffer
 
 The parallel conversion walk SHALL decode chunks concurrently on worker threads and stream them to the sink in strict ascending chunk order through a bounded reorder buffer, recycling chunk allocations and stopping cooperatively on cancellation.
+
+#### Scenario: Parallel output equals serial output
+
+- **WHEN** a set is converted with the parallel walk and with the sequential walk
+- **THEN** the sink receives the same games, in the same order, with byte-identical payloads
 
 ### Requirement: Games decode to moves2 via gigachess
 

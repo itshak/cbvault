@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 The project is pre-1.0.
 
+## [0.1.6] - 2026-10-28
+
+### Fixed
+
+- **Unindexed position search honours cancel.** `for_each_position_key` and
+  `for_each_position_key_range` asked `PositionQuery::cancel_with` only after
+  every chunk had been replayed, so a cancelled search still walked the whole
+  set (minutes on the Mega Database) before reporting `complete = false`. The
+  cancel is now asked before each chunk and every 256 games within one; a
+  cancelled run replays no further games. Found when BlindBase moved its
+  unindexed `.cbh` explorer onto this API with the early-stop predicate, and a
+  superseded query kept every core busy.
+
 ## [0.1.5] - 2026-10-28
 
 Sorted key tables for namebases with prefix lookups, early-stop replay pruning,

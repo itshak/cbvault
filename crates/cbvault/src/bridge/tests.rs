@@ -750,7 +750,30 @@ fn an_unindexed_position_search_finds_a_position_and_can_be_stopped() {
         search::for_each_position_key(&database, &PositionQuery::of(first).cancel_with(&cancel), 1, |_| none += 1)
             .expect("the search");
     assert!(!search.complete, "a cancelled search does not claim to be complete");
-    let _ = none;
+    assert_eq!(search.games, 0, "a search cancelled before it starts replays nothing");
+    assert_eq!(none, 0);
+
+    // A cancel raised mid-search stops the workers well before the end of
+    // the set: the flag goes up as the first hit arrives, and no chunk that
+    // starts afterwards replays a game.
+    let raised = std::sync::atomic::AtomicBool::new(false);
+    let cancel = || raised.load(std::sync::atomic::Ordering::Relaxed);
+    let search = search::for_each_position_key(&database, &PositionQuery::of(first).cancel_with(&cancel), 1, |_| {})
+        .expect("the search");
+    assert!(search.complete, "an unraised cancel leaves the search complete");
+}
+
+#[test]
+fn a_cancel_raised_during_a_position_search_stops_the_walk() {
+    // 1,500 games: more than one poll interval in a single chunk.
+    let db = fixture("bridge-cancel-mid", 1_500);
+    let database = Database::open(db.base()).expect("open");
+    let walked = std::sync::atomic::AtomicU32::new(0);
+    let cancel = || walked.fetch_add(1, std::sync::atomic::Ordering::Relaxed) >= 2;
+    let search = search::for_each_position_key(&database, &PositionQuery::of(1).cancel_with(&cancel), 1, |_| {})
+        .expect("the search");
+    assert!(!search.complete);
+    assert!(search.games < 1_000, "the walk stopped at a poll, not at the end of the set: {} games", search.games);
 }
 
 #[test]
@@ -1099,11 +1122,7 @@ fn early_stop_walk_with_reach_signature_matches_full_walk() {
     // Early-stop walk using ReachSignature
     let mut hits_reach = Vec::new();
     let stop_fn = |b: &Board| {
-        if reach.unreachable_from(b) {
-            Flow::SkipGame
-        } else {
-            Flow::Continue
-        }
+        if reach.unreachable_from(b) { Flow::SkipGame } else { Flow::Continue }
     };
     let q_reach = PositionQuery::of(target_key).early_stop_with(&stop_fn);
     for_each_position_key(&database, &q_reach, 2, |h| hits_reach.push(h)).expect("reach search");

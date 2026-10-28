@@ -701,7 +701,13 @@ impl<'p> PositionQuery<'p> {
 struct Replay {
     stats: PositionSearch,
     hits: Vec<Hit>,
+    /// The chunk stopped early because the search was cancelled.
+    cancelled: bool,
 }
+
+/// Games a position-search worker replays between two cancel polls: a few
+/// milliseconds of work, so a superseded explorer query is released at once.
+const CANCEL_POLL_GAMES: u32 = 256;
 
 /// Replays the database's main lines looking for one position, in parallel, and
 /// reports where it is found.
@@ -712,9 +718,9 @@ struct Replay {
 /// that building one is not worth it. The other answer to the same question is
 /// the consumer's own index, fed by the keys a keyed conversion emits.
 ///
-/// The games of one chunk are replayed by one worker, so a cancel takes effect
-/// within one chunk — 8,192 games, about three seconds of the reference
-/// database on a modern laptop — and a cancelled run says so:
+/// The games of one chunk are replayed by one worker, which asks the cancel
+/// before the chunk and every 256 games within it, so a cancel takes effect
+/// within a few hundred games per worker — and a cancelled run says so:
 /// [`PositionSearch::complete`] is `false` and its hits are a prefix of the
 /// answer, never the whole of it.
 pub fn for_each_position_key(
@@ -736,6 +742,7 @@ pub fn for_each_position_key_range(
     on_hit: &mut (impl FnMut(Hit) + Send),
 ) -> Result<PositionSearch> {
     let want = query.key;
+    let is_cancelled = || query.cancelled.is_some_and(|cancel| cancel());
     let moves = db.moves()?;
     let path = db.members().moves.clone();
     let replay_chunk = |&(first, last): &(u32, u32)| -> Result<Replay> {
@@ -743,8 +750,24 @@ pub fn for_each_position_key_range(
         let mut buf = GameBuf::with_capacity(super::walk::DEFAULT_PLY_ROOM);
         buf.set_wants(true, false);
         let mut record = Vec::new();
+        // The cancel is asked before a chunk starts and every
+        // `CANCEL_POLL_GAMES` games inside it, so a cancelled search stops
+        // within a few hundred games per worker instead of finishing the set.
+        if is_cancelled() {
+            out.cancelled = true;
+            return Ok(out);
+        }
         let mut headers = db.record_batch(first, last)?;
+        let mut since_poll = 0u32;
         for header in headers.by_ref() {
+            since_poll += 1;
+            if since_poll >= CANCEL_POLL_GAMES {
+                since_poll = 0;
+                if is_cancelled() {
+                    out.cancelled = true;
+                    break;
+                }
+            }
             if !matches!(header.kind(), RecordKind::Game) || header.is_deleted() {
                 continue;
             }
@@ -800,7 +823,7 @@ pub fn for_each_position_key_range(
             on_hit(hit);
             total.hits += 1;
         }
-        if query.cancelled.is_some_and(|cancel| cancel()) {
+        if replay.cancelled || is_cancelled() {
             total.complete = false;
         }
     }

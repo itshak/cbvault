@@ -143,17 +143,17 @@ impl MoveSink for Line<'_, '_> {
         if self.keep && self.main {
             self.keys.push(board.zobrist());
         }
-        if self.main {
-            if let Some(pred) = self.predicate {
-                match pred(board) {
-                    Flow::Continue => {}
-                    Flow::SkipGame => {
-                        self.stopped = true;
-                    }
-                    Flow::Stop => {
-                        self.stopped = true;
-                        self.stop_all = true;
-                    }
+        if self.main
+            && let Some(pred) = self.predicate
+        {
+            match pred(board) {
+                Flow::Continue => {}
+                Flow::SkipGame => {
+                    self.stopped = true;
+                }
+                Flow::Stop => {
+                    self.stopped = true;
+                    self.stop_all = true;
                 }
             }
         }
@@ -393,15 +393,7 @@ impl GameBuf {
 
         let keep = self.want_keys;
         let MovesBuf { moves, keys } = &mut self.line;
-        let mut line = Line {
-            moves,
-            keys,
-            keep,
-            main: true,
-            predicate,
-            stopped: false,
-            stop_all: false,
-        };
+        let mut line = Line { moves, keys, keep, main: true, predicate, stopped: false, stop_all: false };
         walk_from(what, game, &start, &mut line)?;
         Ok(!line.stop_all)
     }

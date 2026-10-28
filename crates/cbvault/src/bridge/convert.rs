@@ -489,9 +489,7 @@ pub fn convert_parallel(db: &Database, sink: &mut impl GameSink, threads: usize,
     let want_annotations = sink.wants_annotations();
     let capacity = (threads.saturating_mul(2)).max(4);
 
-    let free_chunks = std::sync::Mutex::new(
-        (0..capacity).map(|_| Chunk::new(batch, keys)).collect::<Vec<_>>()
-    );
+    let free_chunks = std::sync::Mutex::new((0..capacity).map(|_| Chunk::new(batch, keys)).collect::<Vec<_>>());
 
     struct ReorderState {
         ready: std::collections::BTreeMap<usize, Chunk>,
@@ -505,10 +503,7 @@ pub fn convert_parallel(db: &Database, sink: &mut impl GameSink, threads: usize,
     }
 
     let reorder = ReorderBuffer {
-        state: std::sync::Mutex::new(ReorderState {
-            ready: std::collections::BTreeMap::new(),
-            in_flight: 0,
-        }),
+        state: std::sync::Mutex::new(ReorderState { ready: std::collections::BTreeMap::new(), in_flight: 0 }),
         chunk_ready: std::sync::Condvar::new(),
         slot_available: std::sync::Condvar::new(),
     };
@@ -552,11 +547,7 @@ pub fn convert_parallel(db: &Database, sink: &mut impl GameSink, threads: usize,
                     drop(state);
 
                     let (first, last) = ranges[chunk_idx];
-                    let mut chunk = free_chunks
-                        .lock()
-                        .unwrap()
-                        .pop()
-                        .unwrap_or_else(|| Chunk::new(batch, keys));
+                    let mut chunk = free_chunks.lock().unwrap().pop().unwrap_or_else(|| Chunk::new(batch, keys));
                     chunk.decode(db, first, last, want_annotations);
 
                     let mut state = reorder.state.lock().unwrap();
@@ -576,9 +567,7 @@ pub fn convert_parallel(db: &Database, sink: &mut impl GameSink, threads: usize,
             }
 
             let mut state = reorder.state.lock().unwrap();
-            while !state.ready.contains_key(&chunk_idx)
-                && !cancelled.load(std::sync::atomic::Ordering::Relaxed)
-            {
+            while !state.ready.contains_key(&chunk_idx) && !cancelled.load(std::sync::atomic::Ordering::Relaxed) {
                 state = reorder.chunk_ready.wait(state).unwrap();
             }
             let chunk = state.ready.remove(&chunk_idx);

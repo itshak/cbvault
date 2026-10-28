@@ -297,16 +297,8 @@ fn namebase_key_table_timing_and_accuracy() {
 
     assert_eq!(found, found2);
     assert!(!found.is_empty(), "Mueller should be in Mega Database");
-    assert!(
-        warm_lookup.as_millis() <= 5,
-        "warm lookup must be <= 5 ms, took {:?}",
-        warm_lookup
-    );
-    assert!(
-        build_and_lookup.as_millis() <= 300,
-        "table build + lookup must be <= 300 ms, took {:?}",
-        build_and_lookup
-    );
+    assert!(warm_lookup.as_millis() <= 5, "warm lookup must be <= 5 ms, took {:?}", warm_lookup);
+    assert!(build_and_lookup.as_millis() <= 300, "table build + lookup must be <= 300 ms, took {:?}", build_and_lookup);
 }
 
 #[test]
@@ -322,20 +314,14 @@ fn early_stop_reach_signature_agrees_with_full_walk_on_real_set() {
 
     let mut hits_full = Vec::new();
     let q_full = PositionQuery::of(target_key);
-    search::for_each_position_key_range(&db, &ranges, &q_full, 2, &mut |h| hits_full.push(h))
-        .expect("full search");
+    search::for_each_position_key_range(&db, &ranges, &q_full, 2, &mut |h| hits_full.push(h)).expect("full search");
 
     let mut hits_reach = Vec::new();
     let stop_fn = |b: &gigachess::Board| {
-        if reach.unreachable_from(b) {
-            Flow::SkipGame
-        } else {
-            Flow::Continue
-        }
+        if reach.unreachable_from(b) { Flow::SkipGame } else { Flow::Continue }
     };
     let q_reach = PositionQuery::of(target_key).early_stop_with(&stop_fn);
-    search::for_each_position_key_range(&db, &ranges, &q_reach, 2, &mut |h| hits_reach.push(h))
-        .expect("reach search");
+    search::for_each_position_key_range(&db, &ranges, &q_reach, 2, &mut |h| hits_reach.push(h)).expect("reach search");
 
     assert_eq!(hits_reach, hits_full, "ReachSignature pruning must agree with full walk on real games");
 }
