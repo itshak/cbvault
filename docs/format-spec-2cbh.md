@@ -1,5 +1,7 @@
 # ChessBase 2CBH format — cbvault format spec
 
+> **2026-11-05 research reconciliation — important:** This document records the **earlier independent local measurements**, not a current claim that all inferred field meanings were correct. A separately verified **MIT v1.0.3** Rust reader now exists at [oschess-cb-bridge](https://github.com/asavis/oschess-cb-bridge/tree/v1.0.3/crates/cbformat) and a comprehensive facts-only format reference at [Morphy v2](https://github.com/Yarin78/morphy/tree/master/format/v2). Their supported layout contradicts previous interpretations here: +0x10 of .2cbg is a checksum, +0x18 a two-byte tag, +0x1a the payload start; B is spare capacity, not a codec parameter; player names are in .2lid, not directly in .2cbh record fields. The locally verified magic, total sizes, end offsets and A+B+34 geometry remain valuable. **Treat disputed interpretation paragraphs below as historical hypotheses pending recheck and correction, not implementation requirements.** The proposed path is [native-2cbh-readonly](../openspec/changes/native-2cbh-readonly/proposal.md); no support is implied until implementation and a large local ChessBase PGN gold comparison pass. Keep real data local.
+
 > The source of truth for what this library knows about the second-generation
 > ChessBase format (`.2cbh` / `.2cbg` / `.2cba` family), in the same shape as
 > `docs/format-spec.md`.
