@@ -81,7 +81,7 @@ impl Segment {
         let mut n = 0;
         while at < self.len {
             let total = self.total_at(at)?;
-            at += total;
+            at = at.checked_add(total).ok_or_else(|| Error::corrupt(&self.path, at, "2CBH segment: record offset overflow"))?;
             n += 1;
         }
         if at != self.len {
