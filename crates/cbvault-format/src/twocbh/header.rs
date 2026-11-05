@@ -11,6 +11,7 @@ use crate::game::{Date, Eco, GameResult, Head, RecordKind};
 use super::bytes::RECORD_SIZE;
 
 #[derive(Clone, Copy)]
+/// A parsed 192-byte game or non-game header record, stored without heap allocation.
 pub struct GameHeader {
     id: u32,
     b: [u8; RECORD_SIZE],
@@ -42,12 +43,15 @@ fn le_u64(b: &[u8], o: usize) -> u64 {
 }
 
 impl GameHeader {
+    /// Construct a header from the 192 source bytes, without allocation.
     pub fn from_bytes(id: u32, b: &[u8; RECORD_SIZE]) -> Self {
         Self { id, b: *b }
     }
     #[inline]
+    /// Return the one-based record identifier (zero for the file header).
     pub fn id(&self) -> u32 { self.id }
     #[inline]
+    /// Return the unmodified 192 source bytes.
     pub fn bytes(&self) -> &[u8] { &self.b }
 
     /// Only valid for file header (record 0).
@@ -61,7 +65,9 @@ impl GameHeader {
     pub fn flags_byte(&self) -> u8 { self.b[0] }
     /// Type discriminator at byte 2 (1 game/text, 2 analysis).
     pub fn kind_byte(&self) -> u8 { self.b[2] }
+    /// Return whether the record has the deletion bit set.
     pub fn is_deleted(&self) -> bool { self.b[0] & 0x80 != 0 }
+    /// Classify the record as game, guiding text, analysis, or unknown.
     pub fn kind(&self) -> RecordKind {
         match self.b[2] {
             1 if self.b[0] & 2 != 0 => RecordKind::Text,
@@ -78,31 +84,51 @@ impl GameHeader {
 
     /// Entity IDs in .2lid. These are NOT UTF-8 or inline names.
     pub fn white(&self) -> i64 { le_i64(&self.b, 0x18) }
+    /// Return the Black player entity identifier in the .2lid registry.
     pub fn black(&self) -> i64 { le_i64(&self.b, 0x20) }
+    /// Return the tournament entity identifier.
     pub fn tournament(&self) -> i64 { le_i64(&self.b, 0x28) }
+    /// Return the annotator entity identifier.
     pub fn annotator(&self) -> i64 { le_i64(&self.b, 0x30) }
+    /// Return the source entity identifier.
     pub fn source(&self) -> i64 { le_i64(&self.b, 0x38) }
+    /// Return the White team entity identifier.
     pub fn white_team(&self) -> i64 { le_i64(&self.b, 0x40) }
+    /// Return the Black team entity identifier.
     pub fn black_team(&self) -> i64 { le_i64(&self.b, 0x48) }
+    /// Return the game-tag entity identifier.
     pub fn game_tag(&self) -> i64 { le_i64(&self.b, 0x50) }
+    /// Return the guiding-text author entity identifier.
     pub fn text_author(&self) -> i64 { le_i64(&self.b, 0x20) }
+    /// Return the guiding-text title entity identifier.
     pub fn text_title(&self) -> i64 { le_i64(&self.b, 0x28) }
+    /// Return the analysis title entity identifier.
     pub fn analysis_title(&self) -> i64 { le_i64(&self.b, 0x18) }
+    /// Return the analysis author entity identifier.
     pub fn analysis_author(&self) -> i64 { le_i64(&self.b, 0x28) }
 
+    /// Decode the game result byte at offset 0x58.
     pub fn result(&self) -> GameResult { GameResult::from_field(self.b[0x58]) }
+    /// Decode the ECO code or Chess960 start identifier.
     pub fn eco(&self) -> Eco { Eco::from_field(le_u16(&self.b, 0x80)) }
+    /// Return additional format flags at offset 0x84.
     pub fn flags(&self) -> u32 { le_u32(&self.b, 0x84) }
+    /// Decode the packed game date.
     pub fn played_date(&self) -> Date { Date(le_i32(&self.b, 0xbc)) }
+    /// Return the board number.
     pub fn board(&self) -> i16 { le_i16(&self.b, 0x5e) }
+    /// Return the primary and secondary round numbers.
     pub fn round(&self) -> (i32, i32) { (i32::from(le_i16(&self.b, 0x5a)), i32::from(le_i16(&self.b, 0x5c))) }
+    /// Return White and Black ELO fields.
     pub fn elo(&self) -> (i32, i32) { (i32::from(le_i16(&self.b, 0x60)), i32::from(le_i16(&self.b, 0x70))) }
+    /// Return the declared mainline move count.
     pub fn move_count(&self) -> i32 { i32::from(le_i16(&self.b, 0x8a)) }
     /// Original uninterpreted per-record value (not yet proven unique key).
     pub fn key(&self) -> u64 { le_u64(&self.b, 0x98) }
 
     /// Raw rating-related fields: never interpret as player names.
     pub fn rating_white_bytes(&self) -> &[u8] { &self.b[0x68..0x78] }
+    /// Borrow the raw Black rating metadata region; not a player name.
     pub fn rating_black_bytes(&self) -> &[u8] { &self.b[0x78..0x88] }
 }
 
