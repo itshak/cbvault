@@ -9,7 +9,7 @@
 
 use std::path::Path;
 
-use super::{Database, Generation, GameBuf, generation_of};
+use super::{Database, GameBuf, Generation, generation_of};
 use crate::twocbh;
 use cbvault_format::error::{Error, Result};
 
@@ -61,8 +61,7 @@ impl AnyDatabase {
                 let mut result = Vec::new();
                 db.write_game(id, &mut crate::pgn::PgnWriter::new(), &mut result)
                     .map_err(|e| Error::corrupt(db.inner().stem(), id as u64, e.to_string()))?;
-                String::from_utf8(result)
-                    .map_err(|e| Error::corrupt(db.inner().stem(), id as u64, e.to_string()))
+                String::from_utf8(result).map_err(|e| Error::corrupt(db.inner().stem(), id as u64, e.to_string()))
             }
         }
     }
