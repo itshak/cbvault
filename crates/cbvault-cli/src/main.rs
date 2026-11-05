@@ -509,7 +509,7 @@ fn run_pgn(mut args: impl Iterator<Item = String>) -> Result<bool, Box<dyn std::
         return Err("--to must not be below --from".into());
     }
     if cbvault::bridge::generation_of(&base) == cbvault::bridge::Generation::TwoCbh {
-        return run_pgn_v2(&base, out_path.as_deref(), first, last, json);
+        return run_pgn_v2(&base, out_path.as_deref(), first, last, threads, batch_size, json);
     }
 
     let t0 = Instant::now();
@@ -639,47 +639,30 @@ fn run_pgn_v2(
     out_path: Option<&str>,
     first: u32,
     last: u32,
+    threads: usize,
+    batch_size: usize,
     json: bool,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let db = cbvault::twocbh::Database::open(path)?;
-    let end = if last == 0 { db.records() } else { last.min(db.records()) };
     let mut output: Box<dyn Write> = match out_path {
         Some(name) => Box::new(std::io::BufWriter::with_capacity(1 << 20, std::fs::File::create(name)?)),
         None => Box::new(std::io::BufWriter::with_capacity(1 << 20, std::io::stdout())),
     };
     let now = Instant::now();
-    let mut writer = cbvault::pgn::PgnWriter::new();
-    let mut exported = 0u64;
-    let mut skipped = 0u64;
-    for id in first.max(1)..=end {
-        let header = db.record(id)?;
-        if header.is_deleted() { skipped += 1; continue; }
-        match header.kind() {
-            cbvault_format::game::RecordKind::Game => {
-                db.write_game(id, &mut writer, &mut output)?;
-                exported += 1;
-            }
-            cbvault_format::game::RecordKind::Text | cbvault_format::game::RecordKind::Analysis => {
-                skipped += 1;
-            }
-            cbvault_format::game::RecordKind::Unknown(kind) => {
-                return Err(format!("unknown 2CBH record kind {kind} at id {id}").into());
-            }
-        }
-    }
+    let stats = db.export_parallel(&mut output, first, last, threads, batch_size)?;
     output.flush()?;
     let seconds = now.elapsed().as_secs_f64();
+    let skipped = stats.deleted + stats.texts + stats.analyses;
     if json {
         eprintln!(
-            "{{\"format\":\"2CBH\",\"games\":{exported},\"skipped_non_games\":{skipped},\"seconds\":{seconds:.2},\"threads\":1,\"peak_writer_bytes\":{}}}",
-            writer.capacity(),
+            "{{\"format\":\"2CBH\",\"records\":{},\"games\":{},\"skipped_non_games\":{skipped},\"seconds\":{seconds:.2},\"threads\":{threads},\"failures\":{}}}",
+            stats.records, stats.games, stats.failures,
         );
     } else {
         eprintln!(
-            "2CBH: exported {exported} games, skipped {skipped} non-games in {seconds:.2} s (sequential); writer capacity {} bytes",
-            writer.capacity(),
+            "2CBH: exported {} games, skipped {skipped} non-games in {seconds:.2} s using {threads} workers",
+            stats.games,
         );
     }
-    Ok(true)
+    Ok(stats.failures == 0)
 }
-
