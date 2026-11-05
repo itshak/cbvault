@@ -14,13 +14,13 @@ use crate::twocbh;
 use cbvault_format::error::{Error, Result};
 
 /// A read-only database of either ChessBase generation. The classic and v2
-/// variants expose their full native APIs without performance-erasing boxing.
+/// variants expose their full native APIs; one Box is allocated on open, never per game.
 #[derive(Debug)]
 pub enum AnyDatabase {
     /// Established classic ChessBase family.
-    Classic(Database),
+    Classic(Box<Database>),
     /// Second-generation ChessBase .2cbh family.
-    TwoCbh(twocbh::Database),
+    TwoCbh(Box<twocbh::Database>),
 }
 
 impl AnyDatabase {
@@ -29,8 +29,8 @@ impl AnyDatabase {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         match generation_of(path) {
-            Generation::Classic => Database::open(path).map(Self::Classic),
-            Generation::TwoCbh => twocbh::Database::open(path).map(Self::TwoCbh),
+            Generation::Classic => Database::open(path).map(|db| Self::Classic(Box::new(db))),
+            Generation::TwoCbh => twocbh::Database::open(path).map(|db| Self::TwoCbh(Box::new(db))),
             Generation::Unknown => Err(Error::corrupt(path, 0, "no ChessBase .cbh or .2cbh header found")),
         }
     }
