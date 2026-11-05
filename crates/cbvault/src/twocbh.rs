@@ -16,6 +16,8 @@ use cbvault_format::twocbh::{self as v2, annotation_items::GameAnnotations, move
 
 use crate::pgn::PgnWriter;
 
+mod parallel;
+
 /// Summary of a read-only v2 database scan. A record may be deleted, a
 /// guiding text, an analysis, or a playable game.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
