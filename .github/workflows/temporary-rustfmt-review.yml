@@ -1,0 +1,29 @@
+# Temporary, branch-restricted formatting helper for the 2CBH audit.
+# Remove this workflow before finalizing the pull request.
+name: Temporary rustfmt 2CBH review
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  format-review:
+    if: github.event.pull_request.head.repo.full_name == 'itshak/cbvault' && github.head_ref == 'review/2cbh-framing-metadata-zero-alloc'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Format changed Rust sources
+        run: |
+          cargo fmt --all
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates/cbvault-format/src/twocbh/ crates/cbvault-format/tests/twocbh.rs crates/cbvault/src/bridge/tests.rs
+          if ! git diff --cached --quiet; then
+            git commit -m "[native-2cbh-readonly] Format audited Rust sources"
+            git push origin "HEAD:${{ github.head_ref }}"
+          fi
