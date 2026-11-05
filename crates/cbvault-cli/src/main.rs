@@ -509,7 +509,7 @@ fn run_pgn(mut args: impl Iterator<Item = String>) -> Result<bool, Box<dyn std::
         return Err("--to must not be below --from".into());
     }
     if cbvault::bridge::generation_of(&base) == cbvault::bridge::Generation::TwoCbh {
-        return run_pgn_v2(&base, out_path.as_deref(), first, last, threads, batch_size, json);
+        return run_pgn_v2(&base, out_path.as_deref(), first, last, threads, batch_size as usize, json);
     }
 
     let t0 = Instant::now();
