@@ -1,4 +1,8 @@
-# Design: native 2CBH reader and byte-grounded acceptance
+# Design: native 2CBH full read parity and byte-grounded acceptance
+
+**Current implementation checkpoint (2026-11-05):** PR #1 and PR #2 are merged into main; all five post-merge GitHub Actions checks were green for commit 7497618983360ca4c0d083506c9b33a8e33be9fd. This validates synthetic integration, NOT real ChessBase-equivalent behavior. The native reader and PGN writer, basic .2lid/2cba coverage, gigachess replay, CLI, bounded ordered parallel export and common bridge::AnyDatabase API exist. The established classic bridge::Database remains classic-only. Some valid 2CBA annotation variants and embedded quoted-game moves remain unsupported, and native-only media coverage and full classic search/sink parity are not verified. They are **requirements to finish**, not accepted losses. The exact forward plan is [golden-parity-runbook.md](golden-parity-runbook.md).
+
+**Two-oracle decision:** (a) real ChessBase full PGN comparison proves every PGN-representable move, tag and annotation byte after only documented nonsemantic normalization; (b) separate native typed/lossless inspection proves full support for non-PGN binary features such as embedded media, game quotations and training. Full native parity is required even if ChessBase PGN drops an object. This design remains strictly read-only. Writing is a separate future proposal.
 
 ## Decisions, source provenance, license barrier
 
@@ -24,7 +28,7 @@ Verified correction checklist (compare read bytes with pinned MIT and Morphy spe
 - `.2lid` is the entity registry; `.2lgd`/ `.2lcd` are search/sort indexes. For a first read-only reader, prefer dependable full/filtered scans and build cbvault/consumer-owned caches rather than modifying external indexes. Preserve 1-based game IDs; classify guiding texts, analyses, deleted placeholders and mover-less games.
 - Stage Chess960, promotions, en passant, null moves, positions with setup FEN, annotation attachment, Unicode entity names, locale labels and nontrivial variation trees in contract fixtures.
 
-**Exit gate:** standalone library opens generated and real 2CBH read-only, `verify` checks all moves for legality, GUI-independent `Database` reports games/headers and emits PGN in the same sink interface, no memory leak/panic on malformed input, classic CBH/CBV tests and gold floor unchanged. Upstream `chesscore` is absent from runtime dependency tree. Ported files retain MIT notices and `docs/provenance.md` rows.
+**Foundation gate (implemented synthetically, not yet parity):** library opens generated 2CBH sets read-only; verify checks moves for legality and the separate native Database plus bridge::AnyDatabase provide initial access and PGN. Complete classic-equivalent sink/search APIs and real-data feature coverage remain open. Synthetic CI proves the existing baseline, not that all valid ChessBase structures are decoded. The **final** exit gate is the separate full golden + native-only coverage gate in the runbook, with all uncommon annotations implemented.
 
 ## Phase 2: formal two-room clean-room factual improvements
 
@@ -48,18 +52,22 @@ Verified correction checklist (compare read bytes with pinned MIT and Morphy spe
 
 ### Three levels of equality
 
-**Level 0, raw bytes:** record full raw SHA-256, total byte count and first mismatching byte offset for paired outputs with identical export settings, but do not assert raw-file parity when exporter line wrapping, tag order or ChessBase-only tags differ.
+**Level 0, raw bytes:** record real source companion SHA-256, gold and our PGN SHA-256, total byte counts and first raw mismatch. The currently merged gold_2cbh example still uses FNV-1a and lacks source fingerprints; **upgrading it is a mandatory next task**, not accomplished work. Do not require raw byte equality if exporter wrapping/tag order differ.
 
-**Level 1, canonical-byte parity (primary gate):** reuse/refactor `crates/cbvault/examples/gold_pgn.rs`: parse PGNs per game, preserve all comparable standard tags (Seven Tag Roster + ECO/WhiteElo/BlackElo/SetUp/FEN/Variant as in classic), move sequence, variation parentheses, NAGs, comments, positions, results; normalize **only** documented nonsemantic serialization differences (line endings, wrapping/whitespace, tag ordering, ChessBase-only tags explicitly omitted under classic rule). Re-serialize the canonical records to stable UTF-8 bytes and compare **byte-for-byte**. Every unmatched byte is reported by game ID, category and localized offset, not ignored by similarity scoring.
+**Level 1, canonical-byte parity (primary gate):** refactor `crates/cbvault/examples/gold_2cbh.rs` using the classic `gold_pgn.rs` precedent: correctly map each source record ID to each exported game even with duplicate games, guiding text and deleted records. Parse full multiline PGN robustly; preserve all meaningful tags (not just a 13-tag KEEP list), complete move trees, RAV, NAGs, Unicode comments, annotation node placement and results. Normalize only documented nonsemantic serialization differences (line endings, wrapping, insignificant inter-token whitespace, tag ordering and individually reviewed ChessBase-only tags). Re-serialize canonical records to stable UTF-8 bytes and compare **byte-for-byte**. Every unmatched byte is a bug to investigate and solve in cbvault; no text simplification to make the comparator pass.
 
 **Level 2, justified exceptions:** category `NULL_SPELLING` maps ChessBase `Z0` to cbvault `--`, preserving exact move/side context and no invalid check/mate suffix; category `CHESSBASE_OVER_DISAMBIGUATION` allows a redundant SAN file/rank qualifier **only where gigachess confirms the other same-type piece's move is illegal** (e.g., pinned knight, only legal `Nd2`, ChessBase prints `Nbd2`). Do not simply accept every string shape `Nbd2` vs `Nd2`; verify actual board and candidate legality. Classic comparator's other *documented intentional* tag/comment differences may be separately allowlisted by exact rule and evidence, not blanket "annotation discrepancies". Semantic PGN tags, side-to-move, ratings, moves, comments, ECO and annotation attachment remain strict. Check/mate suffix normalization is acceptable only if verified as a formatting policy; never conceal incorrect board legality or check state.
 
 Release requires:
 - **0 unclassified canonical mismatches**; each known exception counted by kind with reproducible evidence and threshold regression tracked; no “we matched 97% therefore passed”.
-- **0 illegal moves, 0 silently skipped games or annotations, 0 unreported source changes** in the declared supported subset. Unsupported special record types are explicitly excluded with a count and rationale before comparison.
+- **0 illegal moves, 0 silently skipped games, 0 unhandled *valid* annotations or native record content, 0 unreported source changes**, with a complete source-ID-to-PGN-ordinal mapping. A valid but currently unsupported special type is an **open feature bug**, not something that may be excluded from the final supported subset. Correctly classified deleted/text/analysis slots are not fabricated as PGN games and have their own native-coverage verification.
 - Sequential and ordered-parallel export produce identical bytes, full game counts and parseable PGNs; metadata and annotations are compared, not only mainline SAN.
 - Classic `.cbh` gold baseline **must not regress** (ADR-002: at earlier measurement 407,350 exact / 11,977 deliberate / 50 annotation / 3 other / 5 tags, 0 read errors / 0 decode errors). That historic floor is **not** permission to treat new unexplained 2CBH differences as acceptable.
 - Produce a local summary with denominator/coverage, exact count, deliberate-validated count, illegal/decode failures, annotations/metadata mismatch buckets, exit status; only aggregate redacted results may be copied to the repo manually after rights review.
+
+### Why one ChessBase PGN export is necessary but not sufficient
+
+ChessBase's PGN export can omit native-only typed data (e.g. audio, video, pictures, rich training content, guiding text or particular quotation payloads). Equal PGN therefore does NOT establish full CBH v1/v2 feature completeness. Maintain a separate native-object inventory that verifies all 2CBA item types and payloads by source offset, type, size and retained borrowed bytes. Every valid record must be readable (or have an accessible typed/raw representation) and structurally checked; merely failing with Unsupported for a legitimate uncommon annotation is not the finished state. A missing PGN representation is not permission to delete the underlying native data. Uncertainty or legal-source provenance blockers remain explicitly open and block the final full-parity claim.
 
 ### Performance
 
