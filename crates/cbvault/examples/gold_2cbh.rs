@@ -25,8 +25,8 @@ use std::time::Instant;
 use cbvault::twocbh::Database;
 
 const KEEP: [&str; 13] = [
-    "Event", "Site", "Date", "Round", "White", "Black", "Result", "ECO", "WhiteElo", "BlackElo",
-    "SetUp", "FEN", "Variant",
+    "Event", "Site", "Date", "Round", "White", "Black", "Result", "ECO", "WhiteElo", "BlackElo", "SetUp", "FEN",
+    "Variant",
 ];
 const CHUNK: usize = 1 << 18;
 
@@ -42,7 +42,9 @@ fn fingerprint(path: &Path) -> io::Result<Fingerprint> {
     let mut result = Fingerprint { bytes: 0, fnv64: 0xcbf29ce484222325 };
     loop {
         let n = reader.read(&mut buf)?;
-        if n == 0 { break; }
+        if n == 0 {
+            break;
+        }
         for &b in &buf[..n] {
             result.fnv64 ^= u64::from(b);
             result.fnv64 = result.fnv64.wrapping_mul(0x100000001b3);
@@ -63,10 +65,16 @@ fn raw_mismatch(a: &Path, b: &Path) -> io::Result<Option<u64>> {
         let nb = right.read(&mut b_buf)?;
         let overlap = na.min(nb);
         for (i, (&x, &y)) in a_buf[..overlap].iter().zip(&b_buf[..overlap]).enumerate() {
-            if x != y { return Ok(Some(offset + i as u64)); }
+            if x != y {
+                return Ok(Some(offset + i as u64));
+            }
         }
-        if na != nb { return Ok(Some(offset + overlap as u64)); }
-        if na == 0 { return Ok(None); }
+        if na != nb {
+            return Ok(Some(offset + overlap as u64));
+        }
+        if na == 0 {
+            return Ok(None);
+        }
         offset += na as u64;
     }
 }
@@ -87,7 +95,9 @@ impl<R: BufRead> GameStream<R> {
     }
     fn read_game(&mut self, out: &mut Vec<u8>) -> io::Result<bool> {
         out.clear();
-        if self.done { return Ok(false); }
+        if self.done {
+            return Ok(false);
+        }
         let mut in_comment = 0i32;
         let mut seen_movetext = false;
         let mut previous_blank = false;
@@ -100,20 +110,28 @@ impl<R: BufRead> GameStream<R> {
                 return Ok(!out.is_empty());
             }
             let line = trim(&self.next);
-            if line.is_empty() && out.is_empty() { continue; }
+            if line.is_empty() && out.is_empty() {
+                continue;
+            }
             let next_tag = line.first() == Some(&b'[');
             if previous_blank && in_comment == 0 && seen_movetext && next_tag {
                 std::mem::swap(&mut self.pending, &mut self.next);
                 return Ok(true);
             }
-            if !line.is_empty() && !next_tag { seen_movetext = true; }
+            if !line.is_empty() && !next_tag {
+                seen_movetext = true;
+            }
             previous_blank = line.is_empty();
             // Tag values may contain braces as text, so count comment braces
             // only in non-header PGN lines.
             if !next_tag || in_comment != 0 {
                 for &b in line {
-                    if b == b'{' { in_comment += 1; }
-                    if b == b'}' { in_comment -= 1; }
+                    if b == b'{' {
+                        in_comment += 1;
+                    }
+                    if b == b'}' {
+                        in_comment -= 1;
+                    }
                 }
                 in_comment = in_comment.max(0);
             }
@@ -169,12 +187,16 @@ fn canonical(raw: &[u8]) -> Vec<u8> {
                 let mut last_space = false;
                 for inner in chars.by_ref() {
                     if inner == '}' {
-                        if out.last() == Some(&b' ') { out.pop(); }
+                        if out.last() == Some(&b' ') {
+                            out.pop();
+                        }
                         out.push(b'}');
                         break;
                     }
                     if inner.is_whitespace() {
-                        if !last_space { out.push(b' '); }
+                        if !last_space {
+                            out.push(b' ');
+                        }
                         last_space = true;
                     } else {
                         let mut b = [0; 4];
@@ -212,21 +234,31 @@ fn tag(line: &str) -> Option<(String, String)> {
     let mut unescaped = String::with_capacity(value.len());
     let mut chars = value.chars();
     while let Some(c) = chars.next() {
-        if c == '\\' { unescaped.push(chars.next()?); } else { unescaped.push(c); }
+        if c == '\\' {
+            unescaped.push(chars.next()?);
+        } else {
+            unescaped.push(c);
+        }
     }
     Some((key.to_owned(), unescaped))
 }
 
 struct RemoveOnDrop(PathBuf);
 impl Drop for RemoveOnDrop {
-    fn drop(&mut self) { let _ = std::fs::remove_file(&self.0); }
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let stem = PathBuf::from(std::env::var("CBVAULT_TEST_DB_2CBH")
-        .map_err(|_| "set CBVAULT_TEST_DB_2CBH to a local full 2CBH database stem")?);
-    let gold = PathBuf::from(std::env::var("CBVAULT_2CBH_GOLD_PGN")
-        .map_err(|_| "set CBVAULT_2CBH_GOLD_PGN to the matching ChessBase PGN")?);
+    let stem = PathBuf::from(
+        std::env::var("CBVAULT_TEST_DB_2CBH")
+            .map_err(|_| "set CBVAULT_TEST_DB_2CBH to a local full 2CBH database stem")?,
+    );
+    let gold = PathBuf::from(
+        std::env::var("CBVAULT_2CBH_GOLD_PGN")
+            .map_err(|_| "set CBVAULT_2CBH_GOLD_PGN to the matching ChessBase PGN")?,
+    );
     let mut threads = 1usize;
     let mut batch = 8192usize;
     let mut args = std::env::args().skip(1);
@@ -260,17 +292,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         let actual = ours.read_game(&mut ours_buf)?;
         let reference = expected.read_game(&mut expected_buf)?;
-        if !actual && !reference { break; }
+        if !actual && !reference {
+            break;
+        }
         games += 1;
         if !(actual && reference) {
-            if first_differences.len() < 20 { first_differences.push(games); }
+            if first_differences.len() < 20 {
+                first_differences.push(games);
+            }
             differing_moves += 1;
             continue;
         }
         let ours_canon = canonical(&ours_buf);
         let gold_canon = canonical(&expected_buf);
-        if ours_canon == gold_canon { equal += 1; }
-        else {
+        if ours_canon == gold_canon {
+            equal += 1;
+        } else {
             let marker = b"--MOVES--\n";
             let our_tags_end = ours_canon.windows(marker.len()).position(|w| w == marker);
             let ref_tags_end = gold_canon.windows(marker.len()).position(|w| w == marker);
@@ -278,20 +315,30 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 (Some(a), Some(b)) => ours_canon[..a] == gold_canon[..b],
                 _ => false,
             };
-            if !tags_match { differing_tags += 1; }
+            if !tags_match {
+                differing_tags += 1;
+            }
             if our_tags_end.is_none_or(|a| ref_tags_end.is_none_or(|b| ours_canon[a..] != gold_canon[b..])) {
                 differing_moves += 1;
             }
-            if first_differences.len() < 20 { first_differences.push(games); }
+            if first_differences.len() < 20 {
+                first_differences.push(games);
+            }
         }
     }
     println!("2CBH local ChessBase PGN gold gate");
-    println!("records={} games={} verified={} deleted={} texts={} analyses={}",
-        stats.records, stats.games, stats.verified, stats.deleted, stats.texts, stats.analyses);
-    println!("gold_bytes={} our_bytes={} gold_fnv64={:016x} our_fnv64={:016x}",
-        gold_fp.bytes, ours_fp.bytes, gold_fp.fnv64, ours_fp.fnv64);
+    println!(
+        "records={} games={} verified={} deleted={} texts={} analyses={}",
+        stats.records, stats.games, stats.verified, stats.deleted, stats.texts, stats.analyses
+    );
+    println!(
+        "gold_bytes={} our_bytes={} gold_fnv64={:016x} our_fnv64={:016x}",
+        gold_fp.bytes, ours_fp.bytes, gold_fp.fnv64, ours_fp.fnv64
+    );
     println!("raw_first_mismatch_byte={raw_diff:?}");
-    println!("compared_games={games} canonical_equal={equal} tag_diffs={differing_tags} movetext_diffs={differing_moves}");
+    println!(
+        "compared_games={games} canonical_equal={equal} tag_diffs={differing_tags} movetext_diffs={differing_moves}"
+    );
     println!("first_diff_game_ordinals={first_differences:?} (no game text printed)");
     println!("export_seconds={elapsed:.2} threads={threads}");
     if differing_tags != 0 || differing_moves != 0 || equal != games || games != stats.games {
@@ -303,7 +350,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
-        Err(e) => { eprintln!("local 2CBH gold gate: {e}"); ExitCode::FAILURE }
+        Err(e) => {
+            eprintln!("local 2CBH gold gate: {e}");
+            ExitCode::FAILURE
+        }
     }
 }
 

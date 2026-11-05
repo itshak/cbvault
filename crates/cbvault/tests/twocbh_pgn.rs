@@ -8,15 +8,8 @@ use cbvault_format::twocbh::testdata::{Game, record, remove_set, segment, write_
 use cbvault_format::twocbh::word::{self, Captured, Color, MoveWord, Piece};
 
 fn normal(side: Color, role: Piece, from: u8, to: u8) -> u16 {
-    word::encode(MoveWord::Normal {
-        color: side,
-        piece: role,
-        from,
-        to,
-        captured: Captured::Nothing,
-        promotion: None,
-    })
-    .expect("the move is part of the published v2 move-word enumeration")
+    word::encode(MoveWord::Normal { color: side, piece: role, from, to, captured: Captured::Nothing, promotion: None })
+        .expect("the move is part of the published v2 move-word enumeration")
 }
 
 fn replace_moves(stem: &std::path::Path, words: &[u16]) {
@@ -32,8 +25,8 @@ fn real_move_words_export_legal_san_and_entity_names() {
         &stem,
         &[
             word::MOVES,
-            normal(Color::White, Piece::Pawn, 12, 28), // e2e4
-            normal(Color::Black, Piece::Pawn, 52, 36), // e7e5
+            normal(Color::White, Piece::Pawn, 12, 28),  // e2e4
+            normal(Color::Black, Piece::Pawn, 52, 36),  // e7e5
             normal(Color::White, Piece::Knight, 6, 21), // g1f3
             word::END_OF_LINE,
         ],
@@ -62,7 +55,7 @@ fn stored_order_variation_exports_in_pgn_order() {
             normal(Color::White, Piece::Pawn, 12, 28), // 1. e4
             normal(Color::Black, Piece::Pawn, 52, 36), // 1... e5
             word::ALTERNATIVE,
-            word::END_OF_LINE, // next decoded line starts from before 1...e5
+            word::END_OF_LINE,                         // next decoded line starts from before 1...e5
             normal(Color::Black, Piece::Pawn, 51, 35), // 1...d5
             word::END_OF_LINE,
         ],

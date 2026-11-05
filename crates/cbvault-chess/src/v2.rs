@@ -361,10 +361,8 @@ mod tests {
         let a = GameMoves::parse(Path::new("bad-capture.2cbg"), &bad_capture).unwrap();
         assert!(verify(GameRef::new(3), &a, &mut V2Scratch::default()).is_err());
 
-        let incomplete = framed_words(&[
-            word::MOVES,
-            move_word(word::Color::White, WPiece::Pawn, 12, 28, Captured::Nothing),
-        ]);
+        let incomplete =
+            framed_words(&[word::MOVES, move_word(word::Color::White, WPiece::Pawn, 12, 28, Captured::Nothing)]);
         let b = GameMoves::parse(Path::new("missing-end.2cbg"), &incomplete).unwrap();
         assert!(verify(GameRef::new(4), &b, &mut V2Scratch::default()).is_err());
     }
