@@ -1,4 +1,7 @@
-// Copyright (c) 2026 the cbvault contributors (MIT). See LICENSE.
+// Adapted from oschess-cb-bridge v1.0.3 (MIT), commit bffebfc498d52b4e4631aed32b2f8e8194d125ff.
+// Copyright (c) 2026 the oschess-cb-bridge contributors.
+// Modifications copyright (c) 2026 the cbvault contributors.
+// SPDX-License-Identifier: MIT
 //! Allocation-free structural reader for a 2CBH v2 move-word stream.
 //! Word tokens are NOT gigachess moves2; they must be resolved against a
 //! legal board in cbvault-chess before any PGN or search result is emitted.
