@@ -18,8 +18,17 @@
   record classification and structural move-word parsing are adapted from
   its MIT `cbformat/src/v2` modules. The project remains MIT; later AGPL
   upstream versions are not copied or linked. See `docs/provenance.md`.
-- These corrections do not imply that the .2lid reader, legal replay, PGN
-  export or real-database equivalence gates have passed.
+- Additional pinned-MIT modules adapted in this work include
+  `cbformat/src/movetable/{mod,pieces}.rs` (v2 word enumeration),
+  `cbformat/src/v2/entities.rs` (interleaved .2lid registry),
+  `cbformat/src/v2/annotations/layout.rs` (2CBA item layouts),
+  and `cbformat/src/replay/mod.rs` (stored-order tree semantics).
+  New zero-copy readers and gigachess adapters are credited in
+  `docs/provenance.md`; all in-repository synthetic fixtures are original.
+- The native .2lid reader, gigachess replay, and PGN writer are now present,
+  with automated synthetic tests. Real ChessBase equivalence and uncommon
+  annotation types, including quoted games with embedded moves, remain
+  unverified or explicitly unsupported. These gates are **not waived**.
 
 ## Dependencies
 
