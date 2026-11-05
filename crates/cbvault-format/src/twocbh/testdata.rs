@@ -98,6 +98,40 @@ pub fn headers(games: &[[u8; RECORD_SIZE]], generation: u8) -> Vec<u8> {
     out
 }
 
+/// A fully synthetic .2lid with a fixed-size container for each of six
+/// entity kinds. The 0th ID is intentionally empty; ordinary player IDs
+/// contain deterministic dummy names that cannot identify real people.
+pub fn entity_registry(last_id: u32) -> Vec<u8> {
+    const SIZE: [usize; 6] = [128, 128, 64, 64, 64, 128];
+    const TYPES: usize = 6;
+    let head = 8 + 20 * TYPES;
+    let block: usize = SIZE.iter().sum();
+    let count = last_id as usize + 1;
+    let mut bytes = vec![0u8; head + count * block];
+    bytes[..4].copy_from_slice(&(head as i32).to_be_bytes());
+    bytes[4..8].copy_from_slice(&(TYPES as i32).to_be_bytes());
+    for (kind, sz) in SIZE.into_iter().enumerate() {
+        let o = 8 + kind * 20;
+        bytes[o..o + 4].copy_from_slice(&(sz as i32).to_be_bytes());
+        bytes[o + 4..o + 12].copy_from_slice(&(count as i64).to_be_bytes());
+        bytes[o + 12..o + 20].copy_from_slice(&(-1i64).to_be_bytes());
+    }
+    // Every ID after 0 is an artificial person named Test<ID>, Example.
+    for id in 1..count {
+        let start = head + id * block;
+        let last = format!("Test{id}");
+        let first = b"Example";
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&(last.len() as i32).to_le_bytes());
+        payload.extend_from_slice(last.as_bytes());
+        payload.extend_from_slice(&(first.len() as i32).to_le_bytes());
+        payload.extend_from_slice(first);
+        bytes[start..start + 4].copy_from_slice(&(payload.len() as i32).to_le_bytes());
+        bytes[start + 4..start + 4 + payload.len()].copy_from_slice(&payload);
+    }
+    bytes
+}
+
 /// One synthetic game: its flags, per-game key, and two entity IDs.
 #[derive(Clone, Copy)]
 pub struct Game {
@@ -154,6 +188,8 @@ pub fn write_set(tag: &str, games: &[Game], annotations: bool) -> PathBuf {
     }
     std::fs::write(format!("{}.2cbh", stem.display()), headers(&heads, 0x22)).expect("write .2cbh");
     std::fs::write(format!("{}.2cbg", stem.display()), segment(&moves)).expect("write .2cbg");
+    let max_id = games.iter().flat_map(|g| [g.players.0, g.players.1]).max().unwrap_or(0).max(0) as u32;
+    std::fs::write(format!("{}.2lid", stem.display()), entity_registry(max_id)).expect("write .2lid");
     if annotations {
         std::fs::write(format!("{}.2cba", stem.display()), segment(&notes)).expect("write .2cba");
     }
