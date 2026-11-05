@@ -11,3 +11,5 @@
 pub mod bridge;
 pub mod pgn;
 pub mod replay;
+/// Native second-generation ChessBase database operations.
+pub mod twocbh;
