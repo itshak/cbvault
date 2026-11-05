@@ -36,6 +36,36 @@ pub struct ScanStats {
     pub failures: u64,
 }
 
+/// Reusable non-mmap input buffers: steady-state frame reads borrow an mmap
+/// or read into these preallocated vectors, rather than allocate per game.
+#[derive(Debug, Default)]
+pub struct ReadScratch {
+    /// Caller-owned .2cbg frame storage for positional I/O.
+    pub moves: Vec<u8>,
+    /// Caller-owned .2cba frame storage for positional I/O.
+    pub annotations: Vec<u8>,
+}
+impl ReadScratch {
+    /// Reserved scratch memory, without any live record-specific allocation.
+    pub fn capacity(&self) -> usize { self.moves.capacity() + self.annotations.capacity() }
+}
+
+/// Read a valid frame directly from the mapping, or into the caller's
+/// capacity-reused buffer when mmap is disabled.
+fn borrowed_frame<'a>(
+    segment: &'a v2::Segment,
+    at: u64,
+    scratch: &'a mut Vec<u8>,
+) -> Result<&'a [u8]> {
+    let size = segment.total_at(at)? as usize;
+    if let Some(raw) = segment.db_file().slice_at(at, size) {
+        v2::Record::parse(segment.path(), at, raw)?;
+        return Ok(raw);
+    }
+    segment.record_into(at, scratch)?;
+    Ok(scratch)
+}
+
 /// Full native v2 database handle, owning headers, frame files and .2lid.
 #[derive(Debug)]
 pub struct Database {
@@ -60,7 +90,7 @@ impl Database {
     pub fn verify(&self, mut report: impl FnMut(u32, &Error)) -> Result<ScanStats> {
         let mut stats = ScanStats::default();
         let mut scratch = V2Scratch::default();
-        let mut move_bytes = Vec::with_capacity(256 << 10);
+        let mut buffers = ReadScratch::default();
         for id in 1..=self.records() {
             let h = self.record(id)?;
             stats.records += 1;
@@ -79,11 +109,11 @@ impl Database {
             let result = (|| -> Result<()> {
                 let at = u64::try_from(h.moves_offset())
                     .map_err(|_| Error::corrupt(self.inner.moves().path(), 0, "negative 2CBH move frame offset"))?;
-                self.inner.moves().record_into(at, &mut move_bytes)?;
-                let moves = GameMoves::parse(self.inner.moves().path(), &move_bytes)?;
+                let bytes = borrowed_frame(self.inner.moves(), at, &mut buffers.moves)?;
+                let moves = GameMoves::parse(self.inner.moves().path(), bytes)?;
                 let tree = cbvault_chess::v2::verify(GameRef::at(id, at), &moves, &mut scratch)?;
-                if let Some(record) = self.inner.annotations_of(&h)? {
-                    let ann = GameAnnotations::parse(record_path(self.inner.annotations()), record.bytes())?;
+                if let Some((path, bytes)) = self.annotation_bytes(&h, &mut buffers.annotations)? {
+                    let ann = GameAnnotations::parse(path, bytes)?;
                     ann.check_positions(tree.total_plies)?;
                 }
                 Ok(())
@@ -96,20 +126,49 @@ impl Database {
         Ok(stats)
     }
 
-    /// Export one record as complete PGN, refusing non-games and any unknown
-    /// annotation layout or illegal move. A writer is reusable across games.
+    /// Borrow the optional annotated frame from the mapped file or a
+    /// caller-owned pread buffer. Returns a typed error if the record
+    /// references a missing .2cba companion file.
+    fn annotation_bytes<'a>(
+        &'a self, h: &v2::GameHeader, scratch: &'a mut Vec<u8>,
+    ) -> Result<Option<(&'a Path, &'a [u8])>> {
+        if h.annotations_offset() == 0 { return Ok(None); }
+        let seg = self.inner.annotations().ok_or_else(|| Error::corrupt(
+            self.inner.headers().path(), h.id() as u64 * 192, "2CBH record references missing .2cba",
+        ))?;
+        let at = u64::try_from(h.annotations_offset())
+            .map_err(|_| Error::corrupt(seg.path(), 0, "negative 2CBH annotation offset"))?;
+        let bytes = borrowed_frame(seg, at, scratch)?;
+        Ok(Some((seg.path(), bytes)))
+    }
+
+    /// Export one active record as PGN, refusing unknown annotation layouts
+    /// and illegal moves. The convenience wrapper owns temporary I/O storage;
+    /// repeatedly exporting should use write_game_reuse instead.
     pub fn write_game(&self, id: u32, writer: &mut PgnWriter, out: &mut impl Write) -> io::Result<()> {
+        let mut scratch = ReadScratch::default();
+        self.write_game_reuse(id, writer, out, &mut scratch)
+    }
+
+    /// Export with caller-owned per-worker frame buffers. In the mapped mode
+    /// reads borrow the original files; in pread mode warmed buffers eliminate
+    /// per-game input allocations.
+    pub fn write_game_reuse(
+        &self, id: u32, writer: &mut PgnWriter, out: &mut impl Write,
+        scratch: &mut ReadScratch,
+    ) -> io::Result<()> {
         let h = self.record(id).map_err(io_error)?;
         if h.is_deleted() || h.kind() != RecordKind::Game {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "not an active v2 game record"));
         }
-        let raw = self.inner.moves_of(&h).map_err(io_error)?;
-        let game = GameMoves::parse(self.inner.moves().path(), raw.bytes()).map_err(io_error)?;
-        let ann_rec = self.inner.annotations_of(&h).map_err(io_error)?;
-        let ann = ann_rec.as_ref().map(|record| {
-            GameAnnotations::parse(record_path(self.inner.annotations()), record.bytes()).map_err(io_error)
-        }).transpose()?;
-        writer.write_game_v2(out, &h, self.inner.entities(), &game, ann.as_ref())
+        let at = u64::try_from(h.moves_offset()).map_err(|_| io_error(Error::corrupt(
+            self.inner.moves().path(), 0, "negative .2cbg offset",
+        )))?;
+        let data = borrowed_frame(self.inner.moves(), at, &mut scratch.moves).map_err(io_error)?;
+        let game = GameMoves::parse(self.inner.moves().path(), data).map_err(io_error)?;
+        let annotation = self.annotation_bytes(&h, &mut scratch.annotations).map_err(io_error)?;
+        let parsed = annotation.map(|(path, bytes)| GameAnnotations::parse(path, bytes).map_err(io_error)).transpose()?;
+        writer.write_game_v2(out, &h, self.inner.entities(), &game, parsed.as_ref())
     }
 
     /// Export all active playable games into a writable sink in stable source
@@ -119,6 +178,7 @@ impl Database {
     /// the database in memory.
     pub fn export(&self, out: &mut impl Write, mut writer: PgnWriter) -> io::Result<ScanStats> {
         let mut stats = ScanStats::default();
+        let mut scratch = ReadScratch::default();
         for id in 1..=self.records() {
             let h = self.record(id).map_err(io_error)?;
             stats.records += 1;
@@ -130,7 +190,7 @@ impl Database {
                     stats.games += 1;
                     // The writer checks the complete tree and all annotations
                     // before its single write_all per game.
-                    self.write_game(id, &mut writer, out)?;
+                    self.write_game_reuse(id, &mut writer, out, &mut scratch)?;
                     stats.verified += 1;
                 }
                 RecordKind::Unknown(_) => {
@@ -144,9 +204,6 @@ impl Database {
     }
 }
 
-fn record_path(segment: Option<&v2::Segment>) -> &Path {
-    segment.map_or_else(|| Path::new("<.2cba>"), |s| s.path())
-}
 fn io_error(error: Error) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, error)
 }
