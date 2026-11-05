@@ -16,7 +16,9 @@ use cbvault_format::twocbh::word::{self, Captured, CastleSide, MoveWord, Piece a
 use gigachess::{Board, Color, Move, Role, Square};
 
 use crate::decode::{GameRef, MoveSink, TreeStats, MAX_VARIATION_DEPTH};
-use crate::start::{Start, Setup, standard_board, start_board_cached, StartCache};
+use crate::start::{Start, Setup, start_board_cached, StartCache};
+#[cfg(test)]
+use crate::start::standard_board;
 
 /// Scratch buffers retained across 2CBH games.
 #[derive(Default, Debug)]
