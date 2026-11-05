@@ -465,43 +465,60 @@ API. The real-file parity report, and a gold comparison against ChessBase's own
 
 ---
 
-## 11. The façade hook this module needs
+## 11. Current verified v2 parser contract (supersedes the historical guesses)
 
-Owned by the `cbvault/src/bridge/` agent; recorded here so the wiring is a
-one-line change. `twocbh` is usable standalone and does **not** depend on
-`cbvault`.
+**2026-11-05 correction:** Earlier sections above document genuine byte
+measurements, but their *field interpretations* were often incorrect. Use the
+pinned MIT reader [v1.0.3, commit
+`bffebfc498d52b4e4631aed32b2f8e8194d125ff`](https://github.com/asavis/oschess-cb-bridge/tree/bffebfc498d52b4e4631aed32b2f8e8194d125ff/crates/cbformat/src/v2)
+as the permissible implementation reference. Never copy from later AGPL source.
 
-The bridge needs exactly three things, and nothing else:
+| Region | Correct interpretation | Earlier claim superseded |
+|---|---|---|
+| .2cbh byte 0, byte 2 | flags/deleted bit; record discriminator (1 game/text, 2 analysis) | record kind = byte 0 |
+| .2cbh 0x18, 0x20 | 64-bit signed player entity IDs in .2lid | player names inline |
+| .2cbh 0x58, 0x60, 0x70 | result byte; signed 16-bit WhiteElo/BlackElo | result/ratings unknown |
+| .2cbh 0x80, 0x8a, 0xbc | ECO; signed 16-bit move count; date | all tags unknown |
+| .2cbh 0x68 and 0x78 | rating-related metadata, NOT player names | 16-byte name strings |
+| .2cbg/.2cba 0x10..0x18 | big-endian 64-bit checksum | opaque 8-byte tag |
+| .2cbg/.2cba 0x18..0x1a | little-endian 16-bit tag | part of content |
+| .2cbg/.2cba 0x1a | first content byte | content starts at 0x18 |
+| .2cbg/.2cba B | spare capacity in bytes | codec parameter |
+| .2cbg/.2cba total | 26 + A + B + 8 = 34 + A + B | implied extra 0xffff terminator after A |
+| .2cbg move payload | little-endian 16-bit words with FFFB setup, FFFC moves, FFFD alternative, FFFF end | a compressed opaque byte codec |
+
+The frame checksum uses eight equal contiguous runs of A content bytes,
+one wrapping-u8 sum per run; bytes after eight full runs are ignored.
+For A shorter than eight bytes, content is zero-padded into a little-endian
+u64. The stored checksum uses **big-endian** byte order. Source is the pinned
+MIT v1.0.3 `v2/frame.rs` implementation. These rules now have synthetic
+unit fixtures, including a corruption test, but must still pass real
+database replay and PGN oracle validation.
+
+The Rust reader's correct API for entity references and framed content is:
 
 ```rust
-// 1. Classify a set. Succeeds only for the 2CBH generation.
-cbvault_format::twocbh::Headers::open(stem)?;   // -> .2cbh, siblings resolved
-twocbh::probe(stem) == twocbh::Generation::TwoCbh // the one call `generation()` needs
-
-// 2. Per game: the header fields, and the two byte offsets.
-let h = headers.record(id)?;                    // GameHeader, impls game::Head
-h.moves_offset()        // u64 -> .2cbg
-h.annotations_offset()  // u64 -> .2cba (0 = none)
-h.name1_into(&mut buf)  // &str, the two inline names (§4.3)
-h.key()                 // the per-game u64 at 0x98
-
-// 3. The record, via the segment; `content()` is the raw opaque payload.
-let seg = twocbh::Segment::open(twocbh::sibling(stem, ".2cbg"))?;
-let rec = seg.record_at(h.moves_offset())?;     // SegmentRecord
-let r = rec.record();                           // Record
-r.content(); r.parameter_a(); r.parameter_b();  // &[u8], u32, u32 (opaque)
-// Moves: GameMoves::is_decoded() == false, .stream() == None (spec §6.4).
+let h = headers.record(id)?;
+let white_entity_id = h.white(); // resolve against .2lid (not yet implemented)
+let black_entity_id = h.black();
+let offset = u64::try_from(h.moves_offset())
+    .map_err(|_| "invalid negative frame offset")?;
+let rec = moves_segment.record_at(offset)?;
+let framed = rec.record();
+let variant_tag = framed.tag();
+let encoded_words = framed.content(); // borrowed; not gigachess moves2
 ```
 
-`Generation` is reported by the bridge as `TwoCbh` when `twocbh::probe`
-returns it, which is a single `.2cbh` existence check and **no moves file is
-opened** — the property task 0.2 needs of a game list. No `Entities` type is
-required: 2CBH carries its two names inline (§4.3), so the bridge reads them
-off the record and resolves nothing.
+The new `GameMoves::tokens` exposes structural words without allocations.
+It **does not** claim chess legality, start-position replay, PGN export,
+annotation-to-ply mapping, or `.2lid` name decoding yet. The main
+`cbvault::bridge::Database` façade still refuses 2CBH. It MUST continue to
+fail closed rather than export plausible-looking games with empty moves or
+missing tags. Do not count synthetic tests as the real ChessBase PGN gold gate.
 
-One caveat the lead should carry into the wiring: for a 2CBH set
-`GameRef.moves` is **empty**, because the codec is not decoded (§6). The sink
-and conversion path therefore work unchanged for a 2CBH set's headers, names
-and annotations, and a conversion of a 2CBH set currently yields **games with
-no moves**. That is a real gap in task 4.2, not a shape mismatch, and it should
-be reported as such rather than papered over at the façade.
+Remaining release blockers: .2lid entities, gigachess word-to-legal-move
+decoding, variations/setups/Chess960, typed annotation-to-ply mapping,
+integrated bridge/CLI and ordered parallel export, source-mutation safety,
+full local real-data ChessBase canonical-byte comparison, and classic
+.cbh/.cbv/.cbz parity with actual measured performance. No proprietary
+samples or unredacted ChessBase PGNs may enter the repository or CI.
