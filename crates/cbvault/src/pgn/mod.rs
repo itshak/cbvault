@@ -412,7 +412,7 @@ fn write_tags<H: Head>(
     push_escaped_tag(out, "[Event \"", event);
     push_escaped_tag(out, "[Site \"", place);
     push_tag(out, "[Date \"", str_from_bytes(&header.played_date().text()));
-    push_round(out, header.round(), names);
+    push_round(out, header.round(), &mut names.round);
     let white = id(header.white())
         .map(|id| entities.player_into(id, &mut names.white_last, &mut names.white_first))
         .transpose()?
@@ -474,6 +474,7 @@ struct V2Names {
     black_first: String,
     title: String,
     place: String,
+    round: [u8; ROUND_TEXT_BYTES],
 }
 impl V2Names {
     fn capacity(&self) -> usize {
@@ -493,7 +494,6 @@ fn write_tags_v2(
     start: &Start,
     board: &Board,
     total_plies: u32,
-    round_names: &mut Names,
     names: &mut V2Names,
 ) -> Result<()> {
     let event_found = entities.tournament_into(
@@ -504,7 +504,7 @@ fn write_tags_v2(
     push_escaped_tag(out, "[Event \"", event);
     push_escaped_tag(out, "[Site \"", place);
     push_tag(out, "[Date \"", str_from_bytes(&header.played_date().text()));
-    push_round(out, header.round(), round_names);
+    push_round(out, header.round(), &mut names.round);
     let white = entities.player_into(
         header.white(), &mut names.scratch, &mut names.white_last, &mut names.white_first,
     )?;
@@ -611,13 +611,13 @@ fn str_from_bytes(bytes: &[u8; 10]) -> &str {
 /// `[Round "..."]` and its newline: the round and sub-round as ChessBase's
 /// export writes them, `5`, `5.2` for the second game of round 5, or `?.4`
 /// when only the sub-round is known.
-fn push_round(out: &mut String, (round, sub): (i32, i32), names: &mut Names) {
+fn push_round(out: &mut String, (round, sub): (i32, i32), round_buf: &mut [u8; ROUND_TEXT_BYTES]) {
     out.push_str("[Round \"");
     if round <= 0 && sub > 0 {
         out.push_str("?.");
         push_u32(out, sub as u32);
     } else {
-        let text = round_text(round, sub, &mut names.round);
+        let text = round_text(round, sub, round_buf);
         if text.is_empty() {
             out.push('?');
         } else {
@@ -838,7 +838,7 @@ impl PgnWriter {
         ).map_err(as_io)?;
         write_tags_v2(
             &mut self.game, header, entities, &start, &board, stats.total_plies,
-            &mut self.names, &mut self.v2_names,
+            &mut self.v2_names,
         ).map_err(as_io)?;
         match anns.filter(|a| !a.is_empty()) {
             None => emit(&self.tree, &mut Bare, &mut self.game, &mut self.steps).map_err(as_io)?,
