@@ -31,5 +31,5 @@ pub const FIXED_OVERHEAD: usize = 34;
 /// First content byte, immediately after the two-byte tag.
 pub const CONTENT_OFFSET: usize = 0x1a;
 
-/// Metadata fields at 0x68 and 0x78 are rating-related, not inline names.
-/// Player names are referenced by entity IDs in the .2lid registry.
+// Metadata fields at 0x68 and 0x78 are rating-related, not inline names.
+// Player names are referenced by entity IDs in the .2lid registry.
