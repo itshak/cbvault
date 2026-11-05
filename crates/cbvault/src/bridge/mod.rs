@@ -38,6 +38,7 @@
 //! namebase tree itself because the format crate's reader addresses entities by
 //! id only — see the private `namebase` module.
 
+mod any;
 mod convert;
 mod namebase;
 mod search;
@@ -51,6 +52,7 @@ mod real;
 #[cfg(test)]
 mod tests;
 
+pub use any::{AnyDatabase, open_any};
 pub use convert::{ConvertStats, DEFAULT_BATCH, convert_parallel, for_each_game, for_each_range};
 pub use namebase::{Entities, Found, Name, Via};
 pub use search::{
