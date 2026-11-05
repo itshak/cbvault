@@ -18,23 +18,18 @@ pub const FILE_HEADER_SIZE: usize = 12;
 /// Size of a `.2cbh` record, and of the file header before the first one.
 pub const RECORD_SIZE: usize = 192;
 
-/// The largest record this reader will accept, so a corrupt length field
-/// cannot ask for an absurd allocation. The largest real `.2cbg` record
-/// observed is 1,904 bytes (a `Personality-Swindler` book line).
-pub const MAX_RECORD: usize = 16 << 20;
+/// Conservative maximum framed record size; corrupted lengths must not cause
+/// unbounded buffer allocation. The MIT v1.0.3 baseline uses 64 MiB
+/// limits for each of A and B; this bound applies to their sum.
+pub const MAX_RECORD: usize = 64 << 20;
 
-/// Fixed part of a `.2cbg`/`.2cba` record: the magic, the two parameters, the
-/// per-record word, the content, the `ff ff` terminator, the zero padding and
-/// the 8-byte length trailer. A record's total length is
-/// [`FIXED_OVERHEAD`] + `a` + `b`, and its content is exactly `a` bytes, so
-/// `24 + a + 2 + b + 8` accounts for the whole record.
+/// The fixed framing bytes: magic (8), content size A (4), spare size B (4),
+/// big-endian checksum (8), 16-bit little-endian tag (2), and trailer (8).
+/// Content begins at offset 0x1a. Total record size is 34 + A + B.
+/// The move-stream 0xffff marker belongs inside A, not after it.
 pub const FIXED_OVERHEAD: usize = 34;
-/// Bytes from the record's first byte to its content: the magic, the two
-/// parameters and the 8-byte per-record word.
-pub const CONTENT_OFFSET: usize = 24;
-/// The two bytes that end the content, before the zero padding.
-pub const TERMINATOR_SIZE: usize = 2;
+/// First content byte, immediately after the two-byte tag.
+pub const CONTENT_OFFSET: usize = 0x1a;
 
-/// Width of each of the two inline name fields in a `.2cbh` game record
-/// (§4.3). They are fixed-width and NUL-padded.
-pub const NAME_FIELD: usize = 16;
+/// Metadata fields at 0x68 and 0x78 are rating-related, not inline names.
+/// Player names are referenced by entity IDs in the .2lid registry.
