@@ -49,16 +49,14 @@ pub struct ReadScratch {
 }
 impl ReadScratch {
     /// Reserved scratch memory, without any live record-specific allocation.
-    pub fn capacity(&self) -> usize { self.moves.capacity() + self.annotations.capacity() }
+    pub fn capacity(&self) -> usize {
+        self.moves.capacity() + self.annotations.capacity()
+    }
 }
 
 /// Read a valid frame directly from the mapping, or into the caller's
 /// capacity-reused buffer when mmap is disabled.
-fn borrowed_frame<'a>(
-    segment: &'a v2::Segment,
-    at: u64,
-    scratch: &'a mut Vec<u8>,
-) -> Result<&'a [u8]> {
+fn borrowed_frame<'a>(segment: &'a v2::Segment, at: u64, scratch: &'a mut Vec<u8>) -> Result<&'a [u8]> {
     let size = segment.total_at(at)? as usize;
     if let Some(raw) = segment.db_file().slice_at(at, size) {
         v2::Record::parse(segment.path(), at, raw)?;
@@ -80,11 +78,17 @@ impl Database {
         Ok(Self { inner: v2::Database::open(path)? })
     }
     /// Read the byte-level native v2 database.
-    pub fn inner(&self) -> &v2::Database { &self.inner }
+    pub fn inner(&self) -> &v2::Database {
+        &self.inner
+    }
     /// Number of record slots, including non-game entries and deletions.
-    pub fn records(&self) -> u32 { self.inner.record_count() }
+    pub fn records(&self) -> u32 {
+        self.inner.record_count()
+    }
     /// The 192-byte metadata of one record.
-    pub fn record(&self, id: u32) -> Result<v2::GameHeader> { self.inner.record(id) }
+    pub fn record(&self, id: u32) -> Result<v2::GameHeader> {
+        self.inner.record(id)
+    }
 
     /// Verify every live playable game. A damaged record is reported to the
     /// caller and the scan continues. Unknown record classifications are not
@@ -96,14 +100,26 @@ impl Database {
         for id in 1..=self.records() {
             let h = self.record(id)?;
             stats.records += 1;
-            if h.is_deleted() { stats.deleted += 1; continue; }
+            if h.is_deleted() {
+                stats.deleted += 1;
+                continue;
+            }
             match h.kind() {
-                RecordKind::Text => { stats.texts += 1; continue; }
-                RecordKind::Analysis => { stats.analyses += 1; continue; }
-                RecordKind::Game => { stats.games += 1; }
+                RecordKind::Text => {
+                    stats.texts += 1;
+                    continue;
+                }
+                RecordKind::Analysis => {
+                    stats.analyses += 1;
+                    continue;
+                }
+                RecordKind::Game => {
+                    stats.games += 1;
+                }
                 RecordKind::Unknown(_) => {
                     stats.failures += 1;
-                    let error = Error::corrupt(self.inner.headers().path(), id as u64 * 192, "unknown 2CBH record type");
+                    let error =
+                        Error::corrupt(self.inner.headers().path(), id as u64 * 192, "unknown 2CBH record type");
                     report(id, &error);
                     continue;
                 }
@@ -122,7 +138,10 @@ impl Database {
             })();
             match result {
                 Ok(()) => stats.verified += 1,
-                Err(e) => { stats.failures += 1; report(id, &e); }
+                Err(e) => {
+                    stats.failures += 1;
+                    report(id, &e);
+                }
             }
         }
         Ok(stats)
@@ -132,12 +151,16 @@ impl Database {
     /// caller-owned pread buffer. Returns a typed error if the record
     /// references a missing .2cba companion file.
     fn annotation_bytes<'a>(
-        &'a self, h: &v2::GameHeader, scratch: &'a mut Vec<u8>,
+        &'a self,
+        h: &v2::GameHeader,
+        scratch: &'a mut Vec<u8>,
     ) -> Result<Option<(&'a Path, &'a [u8])>> {
-        if h.annotations_offset() == 0 { return Ok(None); }
-        let seg = self.inner.annotations().ok_or_else(|| Error::corrupt(
-            self.inner.headers().path(), h.id() as u64 * 192, "2CBH record references missing .2cba",
-        ))?;
+        if h.annotations_offset() == 0 {
+            return Ok(None);
+        }
+        let seg = self.inner.annotations().ok_or_else(|| {
+            Error::corrupt(self.inner.headers().path(), h.id() as u64 * 192, "2CBH record references missing .2cba")
+        })?;
         let at = u64::try_from(h.annotations_offset())
             .map_err(|_| Error::corrupt(seg.path(), 0, "negative 2CBH annotation offset"))?;
         let bytes = borrowed_frame(seg, at, scratch)?;
@@ -156,20 +179,23 @@ impl Database {
     /// reads borrow the original files; in pread mode warmed buffers eliminate
     /// per-game input allocations.
     pub fn write_game_reuse(
-        &self, id: u32, writer: &mut PgnWriter, out: &mut impl Write,
+        &self,
+        id: u32,
+        writer: &mut PgnWriter,
+        out: &mut impl Write,
         scratch: &mut ReadScratch,
     ) -> io::Result<()> {
         let h = self.record(id).map_err(io_error)?;
         if h.is_deleted() || h.kind() != RecordKind::Game {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "not an active v2 game record"));
         }
-        let at = u64::try_from(h.moves_offset()).map_err(|_| io_error(Error::corrupt(
-            self.inner.moves().path(), 0, "negative .2cbg offset",
-        )))?;
+        let at = u64::try_from(h.moves_offset())
+            .map_err(|_| io_error(Error::corrupt(self.inner.moves().path(), 0, "negative .2cbg offset")))?;
         let data = borrowed_frame(self.inner.moves(), at, &mut scratch.moves).map_err(io_error)?;
         let game = GameMoves::parse(self.inner.moves().path(), data).map_err(io_error)?;
         let annotation = self.annotation_bytes(&h, &mut scratch.annotations).map_err(io_error)?;
-        let parsed = annotation.map(|(path, bytes)| GameAnnotations::parse(path, bytes).map_err(io_error)).transpose()?;
+        let parsed =
+            annotation.map(|(path, bytes)| GameAnnotations::parse(path, bytes).map_err(io_error)).transpose()?;
         writer.write_game_v2(out, &h, self.inner.entities(), &game, parsed.as_ref())
     }
 
@@ -184,7 +210,10 @@ impl Database {
         for id in 1..=self.records() {
             let h = self.record(id).map_err(io_error)?;
             stats.records += 1;
-            if h.is_deleted() { stats.deleted += 1; continue; }
+            if h.is_deleted() {
+                stats.deleted += 1;
+                continue;
+            }
             match h.kind() {
                 RecordKind::Text => stats.texts += 1,
                 RecordKind::Analysis => stats.analyses += 1,
@@ -197,7 +226,9 @@ impl Database {
                 }
                 RecordKind::Unknown(_) => {
                     return Err(io_error(Error::corrupt(
-                        self.inner.headers().path(), id as u64 * 192, "unknown v2 record type",
+                        self.inner.headers().path(),
+                        id as u64 * 192,
+                        "unknown v2 record type",
                     )));
                 }
             }
