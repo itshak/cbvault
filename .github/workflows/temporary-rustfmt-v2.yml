@@ -1,0 +1,34 @@
+# Temporary internal formatter for the native 2CBH review branch.
+# Deleted after its single verified run; never shipped on main.
+name: Temporary rustfmt 2CBH
+on:
+  push:
+    branches:
+      - feat/native-2cbh-full-reader
+    paths:
+      - .github/workflows/temporary-rustfmt-v2.yml
+permissions:
+  contents: write
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/native-2cbh-full-reader
+          persist-credentials: true
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          components: rustfmt
+      - name: Format Rust source
+        run: cargo fmt --all
+      - name: Commit formatted changes to review branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- '*.rs'
+          if ! git diff --cached --quiet; then
+            git commit -m "Apply cargo fmt to native 2CBH implementation"
+            git push origin HEAD:feat/native-2cbh-full-reader
+          fi
