@@ -34,9 +34,11 @@
 > The classic `.cbh` family is genuinely implemented and tested, and **`.cbv`
 > archives now unarchive completely — every member, byte-identical to the
 > reference extractor.** `.cbz` works, including every password length.
-> **2CBH is not supported**: its container is read for inspection but it has no
-> move decoder, so a 2CBH set yields no games, and derived accelerator files
-> (`.cko`, `.cpo`) are ignored. The
+> **2CBH reading is now implemented on main**: .2cbh/.2cbg/.2lid
+> decoding, legal gigachess replay, native PGN and CLI are present.
+> **Full ChessBase fidelity remains unverified**, including a real-data PGN
+> golden test, rare annotations/quoted games, native-only media and complete
+> consumer API parity. Derived accelerators (.cko/.cpo) remain ignored. The
 > [What is not supported yet](#what-is-not-supported-yet) section below is
 > specific and states exactly what is missing. Please read it before you decide
 > whether this fits your use — a short README that overstates what works is worse
@@ -111,13 +113,13 @@
   2 MB, `peak_writer` reports 0 MB after all 11.1 M games, and `--no-mmap`
   holds the whole export in 28 MB for identical bytes. See
   [What is not supported yet](#what-is-not-supported-yet).
-- **2CBH is not supported.** Its container framing *is* proven — fixed 192-byte
-  records, verified over 220,418 records with zero violations — but **the
-  `.2cbg` move codec is not decoded**, so a 2CBH set yields no games and
-  `GameRef::moves` is empty. `Database::open` refuses a 2CBH set outright rather
-  than half-reading it. The distinction is deliberate: emitting a plausible
-  16-bit word per *byte* of content would satisfy a type signature and produce
-  garbage.
+- **2CBH read support, full gold parity pending.** The native .2cbh reader,
+  .2lid names, .2cbg word codec using gigachess, typed .2cba annotations,
+  full-game PGN and bounded parallel export are merged. Use
+  `cbvault::twocbh::Database` or `bridge::AnyDatabase`; the established
+  classic `bridge::Database` remains classic-only. Rare quotes/annotations,
+  non-PGN media and full real ChessBase golden comparisons are still open.
+  See the [active 2CBH OpenSpec](openspec/changes/native-2cbh-readonly/proposal.md).
 - **Read-only, permanently.** Nothing opens a source file for writing, nothing
   creates or deletes anything in a database's directory, and no extraction ever
   writes bytes the reader did not decode. Malformed input returns typed errors;
@@ -141,8 +143,8 @@
 | `.cbv` container | **read** | table parsed and validated for every member |
   | `.cbv` extraction, all four modes | **read** | 3,871 / 3,871 members, 100 % of bytes, byte-identical to the reference; 9.4× faster |
 | `.cbz` | **read** | DES-ECB; three key rules (repeat / as-is / fold) verified against the reference's own samples |
-| 2CBH container | **read** | framing proven over 220,418 records |
-| 2CBH `.2cbg` move codec | **not decoded** | yields tags, not `moves2` |
+| 2CBH container | **read** | checksum and framing tested, including corruption fixtures |
+| 2CBH `.2cbg` move codec | **read, gold pending** | legal gigachess replay; rare annotation completeness not yet verified |
 | Boosters, derived accelerators | **not read** | tolerated and ignored, by design |
 | crates.io release | **published** | v0.1.0; `cargo add cbvault` |
 
@@ -842,32 +844,25 @@ times** on this database. It now reads into a stack buffer through the new
 `DbFile::read_exact`, which is the same read without the allocation.
 
 
-### 2CBH: the container is proven, the moves are not
+### 2CBH: native reader merged, full ChessBase golden parity pending
 
-- The **container framing is verified over 220,418 records** across every 2CBH
-  set on the development machine, with zero violations: fixed 192-byte `.2cbh`
-  records, and every `.2cbg`/`.2cba` record opening with a magic and closing with
-  its own length.
-- **The `.2cbg` move codec is not decoded.** `GameMoves::is_decoded()` is `false`
-  and `stream()` is `None`. A 2CBH database therefore yields its **game list, tags
-  and annotations today, but not its `moves2`** — and in the sink contract,
-  `GameRef::moves` is empty for a 2CBH source.
-- It is not faked, deliberately: emitting a plausible-looking 16-bit word per
-  *byte* of content would satisfy a type signature and produce garbage, which is
-  the failure mode this project is written to avoid.
-- **A specific list of header fields remains unknown**, including the 16 bytes of
-  `ff` at `0x40`, the bytes at `0x01..0x04`, the per-record values at `0x8c`,
-  `0x98` and `0xb8`, and the 9-byte record segment (26 distinct values across the
-  reference archive, purpose open). §10 of
-  [`docs/format-spec-2cbh.md`](docs/format-spec-2cbh.md) states what would close
-  each one.
-- `.2lid`, `.2lcd` and `.2lgd` are **unknown and not implemented**.
-- `Database::open` **refuses a 2CBH set**, with a typed `MissingFile` for the
-  `.cbh` a classic reader needs. `bridge::generation_of` recognises one and
-  reports `Generation::TwoCbh` *before* you try, so a caller can say which
-  generation it is looking at.
-- `cbvault_format::twocbh` is the standalone reader and does work — fixed records,
-  tags, annotations, and the raw move record with an explicit "not decoded" state.
+- The .2cbh headers, .2cbg and .2cba frame/checksum handling, .2lid entities,
+  16-bit move words, legal gigachess replay, variation and setup/Chess960 paths,
+  typed annotations, native PGN and ordered parallel export are on main.
+- Access v2 through `cbvault::twocbh::Database` or `bridge::AnyDatabase::open`;
+  the established classic `bridge::Database::open` remains classic-only for
+  compatibility.
+- The existing `gold_2cbh.rs` is only an initial local diagnostic, not a
+  proven comparison to full ChessBase PGN. Uncommon valid .2cba types, quoted
+  games with embedded moves, typed native-only media/training and full v2
+  classic-style GameSink/search API remain **unfinished**.
+- The [full-parity OpenSpec](openspec/changes/native-2cbh-readonly/proposal.md)
+  and [local ChessBase gold runbook](openspec/changes/native-2cbh-readonly/golden-parity-runbook.md)
+  require complete valid-annotation support, exact canonical PGN on a matching
+  real database except narrowly proven intentional SAN/null policies, and
+  separate lossless native-only content verification.
+- Every real ChessBase source, PGN oracle and detailed mismatch stays local;
+  public CI includes only generated synthetic fixtures.
 
 ### Other gaps
 
