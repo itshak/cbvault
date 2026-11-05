@@ -9,9 +9,9 @@
 //! blocks, one block per entity id. Each container starts with a little-endian
 //! payload byte length. Names in the payload are length-prefixed UTF-8.
 
-use std::path::PathBuf;
 use crate::error::{Error, Result};
 use crate::file::DbFile;
+use std::path::PathBuf;
 
 /// Player-name entities.
 pub const PLAYER: usize = 0;
@@ -98,9 +98,10 @@ impl Entities {
 
     fn location(&self, kind: usize, id: i64) -> Option<(u64, usize)> {
         let k = self.kinds.get(kind).filter(|_| kind < self.types)?;
-        if id < 0 || id >= k.count || k.size < 4 { return None; }
-        let start = (id as u64).checked_mul(self.block_bytes)?
-            .checked_add(self.head_bytes)?.checked_add(k.offset)?;
+        if id < 0 || id >= k.count || k.size < 4 {
+            return None;
+        }
+        let start = (id as u64).checked_mul(self.block_bytes)?.checked_add(self.head_bytes)?.checked_add(k.offset)?;
         let end = start.checked_add(k.size as u64)?;
         (end <= self.length).then_some((start, k.size))
     }
@@ -121,7 +122,9 @@ impl Entities {
 
     fn payload<'a>(&self, offset: u64, raw: &'a [u8]) -> Result<Option<&'a [u8]>> {
         let n = i32::from_le_bytes(raw[..4].try_into().expect("container has at least four bytes"));
-        if n == 0 { return Ok(None); }
+        if n == 0 {
+            return Ok(None);
+        }
         if n < 0 || n as usize > raw.len() - 4 {
             return Err(Error::corrupt(self.file.path(), offset, ".2lid: entity length outside container"));
         }
@@ -144,7 +147,13 @@ impl Entities {
 
     /// Resolve tournament title/place into reused strings, skipping its
     /// packed start date (the game's date comes from the game header).
-    pub fn tournament_into(&self, id: i64, scratch: &mut Vec<u8>, title: &mut String, place: &mut String) -> Result<bool> {
+    pub fn tournament_into(
+        &self,
+        id: i64,
+        scratch: &mut Vec<u8>,
+        title: &mut String,
+        place: &mut String,
+    ) -> Result<bool> {
         title.clear();
         place.clear();
         let Some(payload) = self.raw_ref(TOURNAMENT, id, scratch)? else { return Ok(false) };
@@ -189,7 +198,9 @@ impl Entities {
     }
 
     /// Direct access to the underlying positional-read/mmap file.
-    pub fn db_file(&self) -> &DbFile { &self.file }
+    pub fn db_file(&self) -> &DbFile {
+        &self.file
+    }
 }
 
 /// Preserve UTF-8, lossily replacing malformed bytes only at the output
@@ -201,13 +212,22 @@ fn append_text(into: &mut String, src: &[u8]) {
     }
 }
 
-struct Cursor<'a> { bytes: &'a [u8], offset: usize }
+struct Cursor<'a> {
+    bytes: &'a [u8],
+    offset: usize,
+}
 impl<'a> Cursor<'a> {
-    fn new(bytes: &'a [u8]) -> Self { Self { bytes, offset: 0 } }
+    fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, offset: 0 }
+    }
     fn take(&mut self, n: usize, path: &std::path::Path) -> Result<&'a [u8]> {
-        let end = self.offset.checked_add(n)
+        let end = self
+            .offset
+            .checked_add(n)
             .ok_or_else(|| Error::corrupt(path, self.offset as u64, ".2lid: overflowing entity field"))?;
-        let bytes = self.bytes.get(self.offset..end)
+        let bytes = self
+            .bytes
+            .get(self.offset..end)
             .ok_or_else(|| Error::corrupt(path, self.offset as u64, ".2lid: truncated entity field"))?;
         self.offset = end;
         Ok(bytes)
@@ -217,7 +237,9 @@ impl<'a> Cursor<'a> {
     }
     fn string(&mut self, path: &std::path::Path) -> Result<&'a [u8]> {
         let n = self.i32(path)?;
-        if n < 0 { return Err(Error::corrupt(path, self.offset as u64, ".2lid: negative text length")); }
+        if n < 0 {
+            return Err(Error::corrupt(path, self.offset as u64, ".2lid: negative text length"));
+        }
         self.take(n as usize, path)
     }
 }
