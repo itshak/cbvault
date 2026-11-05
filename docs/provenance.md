@@ -20,10 +20,10 @@ Clean-room work reads a GPL reference, but only in Room 1 and only to write down
 facts; what reaches the tree is Room 2's implementation, written from the
 specification alone.
 
-The pinned ancestor for every Port row: `oschess-cb-bridge` at
-`ca9e8f8e4389edd6430f02a14b33ff53552bcadc` (MIT, "Copyright (c) 2026 the
-oschess-cb-bridge contributors"); local snapshot in `vendor/upstream-snapshot/`,
-classification in `docs/port-inventory.md`.
+The pinned ancestors for Port rows (`oschess-cb-bridge`, MIT, "Copyright (c) 2026 the oschess-cb-bridge contributors"):
+- Classic `.cbh` baseline: commit `ca9e8f8e4389edd6430f02a14b33ff53552bcadc` (v1.0.0, 2026-09-27)
+- 2CBH `.2cbh` foundation: commit `bffebfc498d52b4e4631aed32b2f8e8194d125ff` (annotated tag v1.0.3, 2026-09-28)
+Local snapshot in `vendor/upstream-snapshot/`, classification in `docs/port-inventory.md`.
 
 ## `.cbv` / `.cbz` clean-room protocol
 
@@ -102,15 +102,15 @@ State: `planned` until the porting task lands; then `ported`/`ported (chess swap
 | `cbvault-format` — `cbh::batch` | `cbh/mod.rs` (batching concepts) | port | **ported** (`fast-decode-and-parallel-replay`); extended with original zero-copy header borrowing and mmap span reads in `maximum-single-thread-decode` |
 | `cbvault-format` — `cbh::{annotations, text, window}` | `cbh/{annotations,text,window}.rs` | port | **ported** (3.4–3.5, 4.1). `text.rs` and `window.rs` were later reorganised into the original `cbh/textblocks.rs` and `cbh/batch.rs`, which carry their own notices |
 | `cbvault-format` — `cbh::moves` (record split, start decode) | `cbh/moves.rs` | port + chess swap (start board via `gigachess`) | **ported** (3.1, 3.3) |
-| `cbvault-format` — `v2::{bytes, record, frame, entities, moves, window, annotations}` | `v2/**` | port | **not ported.** `twocbh/**` was written from the 2CBH format *facts* (Morphy's published specification, the ancestor's format notes, and our own byte inspection), so those modules carry no port notice — see the facts-only record below |
+| `cbvault-format` — `twocbh::{bytes, record, frame, entities, moves, header, segment, annotations}` | `v2/**` | port (MIT @ `bffebfc4`) | **ported** (`native-2cbh-readonly` tasks 2.1–2.4). Checksum, framing, 192-byte headers, `.2lid` containers, move record parsing, and `.2cba` annotations. |
 | `cbvault-format` — `game::{head, fields, entities}` | `game/{head,fields,entities}.rs` | port | **ported** (2.1–2.3) |
 | `cbvault-format` — `game::{start, annotations}` | `game/{start,annotations}.rs` | port | planned (3.3, 4.1–4.2) |
-| `cbvault-chess` — `movetable` | `movetable/**` | port (raw format data — credited to MIT `asdfjkl/cbh2pgn`; ancestor states it follows the published format description) | **landed elsewhere**: the tables live in `cbvault-format::tables` (already credited above) and are consumed by `cbvault-chess::decode`. No `movetable` module exists |
+| `cbvault-chess` — `movetable`, `v2` | `movetable/**`, `v2/**` | port + chess swap (`gigachess`, 16-bit `moves2`, king→rook castling `e1h1`/`e1a1`, `Board::play_fast`) | **ported** (`native-2cbh-readonly` task 2.2). The move-word table decodes 2CBH tokens into `moves2` currency directly without intermediate data structures. |
 | `cbvault-chess` — `decode`, `pieces`, `tree`, `start` | `cbh/{decode,pieces}.rs`, `replay/**`, `game/start.rs` | port + chess swap (`moves2`, `gigachess` legality incl. null moves via `make_null_move`, king→rook castling, Polyglot keys) | **ported** (3.1–3.4) |
 | `cbvault` — `view` | `view.rs` | port | **not ported**: no `view` module exists. The same role is filled by `cbvault::bridge` (the `Database` façade and its sink contract), which is original — see its row below |
-| `cbvault` — `pgn::{san, tree, commands, comments, classic, mod}` | `pgn/**` | port + chess swap (streaming writer, SAN via `gigachess` at the boundary; null moves as `--`) | **ported** (3.5) |
-| `cbvault-fixtures` — classic writer | `fixture_cbh.rs`, `fixture_cbh/builder.rs` | port + chess swap | **ported (0.6)**; 2CBH writer (`fixture.rs`) pending the 2CBH change |
-| `cbvault-fixtures` — 2CBH writer | `fixture.rs` | port + chess swap | planned (2CBH follow-up) |
+| `cbvault` — `pgn::{san, tree, commands, comments, classic, mod}` | `pgn/**` | port + chess swap (streaming writer, SAN via `gigachess` at the boundary; null moves as `--`) | **ported** (3.5); extended with 2CBH streaming PGN writer in `native-2cbh-readonly` (task 2.5) |
+| `cbvault-fixtures` — classic writer | `fixture_cbh.rs`, `fixture_cbh/builder.rs` | port + chess swap | **ported (0.6)** |
+| `cbvault-fixtures` — 2CBH writer | `fixture_v2.rs` | port + chess swap | **ported** (`native-2cbh-readonly` task 2.5). Generates valid `.2cbh`, `.2cbg`, `.2cba`, and `.2lid` synthetic fixtures. |
 
 ### Facts-only records
 

@@ -122,6 +122,9 @@ pub fn export_span_report(
     first: u32,
     last: u32,
 ) -> Result<(ExportStats, Vec<String>)> {
+    if cbvault_format::twocbh::sibling(base, ".2cbh").exists() {
+        return export_span_report_v2(base, out, threads, batch_size, failure_limit, first, last);
+    }
     let headers = Headers::open(base)?;
     let entities = Entities::open(base)?;
     let annotations = Annotations::open(base)?;
@@ -310,4 +313,145 @@ fn record(failures: &Mutex<Vec<String>>, limit: usize, message: String) {
     if list.len() < limit {
         list.push(message);
     }
+}
+
+/// Exports 2CBH databases in parallel.
+pub fn export_span_report_v2(
+    base: &Path,
+    out: &mut impl Write,
+    threads: usize,
+    batch_size: u32,
+    failure_limit: usize,
+    first: u32,
+    last: u32,
+) -> Result<(ExportStats, Vec<String>)> {
+    let headers = cbvault_format::twocbh::Headers::open(base)?;
+    let lid_path = cbvault_format::twocbh::sibling(base, ".2lid");
+    let entities = cbvault_format::twocbh::Entities::open(lid_path)?;
+    let cbg_path = cbvault_format::twocbh::sibling(base, ".2cbg");
+    let cbg = cbvault_format::twocbh::Segment::open(cbg_path)?;
+    let cba_path = cbvault_format::twocbh::sibling(base, ".2cba");
+    let _cba = if cba_path.exists() { cbvault_format::twocbh::Segment::open(cba_path).ok() } else { None };
+    let total = headers.games();
+
+    let batch = if batch_size == 0 { DEFAULT_BATCH } else { batch_size };
+    let first = first.max(1);
+    let last = if last == 0 { total } else { last.min(total) };
+    let mut chunks: Vec<(u32, u32)> = Vec::new();
+    let mut id = first;
+    while id <= last {
+        let end = id.saturating_add(batch - 1).min(last);
+        chunks.push((id, end));
+        id = end + 1;
+    }
+
+    let failures = Mutex::new(Vec::new());
+    let mut stats = ExportStats::default();
+    let sink = &mut *out;
+
+    let buffers: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
+    let high_water = AtomicUsize::new(0);
+
+    let render_chunk = |(start_id, end_id): (u32, u32)| -> (Vec<u8>, ExportStats) {
+        let mut local_stats = ExportStats::default();
+        let mut writer = PgnWriter::new();
+        let target_capacity = high_water.load(Ordering::Relaxed);
+        let mut buf = buffers.lock().unwrap().pop().unwrap_or_else(|| Vec::with_capacity(target_capacity));
+        buf.clear();
+
+        for rec_id in start_id..=end_id {
+            local_stats.records += 1;
+            let header = match headers.record(rec_id) {
+                Ok(h) => h,
+                Err(e) => {
+                    local_stats.failures += 1;
+                    record(&failures, failure_limit, format!("game {rec_id}: {e}"));
+                    continue;
+                }
+            };
+
+            if header.is_deleted() {
+                continue;
+            }
+            match header.kind() {
+                cbvault_format::game::RecordKind::Game => {}
+                cbvault_format::game::RecordKind::Text => {
+                    local_stats.texts += 1;
+                    continue;
+                }
+                _ => continue,
+            }
+
+            let at = header.moves_offset();
+            let seg_rec = match cbg.record_at(at) {
+                Ok(r) => r,
+                Err(e) => {
+                    local_stats.failures += 1;
+                    record(&failures, failure_limit, format!("game {rec_id}: {e}"));
+                    continue;
+                }
+            };
+            let moves = match cbvault_format::twocbh::moves::GameMoves::from_record(cbg.path(), seg_rec.record()) {
+                Ok(m) => m,
+                Err(e) => {
+                    local_stats.failures += 1;
+                    record(&failures, failure_limit, format!("game {rec_id}: {e}"));
+                    continue;
+                }
+            };
+
+            match writer.write_game_v2(&mut buf, &header, &entities, &moves, None) {
+                Ok(()) => local_stats.games += 1,
+                Err(e) => {
+                    local_stats.failures += 1;
+                    record(&failures, failure_limit, format!("game {rec_id}: {e}"));
+                }
+            }
+        }
+
+        high_water.fetch_max(buf.capacity(), Ordering::Relaxed);
+        local_stats.bytes = buf.len() as u64;
+        local_stats.peak_writer = writer.capacity() as u64;
+        (buf, local_stats)
+    };
+
+    let merge_chunk = |stats: &mut ExportStats, s: &ExportStats| {
+        stats.records += s.records;
+        stats.games += s.games;
+        stats.texts += s.texts;
+        stats.bytes += s.bytes;
+        stats.failures += s.failures;
+        stats.peak_writer = stats.peak_writer.max(s.peak_writer);
+    };
+
+    if threads <= 1 {
+        for chunk in chunks {
+            let (buf, chunk_stats) = render_chunk(chunk);
+            if let Err(e) = sink.write_all(&buf) {
+                return Err(cbvault_format::error::Error::corrupt(base, 0, format!("write failed: {e}")));
+            }
+            merge_chunk(&mut stats, &chunk_stats);
+            buffers.lock().unwrap().push(buf);
+        }
+    } else {
+        use rayon::prelude::*;
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .map_err(|e| cbvault_format::error::Error::corrupt(base, 0, format!("thread pool creation failed: {e}")))?;
+        let wave_size = threads * 2;
+        for wave in chunks.chunks(wave_size) {
+            let rendered: Vec<(Vec<u8>, ExportStats)> =
+                pool.install(|| wave.par_iter().copied().map(render_chunk).collect());
+            for (buf, chunk_stats) in rendered {
+                if let Err(e) = sink.write_all(&buf) {
+                    return Err(cbvault_format::error::Error::corrupt(base, 0, format!("write failed: {e}")));
+                }
+                merge_chunk(&mut stats, &chunk_stats);
+                buffers.lock().unwrap().push(buf);
+            }
+        }
+    }
+
+    Ok((stats, failures.into_inner().unwrap()))
 }

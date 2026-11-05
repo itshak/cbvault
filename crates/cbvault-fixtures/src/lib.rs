@@ -12,6 +12,7 @@
 //! re-based on `gigachess`; see `docs/provenance.md`.
 
 pub mod classic;
+pub mod twocbh;
 
 use std::path::{Path, PathBuf};
 

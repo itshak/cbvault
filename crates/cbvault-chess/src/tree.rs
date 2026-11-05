@@ -142,3 +142,19 @@ pub fn decode_game_into(what: GameRef, game: &GameMoves<'_>, buf: &mut MovesBuf)
     buf.stats = stats;
     Ok(stats)
 }
+
+/// Decodes a 2CBH game into `buf` (which is emptied first) and returns what the
+/// walk counted.
+pub fn decode_v2_into(
+    what: GameRef,
+    game: &cbvault_format::twocbh::moves::GameMoves<'_>,
+    buf: &mut MovesBuf,
+) -> Result<TreeStats> {
+    let start = crate::v2::decode_v2_start(game)?;
+    let board = start_board(&start)?;
+    buf.clear();
+    buf.start = Some(board);
+    let stats = crate::v2::walk_v2_from(what, game, &start, buf)?;
+    buf.stats = stats;
+    Ok(stats)
+}

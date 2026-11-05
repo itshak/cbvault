@@ -87,6 +87,30 @@ fn run_info(mut args: impl Iterator<Item = String>) -> Result<bool, Box<dyn std:
 
     let db_path = db_path.ok_or(USAGE)?;
     let base = Path::new(&db_path);
+
+    if cbvault_format::twocbh::sibling(base, ".2cbh").exists() {
+        let headers = cbvault_format::twocbh::Headers::open(base)?;
+        let total = headers.records();
+        let entities = cbvault_format::twocbh::Entities::open(base).ok();
+        let counts = entities.as_ref().map(|e| e.counts());
+        if json {
+            let [p, t, a, s] = counts.unwrap_or([0, 0, 0, 0]);
+            println!(
+                "{{\"format\":2,\"records\":{total},\"players\":{p},\"tournaments\":{t},\"annotators\":{a},\"sources\":{s}}}"
+            );
+        } else {
+            println!("format version 2 (2CBH)");
+            println!("records        {total}");
+            if let Some([p, t, a, s]) = counts {
+                println!("players        {p}");
+                println!("tournaments    {t}");
+                println!("annotators     {a}");
+                println!("sources        {s}");
+            }
+        }
+        return Ok(true);
+    }
+
     let headers = Headers::open(base)?;
     let total = headers.records();
 

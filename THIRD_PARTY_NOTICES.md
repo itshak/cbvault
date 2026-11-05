@@ -8,6 +8,9 @@
 
 - Source: https://github.com/asavis/oschess-cb-bridge
 - License: MIT — "Copyright (c) 2026 the oschess-cb-bridge contributors"
+- Pinned commits:
+  - `ca9e8f8e4389edd6430f02a14b33ff53552bcadc` (tag `v1.0.0`, 2026-09-27): classic `.cbh` reader, codepage, database items, PGN output.
+  - `bffebfc498d52b4e4631aed32b2f8e8194d125ff` (tag `v1.0.3`, 2026-09-28): 2CBH `.2cbh` framing, move-word table, `.2lid` entities, `.2cba` annotations.
 - Usage: the on-disk format readers, codepage handling, database items, view/replay structure and PGN output are **ported and modified**: the `chesscore` chess layer is replaced by `gigachess`. Ported files retain the upstream MIT notice and are listed in `docs/provenance.md`. The workspace conventions (`rustfmt.toml`, lints, release profile) follow the ancestor's; no code is copied for them, and the test-only fixture builder is a port of the ancestor's `fixture`/`fixture_cbh` modules.
 
 ## Dependencies

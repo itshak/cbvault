@@ -39,6 +39,21 @@
 
 ---
 
+## 0.1 Reconciliation and correction table (2026-11-05)
+
+The table below reconciles the earlier clean-room observations with the verified layout from pinned MIT `oschess-cb-bridge` v1.0.3 (`bffebfc498d52b4e4631aed32b2f8e8194d125ff`) and Morphy v2 specifications. The original measured byte values remain valid, while previous interpretations are formally marked superseded:
+
+| Area | Prior local hypothesis | Verified reality & byte-level probe | Status |
+|---|---|---|---|
+| **Checksum** | Offset `+0x10` of `.2cbg`/`.2cba` was an unknown 8-byte value distinct in 1,990 of 2,000 sampled records (§5.2). | Offset `+0x10` is an 8-byte **big-endian checksum** of `content`. Probe: split `content` into 8 equal slices of length `m = len / 8`; byte `i` of checksum is `sum(slice[i]) mod 256`. For `len < 8`, zero-padded LE bytes. Matches `be_u64(frame, 0x10)`. | **✓ Corrected** (supersedes §5.2 row 0x10) |
+| **Tag vs content offset** | Content began at `+0x18`; tag was unknown or conflated with payload (§5.2, §5.3). | Tag is **2 bytes LE at `+0x18`** (`0x0001` normal, `0x0002` Chess960, `0x2000` annotations). Content begins at **`+0x1a`** (`FRAME_HEADER = 0x1a`), with length `A` (`u32 LE` at `+0x08`). Total frame size = `0x1a + A + B + 8 = 34 + A + B`. | **✓ Corrected** (supersedes §5.2 rows 0x18 & content) |
+| **Spare padding `B`** | `B` at `+0x0c` was an unknown codec parameter (window or table size) (§5.3). | `B` is **spare capacity** (in bytes) reserved in the frame for in-place growth. It consists of `B` zero bytes following content `[0x1a + A, 0x1a + A + B)`. The trailer is at `0x1a + A + B`. | **✓ Corrected** (supersedes §5.3) |
+| **Entity names (.2lid)** | Player/event names were assumed inline in the `.2cbh` record (§1, §4.3). | Player, tournament, annotator, source, team and title names are stored in **`.2lid`**. Fields at `.2cbh` offsets `0x18` (White), `0x20` (Black), `0x28` (Tournament), `0x30` (Annotator), `0x38` (Source), `0x40` (White team), `0x48` (Black team), `0x50` (Game tag) are 64-bit LE entity IDs. | **✓ Corrected** (supersedes §1, §4.3 name claims) |
+| **Rating types** | Offsets `0x68` and `0x78` were 16-byte source and annotator name fields (§4.3). | `0x60` is White Elo (`i16 LE`), `0x68` is White rating authority/type text (e.g. `FIDE`), `0x70` is Black Elo (`i16 LE`), `0x78` is Black rating authority/type text. | **✓ Corrected** (supersedes §4.3 rows 0x68/0x78) |
+| **Move words** | `.2cbg` move codec was unknown, possibly compressed or arithmetically coded (§6). | `.2cbg` content is a **16-bit LE move-word stream**. Words `< 0xb129` encode all legal piece moves on an empty board; `0xb129..0xb12c` standard castle; `0xb12d..0xc02c` Chess960 castle; `0xc02d..0xc30c` setup pieces; `0xfffa` null move; `0xfffb` setup start; `0xfffc` moves start; `0xfffd` alternative; `0xffff` end of line. | **✓ Corrected** (supersedes §6) |
+
+---
+
 ## 1. The sets this document describes
 
 Ten 2CBH sets exist on this machine (byte counts are `stat` output):

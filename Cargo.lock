@@ -76,6 +76,7 @@ dependencies = [
 name = "cbvault-fixtures"
 version = "0.1.6"
 dependencies = [
+ "cbvault-chess",
  "cbvault-format",
  "gigachess",
 ]

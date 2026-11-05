@@ -115,6 +115,9 @@ pub fn verify_parallel(
     batch_size: u32,
     failure_limit: usize,
 ) -> cbvault_format::error::Result<(ReplayStats, Vec<String>)> {
+    if cbvault_format::twocbh::sibling(base, ".2cbh").exists() {
+        return verify_parallel_v2(base, threads, batch_size, failure_limit);
+    }
     let headers = Headers::open(base)?;
     let cbg_path = base.with_extension("cbg");
     let cbg = DbFile::open(cbg_path)?;
@@ -238,6 +241,146 @@ pub fn verify_parallel(
         })
     } else {
         // Rayon parallel execution
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .map_err(|e| cbvault_format::error::Error::corrupt(base, 0, format!("thread pool creation failed: {e}")))?;
+
+        pool.install(|| {
+            chunks.into_par_iter().map(run_chunk).reduce(ReplayStats::default, |mut acc, s| {
+                acc.merge(&s);
+                acc
+            })
+        })
+    };
+
+    let failures = failures.into_inner().unwrap_or_else(|e| e.into_inner());
+    Ok((total_stats, failures))
+}
+
+fn verify_parallel_v2(
+    base: &Path,
+    threads: usize,
+    batch_size: u32,
+    failure_limit: usize,
+) -> cbvault_format::error::Result<(ReplayStats, Vec<String>)> {
+    let headers = cbvault_format::twocbh::Headers::open(base)?;
+    let cbg_path = cbvault_format::twocbh::sibling(base, ".2cbg");
+    let cbg = cbvault_format::twocbh::Segment::open(cbg_path)?;
+    let total = headers.games();
+
+    let batch_size = if batch_size == 0 { 8192 } else { batch_size };
+    let mut chunks = Vec::new();
+    let mut id = 1u32;
+    while id <= total {
+        let last = (id + batch_size - 1).min(total);
+        chunks.push((id, last));
+        id = last + 1;
+    }
+
+    let failures = Mutex::new(Vec::new());
+    let record_failure = |msg: String| {
+        let mut list = failures.lock().unwrap_or_else(|e| e.into_inner());
+        if list.len() < failure_limit {
+            list.push(msg);
+        }
+    };
+
+    let run_chunk = |(first, last): (u32, u32)| -> ReplayStats {
+        let mut stats = ReplayStats::default();
+        let mut counting = MoveCounter::default();
+
+        for rec_id in first..=last {
+            let header = match headers.record(rec_id) {
+                Ok(h) => h,
+                Err(e) => {
+                    stats.failures += 1;
+                    record_failure(format!("game {rec_id}: {e}"));
+                    continue;
+                }
+            };
+
+            if header.is_deleted() {
+                stats.deleted += 1;
+            }
+            match header.kind() {
+                RecordKind::Game => stats.games += 1,
+                RecordKind::Text => {
+                    stats.texts += 1;
+                    continue;
+                }
+                RecordKind::Analysis | RecordKind::Unknown(_) => {
+                    stats.unknowns += 1;
+                    continue;
+                }
+            }
+
+            let at = header.moves_offset();
+            let seg_rec = match cbg.record_at(at) {
+                Ok(r) => r,
+                Err(e) => {
+                    stats.failures += 1;
+                    record_failure(format!("game {rec_id}: {e}"));
+                    continue;
+                }
+            };
+            let game = match cbvault_format::twocbh::moves::GameMoves::from_record(cbg.path(), seg_rec.record()) {
+                Ok(m) => m,
+                Err(e) => {
+                    stats.failures += 1;
+                    record_failure(format!("game {rec_id}: {e}"));
+                    continue;
+                }
+            };
+
+            if game.is_chess960() {
+                stats.chess960 += 1;
+            }
+            let what = cbvault_chess::decode::GameRef::at(rec_id, at);
+            let start = match cbvault_chess::v2::decode_v2_start(&game) {
+                Ok(s) => {
+                    if matches!(s, Start::Setup(_)) {
+                        stats.setups += 1;
+                    }
+                    s
+                }
+                Err(e) => {
+                    stats.failures += 1;
+                    record_failure(format!("game {rec_id}: {e}"));
+                    continue;
+                }
+            };
+
+            let tree_stats = match cbvault_chess::v2::walk_v2_from(what, &game, &start, &mut counting) {
+                Ok(s) => s,
+                Err(e) => {
+                    stats.failures += 1;
+                    record_failure(format!("game {rec_id}: {e}"));
+                    continue;
+                }
+            };
+            stats.main_plies += u64::from(tree_stats.main_line_plies);
+            stats.total_plies += u64::from(tree_stats.total_plies);
+            if header.annotations_offset() != 0 {
+                stats.annotated += 1;
+            }
+        }
+
+        stats.null_moves += counting.null_moves;
+        stats.en_passant += counting.en_passant;
+        stats.promo_captures += counting.promo_captures;
+        stats.promo_captures_distinct += counting.promo_captures_distinct;
+
+        stats
+    };
+
+    let total_stats = if threads == 1 {
+        chunks.into_iter().map(run_chunk).fold(ReplayStats::default(), |mut acc, s| {
+            acc.merge(&s);
+            acc
+        })
+    } else {
+        use rayon::prelude::*;
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(threads)
             .build()

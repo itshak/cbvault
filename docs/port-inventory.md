@@ -4,15 +4,21 @@
 > every module of its `cbformat` crate. Phase 2–4 port against this map; anything
 > not listed here is out of scope for the port.
 
-## The pinned ancestor
+## The pinned ancestors
 
-| | |
-|---|---|
-| Repository | https://github.com/asavis/oschess-cb-bridge |
-| Commit | `ca9e8f8e4389edd6430f02a14b33ff53552bcadc` — "Release 1.0.0: the first release oschess links to" (2026-09-27) |
-| License | MIT — "Copyright (c) 2026 the oschess-cb-bridge contributors" (repo `LICENSE`) |
-| Snapshot | `vendor/upstream-snapshot/` — git-ignored, local-only; recreate with `scripts/fetch-ancestor.sh` |
-| Upstream docs | `docs/format-notes.md` (659 lines), `docs/api.md` (837 lines) — MIT; facts may be ported with attribution |
+| Generation | Commit / Tag | Role | License |
+|---|---|---|---|
+| Classic `.cbh` | `ca9e8f8e4389edd6430f02a14b33ff53552bcadc` (`v1.0.0`, 2026-09-27) | Classic CBH reader baseline | MIT ("Copyright (c) 2026 the oschess-cb-bridge contributors") |
+| 2CBH `.2cbh` | `bffebfc498d52b4e4631aed32b2f8e8194d125ff` (annotated tag `v1.0.3`, 2026-09-28) | 2CBH format foundation (framing, move table, entities, annotations) | MIT ("Copyright (c) 2026 the oschess-cb-bridge contributors") |
+
+### Verification of v1.0.3 commit `bffebfc498d52b4e4631aed32b2f8e8194d125ff`
+- **Annotated tag:** `v1.0.3` tagged by `oschess-claude-bot` at 1790610703 +0200, pointing directly to commit `bffebfc498d52b4e4631aed32b2f8e8194d125ff`.
+- **License file:** `LICENSE` at commit `bffebfc4` is standard MIT License: `Copyright (c) 2026 the oschess-cb-bridge contributors`.
+- **Cargo.toml workspace:** `[workspace.package]` sets `license = "MIT"`, `edition = "2024"`. `crates/cbformat/Cargo.toml` inherits `license.workspace = true`.
+- **Authorship:** Commit authored by `claude-bot <asavis+oschess-claude-bot@gmail.com>`, co-authored by Claude Opus 5.5, tagged by `oschess-claude-bot`.
+- **Transitive dependencies:** `cbformat` at `bffebfc4` depends only on `chesscore` (internal workspace crate). Dev-dependencies: `cozy-chess` (test oracle only). No external GPL/AGPL runtime dependencies exist.
+- **Earlier port provenance:** Unchanged. Modules ported from `ca9e8f8e` remain identical in provenance and MIT compliance.
+
 
 ### Classification labels
 

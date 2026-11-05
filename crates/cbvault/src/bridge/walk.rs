@@ -22,11 +22,11 @@ use cbvault_chess::decode::{GameRef as Walked, MoveSink, start_as_played, walk_f
 use cbvault_chess::start::{Start, StartCache, start_board_cached};
 use cbvault_format::cbh::bytes::NameBuf;
 use cbvault_format::cbh::moves::GameMoves;
-use cbvault_format::cbh::{Entity, GameAnnotations, GameHeaderRef};
+use cbvault_format::cbh::{Entity, GameAnnotations};
 use cbvault_format::error::Result;
 use gigachess::Board;
 
-use super::sink::GameRef;
+use super::sink::{GameHeaderRef, GameRef};
 use super::{Database, namebase::Entities};
 
 /// The main line of one game as 16-bit `moves2`, and — when the sink asked for
@@ -398,15 +398,56 @@ impl GameBuf {
         Ok(!line.stop_all)
     }
 
+    /// Decodes the main line of one 2CBH game into this buffer, which is emptied first.
+    pub fn walk_v2(&mut self, id: u32, at: u64, game: &cbvault_format::twocbh::moves::GameMoves<'_>) -> Result<()> {
+        self.walk_v2_with(id, at, game, None).map(|_| ())
+    }
+
+    /// Decodes the main line of one 2CBH game with an optional early-stop predicate.
+    pub fn walk_v2_with(
+        &mut self,
+        id: u32,
+        at: u64,
+        game: &cbvault_format::twocbh::moves::GameMoves<'_>,
+        predicate: Option<&(dyn Fn(&Board) -> Flow + Sync)>,
+    ) -> Result<bool> {
+        let what = Walked::at(id, at);
+        let start = cbvault_chess::v2::decode_v2_start(game)?;
+        self.line.clear();
+        self.fen.clear();
+
+        let board = if !matches!(start, Start::Standard) {
+            let board = start_board_cached(&start, &mut self.starts)?;
+            if self.want_keys {
+                self.line.push_key(board.zobrist());
+            }
+            self.fen.push_str(&board.to_fen());
+            board
+        } else {
+            let board = cbvault_chess::start::standard_board();
+            if self.want_keys {
+                self.line.push_key(board.zobrist());
+            }
+            board
+        };
+
+        if let Some(pred) = predicate {
+            match pred(&board) {
+                Flow::Continue => {}
+                Flow::SkipGame => return Ok(true),
+                Flow::Stop => return Ok(false),
+            }
+        }
+
+        let keep = self.want_keys;
+        let MovesBuf { moves, keys } = &mut self.line;
+        let mut line = Line { moves, keys, keep, main: true, predicate, stopped: false, stop_all: false };
+        cbvault_chess::v2::walk_v2_from(what, game, &start, &mut line)?;
+        Ok(!line.stop_all)
+    }
+
     /// The sink's view of the last game walked: the payload and the names out
     /// of this buffer, the header and the annotations out of the database.
-    ///
-    /// The annotation record is read here rather than by the caller, because
-    /// the buffer it is read into is this one's: a `.cba` record is borrowed
-    /// from the map where the file is mapped, and read into `self.annotation`
-    /// where it is not, and either way the borrow has to be the same one the
-    /// [`GameRef`] carries. A caller that asked for no annotations does not open
-    /// the file at all.
     pub fn view<'a>(
         &'a mut self,
         id: u32,
@@ -415,7 +456,14 @@ impl GameBuf {
         want_annotations: bool,
     ) -> Result<GameRef<'a>> {
         let annotations = if want_annotations && header.annotations_offset() != 0 {
-            Some(db.annotations()?.of_ref(&header, db.wide(), &mut self.annotation)?)
+            match &header {
+                GameHeaderRef::Classic(h) => Some(db.annotations()?.of_ref(h, db.wide(), &mut self.annotation)?),
+                GameHeaderRef::ClassicOwned(h) => {
+                    let h_ref = cbvault_format::cbh::GameHeaderRef::from_bytes(h.id(), h.bytes().try_into().unwrap());
+                    Some(db.annotations()?.of_ref(&h_ref, db.wide(), &mut self.annotation)?)
+                }
+                GameHeaderRef::TwoCbh(_) => None,
+            }
         } else {
             None
         };
@@ -430,6 +478,17 @@ impl GameBuf {
             &line.keys,
             annotations,
         ))
+    }
+
+    /// The sink's view of the last 2CBH game walked.
+    pub fn view_v2<'a>(
+        &'a mut self,
+        id: u32,
+        header: GameHeaderRef<'a>,
+        db: &'a Database,
+        want_annotations: bool,
+    ) -> Result<GameRef<'a>> {
+        self.view(id, header, db, want_annotations)
     }
 }
 
@@ -508,20 +567,85 @@ impl GameBuf {
 /// decodes to the empty string and never to an error: a missing name is a tag
 /// the consumer stores as empty, not a game that fails.
 pub fn resolve_names(header: &GameHeaderRef<'_>, entities: &Entities, buf: &mut GameBuf) -> Result<()> {
-    player(entities, header.white(), &mut buf.white, &mut buf.last, &mut buf.first)?;
-    player(entities, header.black(), &mut buf.black, &mut buf.last, &mut buf.first)?;
+    let w_id = if header.white() >= 0 { header.white() as u32 } else { 0 };
+    let b_id = if header.black() >= 0 { header.black() as u32 } else { 0 };
+    let t_id = if header.tournament() >= 0 { header.tournament() as u32 } else { 0 };
+    let a_id = if header.annotator() >= 0 { header.annotator() as u32 } else { 0 };
+    let s_id = if header.source() >= 0 { header.source() as u32 } else { 0 };
+
+    player(entities, w_id, &mut buf.white, &mut buf.last, &mut buf.first)?;
+    player(entities, b_id, &mut buf.black, &mut buf.last, &mut buf.first)?;
 
     let GameBuf { event, site, .. } = buf;
     event.clear();
     site.clear();
-    if let Some(name) = entities.name(Entity::Tournament, header.tournament())? {
+    if let Some(name) = entities.name(Entity::Tournament, t_id)? {
         last_buf_set(&mut buf.last, name.last(), event);
         last_buf_set(&mut buf.first, name.first(), site);
     }
 
     let GameBuf { annotator, source, plain, .. } = buf;
-    single(entities, Entity::Annotator, header.annotator(), annotator, plain)?;
-    single(entities, Entity::Source, header.source(), source, plain)?;
+    single(entities, Entity::Annotator, a_id, annotator, plain)?;
+    single(entities, Entity::Source, s_id, source, plain)?;
+    Ok(())
+}
+
+/// Resolves 2CBH entity names from `.2lid` into `buf`.
+pub fn resolve_names_v2(
+    header: &GameHeaderRef<'_>,
+    entities: &cbvault_format::twocbh::Entities,
+    buf: &mut GameBuf,
+) -> Result<()> {
+    buf.white.clear();
+    buf.black.clear();
+    buf.event.clear();
+    buf.site.clear();
+    buf.annotator.clear();
+    buf.source.clear();
+
+    if header.white() >= 0
+        && let Some(p) = entities.player(header.white())?
+    {
+        buf.white.push_str(&p.last);
+        if !p.first.is_empty() {
+            if !buf.white.is_empty() {
+                buf.white.push_str(", ");
+            }
+            buf.white.push_str(&p.first);
+        }
+    }
+
+    if header.black() >= 0
+        && let Some(p) = entities.player(header.black())?
+    {
+        buf.black.push_str(&p.last);
+        if !p.first.is_empty() {
+            if !buf.black.is_empty() {
+                buf.black.push_str(", ");
+            }
+            buf.black.push_str(&p.first);
+        }
+    }
+
+    if header.tournament() >= 0
+        && let Some(t) = entities.tournament(header.tournament())?
+    {
+        buf.event.push_str(&t.title);
+        buf.site.push_str(&t.place);
+    }
+
+    if header.annotator() >= 0
+        && let Some(title) = entities.title(header.annotator())?
+    {
+        buf.annotator.push_str(&title);
+    }
+
+    if header.source() >= 0
+        && let Some(raw) = entities.raw(cbvault_format::twocbh::entities::SOURCE, header.source())?
+    {
+        buf.source.push_str(&String::from_utf8_lossy(&raw));
+    }
+
     Ok(())
 }
 

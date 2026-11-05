@@ -35,6 +35,8 @@ use cbvault_format::error::{Error, Result};
 use cbvault_format::file::DbFile;
 use cbvault_format::game::RecordKind;
 
+use super::Generation;
+use super::sink::GameHeaderRef;
 use super::walk::{self, GameBuf, game_ref};
 use super::{Database, GameSink};
 
@@ -117,6 +119,9 @@ impl<'db> Walker<'db> {
     /// the sink's `failed` is called with the typed error and the next record
     /// is read, which is what a damaged 1.25 GB `.cbg` needs.
     fn one(&mut self, id: u32, at: u64, sink: &mut impl GameSink) -> Result<bool> {
+        if self.db.generation() == Generation::TwoCbh {
+            return self.one_v2(id, at, sink);
+        }
         let record = match move_record(self.db.moves()?, at, &mut self.record) {
             Ok(record) => record,
             Err(e) => return self.failed(id, e, sink),
@@ -137,6 +142,40 @@ impl<'db> Walker<'db> {
             Ok(view) => view,
             // A record that will not read costs the annotations, not the game:
             // the tags and the moves are already decoded by then.
+            Err(_) => self.buf.view(id, header, self.db, false)?,
+        };
+        sink.game(view);
+        Ok(true)
+    }
+
+    fn one_v2(&mut self, id: u32, at: u64, sink: &mut impl GameSink) -> Result<bool> {
+        let seg = match self.db.moves_segment() {
+            Ok(s) => s,
+            Err(e) => return self.failed(id, e, sink),
+        };
+        let seg_rec = match seg.record_at(at) {
+            Ok(r) => r,
+            Err(e) => return self.failed(id, e, sink),
+        };
+        let game =
+            match cbvault_format::twocbh::moves::GameMoves::from_record(&self.db.members().moves, seg_rec.record()) {
+                Ok(game) => game,
+                Err(e) => return self.failed(id, e, sink),
+            };
+        if let Err(e) = self.buf.walk_v2(id, at, &game) {
+            return self.failed(id, e, sink);
+        }
+        let header = match self.db.header_ref(id) {
+            Ok(header) => header,
+            Err(e) => return self.failed(id, e, sink),
+        };
+        if let Some(entities_v2) = self.db.twocbh_entities()
+            && let Err(e) = walk::resolve_names_v2(&header, entities_v2, &mut self.buf)
+        {
+            return self.failed(id, e, sink);
+        }
+        let view = match self.buf.view(id, header, self.db, self.want_annotations) {
+            Ok(view) => view,
             Err(_) => self.buf.view(id, header, self.db, false)?,
         };
         sink.game(view);
@@ -472,7 +511,7 @@ fn error_clone(error: &Error) -> Error {
 /// overlap, and the sequential path is the one whose order everything else is
 /// compared against.
 pub fn convert_parallel(db: &Database, sink: &mut impl GameSink, threads: usize, batch: u32) -> Result<ConvertStats> {
-    if threads <= 1 {
+    if threads <= 1 || db.generation() == Generation::TwoCbh {
         return for_each_game(db, sink);
     }
     let batch = if batch == 0 { DEFAULT_BATCH } else { batch };
@@ -651,7 +690,8 @@ impl Writer<'_> {
                 self.stats.failures += 1;
                 continue;
             };
-            walk::resolve_names(&header, self.db.entities(), &mut self.buf)?;
+            let header_ref = GameHeaderRef::Classic(header);
+            walk::resolve_names(&header_ref, self.db.entities(), &mut self.buf)?;
             let annotations = if row.annotated && want_annotations {
                 annotations_of(self.db, &header, &mut self.scratch).ok().flatten()
             } else {
@@ -660,7 +700,7 @@ impl Writer<'_> {
             let moves = span(&chunk.moves, row.moves);
             let keys = span(&chunk.keys, row.keys);
             let fen = span_str(&chunk.fens, row.fen);
-            let game = game_ref(id, header, self.buf.names(), fen, moves, keys, annotations);
+            let game = game_ref(id, header_ref, self.buf.names(), fen, moves, keys, annotations);
             sink.game(game);
             self.stats.games += 1;
             self.stats.plies += moves.len() as u64;

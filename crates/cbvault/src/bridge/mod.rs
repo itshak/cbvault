@@ -57,7 +57,7 @@ pub use search::{
     AllOf, Filter, Hit, IdSet, Match, PositionQuery, PositionSearch, Range, Scan, SearchStats, any_player,
     for_each_position_key, scan, scan_range,
 };
-pub use sink::{GameRef, GameSink};
+pub use sink::{GameHeaderRef, GameRef, GameSink};
 pub use walk::{Flow, GameBuf, MovesBuf, Names};
 
 pub use cbvault_format::error::{Error, Result};
@@ -66,7 +66,7 @@ use std::path::{Path, PathBuf};
 
 use cbvault_format::cbh::Headers as CbhHeaders;
 use cbvault_format::cbh::moves::GameMoves;
-use cbvault_format::cbh::{Annotations, Entity, Flags, GameHeader, GameHeaderRef, Wide};
+use cbvault_format::cbh::{Annotations, Entity, Flags, GameHeader, Wide};
 use cbvault_format::error::Role;
 use cbvault_format::file::DbFile;
 use cbvault_format::game::RecordKind;
@@ -123,6 +123,8 @@ const MANDATORY: [(&str, Role); 7] = [
     (".cbc", Role::Entities),
     (".cbs", Role::Entities),
 ];
+
+const MANDATORY_2CBH: [(&str, Role); 3] = [(".2cbh", Role::Headers), (".2cbg", Role::Moves), (".2lid", Role::Entities)];
 
 /// The path `ext` appended to `stem`, resolved case-insensitively from the same
 /// directory when the exact name is not there.
@@ -259,6 +261,34 @@ impl Members {
 /// # Ok::<(), cbvault::bridge::Error>(())
 /// ```
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
+enum Backend {
+    Classic(ClassicBackend),
+    TwoCbh(TwoCbhBackend),
+}
+
+#[derive(Debug)]
+struct ClassicBackend {
+    headers: CbhHeaders,
+    entities: Entities,
+    wide: Option<Wide>,
+    flags: Option<Flags>,
+    moves: std::sync::OnceLock<DbFile>,
+    annotations: std::sync::OnceLock<Annotations>,
+    format_entities: std::sync::OnceLock<cbvault_format::cbh::Entities>,
+}
+
+#[derive(Debug)]
+struct TwoCbhBackend {
+    headers: cbvault_format::twocbh::Headers,
+    entities: cbvault_format::twocbh::Entities,
+    moves: std::sync::OnceLock<cbvault_format::twocbh::Segment>,
+    #[allow(dead_code)]
+    annotations: std::sync::OnceLock<Option<cbvault_format::twocbh::Segment>>,
+}
+
+/// A read-only view of one ChessBase database.
+#[derive(Debug)]
 pub struct Database {
     /// The base path every member of the set shares, extension included.
     base: PathBuf,
@@ -266,49 +296,22 @@ pub struct Database {
     generation: Generation,
     /// The files that were found.
     members: Members,
-    /// The header records, and with them the record count.
-    headers: CbhHeaders,
-    /// The namebases, for the resolved names.
-    entities: Entities,
-    /// The 64-bit offsets of a set over 4 GiB.
-    wide: Option<Wide>,
-    /// The Top Games bits, when the set has `.flags`.
-    flags: Option<Flags>,
-    /// The moves file, opened on the first request for a game — never by a
-    /// header list, never by a tag search.
-    moves: std::sync::OnceLock<DbFile>,
-    /// The annotation file, opened on the first request for annotations.
-    annotations: std::sync::OnceLock<Annotations>,
-    /// The format crate's entity tables, opened on the first request for PGN formatting.
-    format_entities: std::sync::OnceLock<cbvault_format::cbh::Entities>,
+    backend: Backend,
 }
 
 impl Database {
     /// Opens the set `path` names — its base name with no extension, or any one
     /// of its member files, in any case.
-    ///
-    /// The siblings are resolved from the same directory and case-insensitively,
-    /// so `Database::open("Mega Database 2025")` and
-    /// `Database::open("MEGA DATABASE 2025.CBH")` are the same database. Every
-    /// mandatory member must be there; the first one that is not is reported as
-    /// an [`Error::MissingFile`] naming the path that was looked for and the
-    /// role it plays, and nothing is left open, because the check runs before
-    /// any file is opened.
-    ///
-    /// A set this build cannot read is reported before any work: a 2CBH set
-    /// gets [`Error::MissingFile`] for the `.cbh` a classic reader needs, which
-    /// is exactly what is absent, and [`generation_of`] tells a caller which
-    /// generation it is looking at if it wants to say so first.
     pub fn open(path: impl AsRef<Path>) -> Result<Database> {
         let stem = stem_of(path.as_ref());
         match generation_of(&stem) {
-            Generation::Classic => {}
-            // A set this build cannot read yet. The `.cbh` a classic reader
-            // needs is named because it is what is absent, and
-            // `generation_of` says which generation the set is, for a caller
-            // that wants to report it before opening.
-            _ => return Err(Error::MissingFile { path: sibling(&stem, ".cbh"), role: Role::Headers }),
+            Generation::Classic => Self::open_classic(stem),
+            Generation::TwoCbh => Self::open_twocbh(stem),
+            Generation::Unknown => Err(Error::MissingFile { path: sibling(&stem, ".cbh"), role: Role::Headers }),
         }
+    }
+
+    fn open_classic(stem: PathBuf) -> Result<Database> {
         for (ext, role) in MANDATORY {
             let path = sibling(&stem, ext);
             if path.symlink_metadata().is_err() {
@@ -318,22 +321,13 @@ impl Database {
 
         let headers = CbhHeaders::open(&stem)?;
         let entities = Entities::open(&stem)?;
-        // `open_auto` skips the 1.3 GB `.cbj` when `.cbg`/`.cba` are below 4 GiB
-        // (its offsets cannot add information there); `CBVAULT_WIDE=on` forces
-        // the old always-open behaviour for measurement.
         let wide = Wide::open_auto(&stem);
-        // `.flags` is optional, and the flags reader reports an absent file as
-        // a plain I/O error rather than a `MissingFile`; either way an absent
-        // file is not an error here.
         let flags = match Flags::open(&stem) {
             Ok(flags) => Some(flags),
             Err(Error::MissingFile { .. }) => None,
             Err(Error::Io { source, .. }) if source.kind() == std::io::ErrorKind::NotFound => None,
             Err(e) => return Err(e),
         };
-        // `Members.wide` reports presence on disk (what `info` shows), while
-        // `Database.wide` is the opened index (skipped below 4 GiB by
-        // `open_auto`). A present-but-skipped `.cbj` is still listed.
         let members = Members {
             headers: sibling(&stem, ".cbh"),
             moves: sibling(&stem, ".cbg"),
@@ -352,13 +346,52 @@ impl Database {
             base: stem,
             generation: Generation::Classic,
             members,
-            headers,
-            entities,
-            wide,
-            flags,
-            moves: std::sync::OnceLock::new(),
-            annotations: std::sync::OnceLock::new(),
-            format_entities: std::sync::OnceLock::new(),
+            backend: Backend::Classic(ClassicBackend {
+                headers,
+                entities,
+                wide,
+                flags,
+                moves: std::sync::OnceLock::new(),
+                annotations: std::sync::OnceLock::new(),
+                format_entities: std::sync::OnceLock::new(),
+            }),
+        })
+    }
+
+    fn open_twocbh(stem: PathBuf) -> Result<Database> {
+        for (ext, role) in MANDATORY_2CBH {
+            let path = sibling(&stem, ext);
+            if path.symlink_metadata().is_err() {
+                return Err(Error::MissingFile { path, role });
+            }
+        }
+
+        let headers = cbvault_format::twocbh::Headers::open(&stem)?;
+        let entities = cbvault_format::twocbh::Entities::open(sibling(&stem, ".2lid"))?;
+        let members = Members {
+            headers: sibling(&stem, ".2cbh"),
+            moves: sibling(&stem, ".2cbg"),
+            annotations: sibling(&stem, ".2cba"),
+            players: sibling(&stem, ".2lid"),
+            tournaments: sibling(&stem, ".2lid"),
+            annotators: sibling(&stem, ".2lid"),
+            sources: sibling(&stem, ".2lid"),
+            wide: None,
+            teams: present(&stem, ".2lid"),
+            flags: None,
+            tournament_tree: present(&stem, ".2lgd"),
+            cross_table: present(&stem, ".2lcd"),
+        };
+        Ok(Database {
+            base: stem,
+            generation: Generation::TwoCbh,
+            members,
+            backend: Backend::TwoCbh(TwoCbhBackend {
+                headers,
+                entities,
+                moves: std::sync::OnceLock::new(),
+                annotations: std::sync::OnceLock::new(),
+            }),
         })
     }
 
@@ -367,10 +400,7 @@ impl Database {
         &self.base
     }
 
-    /// Which generation the set is written in. Always
-    /// [`Generation::Classic`] for a database this build opened, because
-    /// [`Database::open`] refuses the others; [`generation_of`] classifies a
-    /// path without opening it.
+    /// Which generation the set is written in.
     pub fn generation(&self) -> Generation {
         self.generation
     }
@@ -381,64 +411,140 @@ impl Database {
     }
 
     /// Records in the header file, guiding texts and deleted games included.
-    /// This is the count the file itself states, so it costs nothing to read.
     pub fn records(&self) -> u32 {
-        self.headers.records()
+        match &self.backend {
+            Backend::Classic(c) => c.headers.records(),
+            Backend::TwoCbh(t) => t.headers.games(),
+        }
     }
 
     /// The `.cbh` header file, for a caller that wants its own view of it.
     pub fn headers_file(&self) -> &CbhHeaders {
-        &self.headers
+        match &self.backend {
+            Backend::Classic(c) => &c.headers,
+            Backend::TwoCbh(_) => panic!("headers_file is only available on classic databases"),
+        }
     }
 
     /// The namebases: names by id for the conversion, and name to id for a tag
     /// search.
     pub fn entities(&self) -> &Entities {
-        &self.entities
+        match &self.backend {
+            Backend::Classic(c) => &c.entities,
+            Backend::TwoCbh(_) => {
+                panic!("entities() is only available on classic databases; use twocbh_entities() for 2CBH")
+            }
+        }
+    }
+
+    /// The 2CBH headers, when the database is 2CBH.
+    pub fn twocbh_headers(&self) -> Option<&cbvault_format::twocbh::Headers> {
+        match &self.backend {
+            Backend::Classic(_) => None,
+            Backend::TwoCbh(t) => Some(&t.headers),
+        }
+    }
+
+    /// The 2CBH entities, when the database is 2CBH.
+    pub fn twocbh_entities(&self) -> Option<&cbvault_format::twocbh::Entities> {
+        match &self.backend {
+            Backend::Classic(_) => None,
+            Backend::TwoCbh(t) => Some(&t.entities),
+        }
     }
 
     /// The 64-bit offsets of a set whose moves or annotations pass 4 GiB, when
-    /// it has a `.cbj` and the index was opened. `None` means absent *or*
-    /// skipped below 4 GiB (`Wide::open_auto`); either way the 32-bit `.cbh`
-    /// offsets are complete. `members().wide` still reports presence on disk.
+    /// it has a `.cbj` and the index was opened.
     pub fn wide(&self) -> Option<&Wide> {
-        self.wide.as_ref()
+        match &self.backend {
+            Backend::Classic(c) => c.wide.as_ref(),
+            Backend::TwoCbh(_) => None,
+        }
     }
 
-    /// The Top Games bits, when the set has a `.flags` file. Two bits per
-    /// record; the low one is the mark (see `docs/format-spec.md`).
+    /// The Top Games bits, when the set has a `.flags` file.
     pub fn flags(&self) -> Option<&Flags> {
-        self.flags.as_ref()
+        match &self.backend {
+            Backend::Classic(c) => c.flags.as_ref(),
+            Backend::TwoCbh(_) => None,
+        }
     }
 
     /// The moves file, opened on the first request for a game and shared by
-    /// every later one. A header list and a tag search never call this, which is
-    /// what keeps them off the 1.25 GB of the reference database.
+    /// every later one.
     pub(crate) fn moves(&self) -> Result<&DbFile> {
-        if let Some(file) = self.moves.get() {
-            return Ok(file);
+        match &self.backend {
+            Backend::Classic(c) => {
+                if let Some(file) = c.moves.get() {
+                    return Ok(file);
+                }
+                let file = DbFile::open(self.members.moves.clone())?;
+                Ok(c.moves.get_or_init(|| file))
+            }
+            Backend::TwoCbh(_) => {
+                let seg = self.moves_segment()?;
+                Ok(seg.db_file())
+            }
         }
-        let file = DbFile::open(self.members.moves.clone())?;
-        Ok(self.moves.get_or_init(|| file))
     }
 
-    /// The annotation file, opened on the first request for annotations and
-    /// shared by every later one.
-    pub(crate) fn annotations(&self) -> Result<&Annotations> {
-        if let Some(file) = self.annotations.get() {
-            return Ok(file);
+    /// The 2CBH moves segment.
+    pub(crate) fn moves_segment(&self) -> Result<&cbvault_format::twocbh::Segment> {
+        match &self.backend {
+            Backend::Classic(_) => Err(Error::corrupt(&self.base, 0, "not a 2CBH database")),
+            Backend::TwoCbh(t) => {
+                if let Some(s) = t.moves.get() {
+                    return Ok(s);
+                }
+                let s = cbvault_format::twocbh::Segment::open(self.members.moves.clone())?;
+                Ok(t.moves.get_or_init(|| s))
+            }
         }
-        let file = Annotations::open(&self.base)?;
-        Ok(self.annotations.get_or_init(|| file))
+    }
+
+    /// The annotation file, opened on the first request for annotations.
+    pub(crate) fn annotations(&self) -> Result<&Annotations> {
+        match &self.backend {
+            Backend::Classic(c) => {
+                if let Some(file) = c.annotations.get() {
+                    return Ok(file);
+                }
+                let file = Annotations::open(&self.base)?;
+                Ok(c.annotations.get_or_init(|| file))
+            }
+            Backend::TwoCbh(_) => Err(Error::corrupt(&self.base, 0, "classic annotations not supported on 2CBH")),
+        }
+    }
+
+    /// The 2CBH annotations segment, if present.
+    #[allow(dead_code)]
+    pub(crate) fn annotations_segment(&self) -> Result<Option<&cbvault_format::twocbh::Segment>> {
+        match &self.backend {
+            Backend::Classic(_) => Ok(None),
+            Backend::TwoCbh(t) => {
+                if let Some(opt) = t.annotations.get() {
+                    return Ok(opt.as_ref());
+                }
+                let path = self.members.annotations.clone();
+                let seg = if path.exists() { cbvault_format::twocbh::Segment::open(path).ok() } else { None };
+                let _ = t.annotations.set(seg);
+                Ok(t.annotations.get().and_then(|o| o.as_ref()))
+            }
+        }
     }
 
     /// The format crate's entity tables, opened on the first request for PGN formatting.
     pub(crate) fn format_entities(&self) -> Result<&cbvault_format::cbh::Entities> {
-        if let Some(entities) = self.format_entities.get() {
-            return Ok(entities);
+        match &self.backend {
+            Backend::Classic(c) => {
+                if let Some(entities) = c.format_entities.get() {
+                    return Ok(entities);
+                }
+                let entities = cbvault_format::cbh::Entities::open(&self.base)?;
+                Ok(c.format_entities.get_or_init(|| entities))
+            }
+            Backend::TwoCbh(_) => Err(Error::corrupt(&self.base, 0, "classic format_entities not supported on 2CBH")),
         }
-        let entities = cbvault_format::cbh::Entities::open(&self.base)?;
-        Ok(self.format_entities.get_or_init(|| entities))
     }
 }
 
@@ -472,12 +578,7 @@ pub struct HeaderRef<'a> {
     /// The record's id in `.cbh`.
     pub id: u32,
     /// The header record as stored.
-    ///
-    /// Owned rather than borrowed — 46 bytes, `Copy`, and the whole point is
-    /// that an item then outlives the batch it was read from, so a caller can
-    /// keep a list of them. [`GameHeaderRef`] over the same bytes is one
-    /// `to_owned()` away in the other direction.
-    pub header: GameHeader,
+    pub header: GameHeaderRef<'a>,
     /// The white player: a last name and a forename, in one record.
     pub white: Name<'a>,
     /// The black player.
@@ -661,10 +762,13 @@ impl<'db> Headers<'db> {
 
     /// Reads the next batch of records, from the map where there is one.
     fn fill(&mut self) -> Result<()> {
+        let Backend::Classic(c) = &self.db.backend else {
+            return Ok(());
+        };
         let count = LIST_BATCH.min(self.last - self.at + 1);
         let bytes = count as usize * 46;
         let at = u64::from(self.at) * 46;
-        let file = self.db.headers.db_file();
+        let file = c.headers.db_file();
         self.batch_first = self.at;
         self.batch_len = count;
         self.index = 0;
@@ -678,7 +782,7 @@ impl<'db> Headers<'db> {
                 };
                 owned.clear();
                 owned.resize(bytes, 0);
-                self.db.headers.read_records(self.batch_first, count, &mut owned)?;
+                c.headers.read_records(self.batch_first, count, &mut owned)?;
                 Records::Owned(owned)
             }
         };
@@ -698,6 +802,44 @@ impl<'db> Iterator for Headers<'db> {
     /// reports.
     fn next(&mut self) -> Option<Result<HeaderRef<'db>>> {
         let db: &'db Database = self.db;
+        if let Backend::TwoCbh(t) = &db.backend {
+            while self.at <= self.last {
+                let id = self.at;
+                self.at += 1;
+                let header = match t.headers.record(id) {
+                    Ok(h) => h,
+                    Err(e) => return Some(Err(e)),
+                };
+                if header.is_deleted() {
+                    self.stats.deleted += 1;
+                    continue;
+                }
+                match header.kind() {
+                    RecordKind::Game => {}
+                    RecordKind::Text => {
+                        self.stats.texts += 1;
+                        continue;
+                    }
+                    RecordKind::Analysis | RecordKind::Unknown(_) => {
+                        self.stats.unknown += 1;
+                        continue;
+                    }
+                }
+                self.stats.games += 1;
+                return Some(Ok(HeaderRef {
+                    id,
+                    header: GameHeaderRef::TwoCbh(header),
+                    white: BLANK,
+                    black: BLANK,
+                    event: BLANK,
+                    site: BLANK,
+                    annotator: BLANK,
+                    source: BLANK,
+                }));
+            }
+            return None;
+        }
+
         loop {
             if self.index >= self.batch_len {
                 if self.at > self.last {
@@ -734,7 +876,16 @@ impl<'db> Iterator for Headers<'db> {
                 let site = Name::of(tournament.first());
                 let annotator = self.memo.resolve(entities, Entity::Annotator, header.annotator())?;
                 let source = self.memo.resolve(entities, Entity::Source, header.source())?;
-                Ok(HeaderRef { id: header.id(), header, white, black, event, site, annotator, source })
+                Ok(HeaderRef {
+                    id: header.id(),
+                    header: GameHeaderRef::ClassicOwned(header),
+                    white,
+                    black,
+                    event,
+                    site,
+                    annotator,
+                    source,
+                })
             })();
             match resolved {
                 Ok(item) => {
@@ -778,22 +929,34 @@ impl Database {
     /// The header record of game `id`, borrowed from the mapped `.cbh` with no copy
     /// and no allocation.
     pub fn header_ref(&self, id: u32) -> Result<GameHeaderRef<'_>> {
-        if id == 0 || id > self.headers.records() {
+        if id == 0 || id > self.records() {
             return Err(Error::NoSuchGame { id });
         }
-        let at = u64::from(id) * 46;
-        let bytes = self
-            .headers
-            .db_file()
-            .slice_at(at, 46)
-            .and_then(|slice| <&[u8; 46]>::try_from(slice).ok())
-            .ok_or_else(|| Error::corrupt(self.headers.path(), at, "header record out of range"))?;
-        Ok(GameHeaderRef::from_bytes(id, bytes))
+        match &self.backend {
+            Backend::Classic(c) => {
+                let at = u64::from(id) * 46;
+                let bytes = c
+                    .headers
+                    .db_file()
+                    .slice_at(at, 46)
+                    .and_then(|slice| <&[u8; 46]>::try_from(slice).ok())
+                    .ok_or_else(|| Error::corrupt(c.headers.path(), at, "header record out of range"))?;
+                Ok(GameHeaderRef::Classic(cbvault_format::cbh::GameHeaderRef::from_bytes(id, bytes)))
+            }
+            Backend::TwoCbh(t) => {
+                let header = t.headers.record(id)?;
+                Ok(GameHeaderRef::TwoCbh(header))
+            }
+        }
     }
 
     /// The byte offset of `header`'s move record, in `.cbg`.
     pub fn move_offset(&self, header: &GameHeaderRef<'_>) -> Result<u64> {
-        self.offset_of(header.id(), header.moves_offset(), header.annotations_offset())
+        match header {
+            GameHeaderRef::Classic(h) => self.offset_of(h.id(), h.moves_offset(), h.annotations_offset()),
+            GameHeaderRef::ClassicOwned(h) => self.offset_of(h.id(), h.moves_offset(), h.annotations_offset()),
+            GameHeaderRef::TwoCbh(h) => Ok(h.moves_offset()),
+        }
     }
 
     /// The byte offset of a game whose record holds the 32-bit offsets `short`.
@@ -803,7 +966,7 @@ impl Database {
     /// rather than a guess — the same rule the batch and the PGN export follow.
     pub fn offset_of(&self, id: u32, moves: u32, annotations: u32) -> Result<u64> {
         let short = (moves, annotations);
-        Ok(match &self.wide {
+        Ok(match self.wide() {
             Some(wide) => wide.offsets(id, short)?.0,
             None => u64::from(short.0),
         })
@@ -838,12 +1001,25 @@ impl Database {
     pub fn game_with<'a>(&'a self, id: u32, buf: &'a mut GameBuf, want_annotations: bool) -> Result<GameRef<'a>> {
         let header = self.header_ref(id)?;
         let at = self.move_offset(&header)?;
-        let mut record = Vec::new();
-        let bytes = convert::move_record(self.moves()?, at, &mut record)?;
-        let game = GameMoves::parse(&self.members.moves, bytes)?;
-        buf.walk(id, at, &game)?;
-        walk::resolve_names(&header, &self.entities, buf)?;
-        buf.view(id, header, self, want_annotations)
+        match &self.backend {
+            Backend::Classic(_) => {
+                let mut record = Vec::new();
+                let bytes = convert::move_record(self.moves()?, at, &mut record)?;
+                let game = GameMoves::parse(&self.members.moves, bytes)?;
+                buf.walk(id, at, &game)?;
+                walk::resolve_names(&header, self.entities(), buf)?;
+                buf.view(id, header, self, want_annotations)
+            }
+            Backend::TwoCbh(t) => {
+                let seg = self.moves_segment()?;
+                let seg_rec = seg.record_at(at)?;
+                let game =
+                    cbvault_format::twocbh::moves::GameMoves::from_record(&self.members.moves, seg_rec.record())?;
+                buf.walk_v2(id, at, &game)?;
+                walk::resolve_names_v2(&header, &t.entities, buf)?;
+                buf.view(id, header, self, want_annotations)
+            }
+        }
     }
 
     /// Exports game `id` as a PGN string, using `buf`'s annotation preference.
@@ -862,21 +1038,40 @@ impl Database {
             return Err(Error::corrupt(self.base(), u64::from(id), format!("record {id} is not a game")));
         }
         let at = self.move_offset(&header)?;
-        let mut record = Vec::new();
-        let bytes = convert::move_record(self.moves()?, at, &mut record)?;
-        let game = GameMoves::parse(&self.members.moves, bytes)?;
-        let anns = if want_annotations && header.annotations_offset() != 0 {
-            Some(self.annotations()?.of_ref(&header, self.wide(), buf.annotation_scratch())?)
-        } else {
-            None
-        };
-        let entities = self.format_entities()?;
-        let mut writer = crate::pgn::PgnWriter::new();
-        let mut out = Vec::new();
-        writer
-            .write_game(&mut out, &header, entities, &game, anns.as_ref())
-            .map_err(|e| Error::corrupt(self.base(), u64::from(id), e.to_string()))?;
-        String::from_utf8(out).map_err(|e| Error::corrupt(self.base(), u64::from(id), e.to_string()))
+        match &self.backend {
+            Backend::Classic(_) => {
+                let mut record = Vec::new();
+                let bytes = convert::move_record(self.moves()?, at, &mut record)?;
+                let game = GameMoves::parse(&self.members.moves, bytes)?;
+                let anns = if want_annotations && header.annotations_offset() != 0 {
+                    let h_ref = header.as_classic().expect("classic header");
+                    Some(self.annotations()?.of_ref(&h_ref, self.wide(), buf.annotation_scratch())?)
+                } else {
+                    None
+                };
+                let entities = self.format_entities()?;
+                let mut writer = crate::pgn::PgnWriter::new();
+                let mut out = Vec::new();
+                let h_ref = header.as_classic().expect("classic header");
+                writer
+                    .write_game(&mut out, &h_ref, entities, &game, anns.as_ref())
+                    .map_err(|e| Error::corrupt(self.base(), u64::from(id), e.to_string()))?;
+                String::from_utf8(out).map_err(|e| Error::corrupt(self.base(), u64::from(id), e.to_string()))
+            }
+            Backend::TwoCbh(t) => {
+                let seg = self.moves_segment()?;
+                let seg_rec = seg.record_at(at)?;
+                let game =
+                    cbvault_format::twocbh::moves::GameMoves::from_record(&self.members.moves, seg_rec.record())?;
+                let mut writer = crate::pgn::PgnWriter::new();
+                let mut out = Vec::new();
+                let h = header.as_twocbh().copied().expect("2cbh header");
+                writer
+                    .write_game_v2(&mut out, &h, &t.entities, &game, None)
+                    .map_err(|e| Error::corrupt(self.base(), u64::from(id), e.to_string()))?;
+                String::from_utf8(out).map_err(|e| Error::corrupt(self.base(), u64::from(id), e.to_string()))
+            }
+        }
     }
 
     /// The records `first..=last` as one batch, borrowed from the map where the file
@@ -906,6 +1101,9 @@ pub struct RecordBatch<'a> {
 impl<'a> RecordBatch<'a> {
     /// Reads the records `first..=last`, bounded by what the file holds.
     fn open(db: &'a Database, first: u32, last: u32) -> Result<RecordBatch<'a>> {
+        let Backend::Classic(c) = &db.backend else {
+            return Err(Error::corrupt(db.base(), 0, "RecordBatch not supported on 2CBH"));
+        };
         let total = db.records();
         let first = first.max(1);
         let last = last.min(total);
@@ -915,12 +1113,12 @@ impl<'a> RecordBatch<'a> {
         let count = last - first + 1;
         let bytes = count as usize * 46;
         let at = u64::from(first) * 46;
-        let file = db.headers.db_file();
+        let file = c.headers.db_file();
         let records = match file.slice_at(at, bytes) {
             Some(slice) => Records::Mapped(slice),
             None => {
                 let mut owned = vec![0u8; bytes];
-                db.headers.read_records(first, count, &mut owned)?;
+                c.headers.read_records(first, count, &mut owned)?;
                 Records::Owned(owned)
             }
         };

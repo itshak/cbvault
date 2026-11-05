@@ -1,18 +1,12 @@
+// Copyright (c) 2026 the oschess-cb-bridge contributors
+// Modified for cbvault (MIT License). See docs/provenance.md.
+
 //! The 192-byte `.2cbh` records: the headers of 2CBH games.
 //!
-//! Integers are little-endian — the one structural difference from the classic
-//! format's big-endian headers, and the reason a big-endian reader misreads
-//! every offset here as garbage rather than failing (spec §3). A record keeps
-//! its raw 192 bytes, so [`GameHeader::bytes`] hands the stored record to a
-//! caller that wants it; every field is decoded on demand.
-//!
-//! Only two fields are fully established: the `.2cbg` and `.2cba` offsets at
-//! `0x08` and `0x10`, verified on every game of every local set. The two inline
-//! name fields are **partially** mapped: they are 16 bytes of clear text and
-//! read `FIDE` throughout a downloaded corpus, but which of *source* and
-//! *annotator* is which is unknown, and the player names are **not** in this
-//! record at all (spec §4.3). Everything else is reported as unknown rather than
-//! guessed, because a wrong tag is a wrong PGN line.
+//! Integers are little-endian. Each record stores the offsets of the game's
+//! `.2cbg` move frame and `.2cba` annotation frame, entity IDs into `.2lid`
+//! for white and black players, tournament, annotator, source, teams and tags,
+//! result, round, board, ratings, ECO, flags, move count, and played date.
 
 use crate::cbh::bytes::NameBuf;
 use crate::game::{Date, Eco, GameResult, Head, RecordKind};
@@ -20,18 +14,32 @@ use crate::game::{Date, Eco, GameResult, Head, RecordKind};
 use super::bytes::{NAME_FIELD, RECORD_SIZE};
 
 /// The decoded header of one `.2cbh` record (a game, or the file header).
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct GameHeader {
     id: u32,
     b: [u8; RECORD_SIZE],
+}
+
+fn le_i16(b: &[u8], o: usize) -> i16 {
+    i16::from_le_bytes([b[o], b[o + 1]])
 }
 
 fn le_u16(b: &[u8], o: usize) -> u16 {
     u16::from_le_bytes([b[o], b[o + 1]])
 }
 
+fn le_i32(b: &[u8], o: usize) -> i32 {
+    i32::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]])
+}
+
 fn le_u32(b: &[u8], o: usize) -> u32 {
     u32::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]])
+}
+
+fn le_i64(b: &[u8], o: usize) -> i64 {
+    let mut v = [0u8; 8];
+    v.copy_from_slice(&b[o..o + 8]);
+    i64::from_le_bytes(v)
 }
 
 fn le_u64(b: &[u8], o: usize) -> u64 {
@@ -57,81 +65,172 @@ impl GameHeader {
     }
 
     /// The generation byte the file header states: `0x22` or `0x26` in the
-    /// sets observed. The two values partition the local sets and move with the
-    /// `.2cbg` file header, so they look like a codec revision — but what they
-    /// select is **unknown** (spec §4.5). Zero for a game record, which does
-    /// not repeat it.
+    /// sets observed.
     pub fn generation_byte(&self) -> u8 {
         self.b[0x08]
     }
 
-    /// The record size the file header states; [`RECORD_SIZE`] in every set
-    /// observed. Zero for a game record.
+    /// The record size the file header states; [`RECORD_SIZE`] in every set observed.
     pub fn stated_record_size(&self) -> u16 {
         le_u16(&self.b, 0x0a)
     }
 
-    /// The record count the file header states, **including record 0**. Zero
-    /// for a game record.
+    /// The record count the file header states, **including record 0**.
     pub fn stated_records(&self) -> u32 {
         le_u32(&self.b, 0x10)
     }
 
-    /// The record's kind byte. `0x01` in all 110,120 game records of the
-    /// largest local set; bit `0x80` also occurs. The classic format uses
-    /// `0x80` for "deleted" and `0x01` for "a game", but that assignment is
-    /// **not** established for 2CBH, so [`GameHeader::is_deleted`] reports it
-    /// and the doc says why (spec §4.4).
+    /// The record's kind byte.
     pub fn kind_byte(&self) -> u8 {
         self.b[0]
     }
 
-    /// Whether bit `0x80` of the kind byte is set. Carried on the classic
-    /// format's convention; **unconfirmed for 2CBH** (spec §4.4).
+    /// Whether bit `0x80` of the kind byte is set (deleted record).
     pub fn is_deleted(&self) -> bool {
         self.b[0] & 0x80 != 0
     }
 
-    /// Games and the file's own header record. 2CBH has no separate record
-    /// kind byte for a guiding text: `0x01` is a game and anything else is
-    /// reported as unknown rather than mapped onto the classic enum.
+    /// Classification: Game, Text, Analysis, or Unknown.
     pub fn kind(&self) -> RecordKind {
-        match self.b[0] {
+        match self.b[2] {
+            1 if self.b[0] & 2 != 0 => RecordKind::Text,
             1 => RecordKind::Game,
-            other => RecordKind::Unknown(other),
+            2 => RecordKind::Analysis,
+            k => RecordKind::Unknown(k),
         }
     }
 
-    /// The byte offset of the game's record in `.2cbg`. The one field the
-    /// whole reader rests on (spec §4.3).
+    /// The byte offset of the game's record in `.2cbg`.
     pub fn moves_offset(&self) -> u64 {
         le_u64(&self.b, 0x08)
     }
 
-    /// The byte offset of the game's record in `.2cba`; 0 when it has none.
-    /// No local set has a game without annotations, so the 0 case is
-    /// **unobserved** (spec §4.3).
+    /// The byte offset of the game's record in `.2cba`; 0 when none.
     pub fn annotations_offset(&self) -> u64 {
         le_u64(&self.b, 0x10)
     }
 
-    /// The 16 source bytes of the first inline name field. **Partial**: it
-    /// reads as clear text and holds `FIDE` throughout a downloaded corpus,
-    /// but whether it is the source or the annotator is **unknown** (spec
-    /// §4.3), so it is named for its position rather than its meaning.
+    /// White player entity ID in `.2lid`.
+    pub fn white(&self) -> i64 {
+        le_i64(&self.b, 0x18)
+    }
+
+    /// Black player entity ID in `.2lid`.
+    pub fn black(&self) -> i64 {
+        le_i64(&self.b, 0x20)
+    }
+
+    /// Tournament entity ID in `.2lid`.
+    pub fn tournament(&self) -> i64 {
+        le_i64(&self.b, 0x28)
+    }
+
+    /// Annotator entity ID in `.2lid`.
+    pub fn annotator(&self) -> i64 {
+        le_i64(&self.b, 0x30)
+    }
+
+    /// Source entity ID in `.2lid`.
+    pub fn source(&self) -> i64 {
+        le_i64(&self.b, 0x38)
+    }
+
+    /// White team entity ID in `.2lid`.
+    pub fn white_team(&self) -> i64 {
+        le_i64(&self.b, 0x40)
+    }
+
+    /// Black team entity ID in `.2lid`.
+    pub fn black_team(&self) -> i64 {
+        le_i64(&self.b, 0x48)
+    }
+
+    /// Game tag entity ID in `.2lid`.
+    pub fn game_tag(&self) -> i64 {
+        le_i64(&self.b, 0x50)
+    }
+
+    /// Guiding text author player entity ID in `.2lid`.
+    pub fn text_author(&self) -> i64 {
+        le_i64(&self.b, 0x20)
+    }
+
+    /// Guiding text title game tag entity ID in `.2lid`.
+    pub fn text_title(&self) -> i64 {
+        le_i64(&self.b, 0x28)
+    }
+
+    /// Analysis title game tag entity ID in `.2lid`.
+    pub fn analysis_title(&self) -> i64 {
+        le_i64(&self.b, 0x18)
+    }
+
+    /// Analysis author player entity ID in `.2lid`.
+    pub fn analysis_author(&self) -> i64 {
+        le_i64(&self.b, 0x28)
+    }
+
+    /// Result of the game.
+    pub fn result(&self) -> GameResult {
+        GameResult::from_field(self.b[0x58])
+    }
+
+    /// Round number.
+    pub fn round(&self) -> i16 {
+        le_i16(&self.b, 0x5a)
+    }
+
+    /// Subround number.
+    pub fn subround(&self) -> i16 {
+        le_i16(&self.b, 0x5c)
+    }
+
+    /// Board number.
+    pub fn board(&self) -> i16 {
+        le_i16(&self.b, 0x5e)
+    }
+
+    /// White Elo rating.
+    pub fn white_elo(&self) -> i16 {
+        le_i16(&self.b, 0x60)
+    }
+
+    /// Black Elo rating.
+    pub fn black_elo(&self) -> i16 {
+        le_i16(&self.b, 0x70)
+    }
+
+    /// ECO code.
+    pub fn eco(&self) -> Eco {
+        Eco::from_field(le_u16(&self.b, 0x80))
+    }
+
+    /// Game flags.
+    pub fn flags(&self) -> u32 {
+        le_u32(&self.b, 0x84)
+    }
+
+    /// Move count of the main line.
+    pub fn move_count(&self) -> i16 {
+        le_i16(&self.b, 0x8a)
+    }
+
+    /// Date played.
+    pub fn played_date(&self) -> Date {
+        Date(le_i32(&self.b, 0xbc))
+    }
+
+    /// The 16 source bytes of the first inline text field.
     pub fn name1(&self) -> &[u8] {
         &self.b[0x68..0x68 + NAME_FIELD]
     }
 
-    /// The 16 bytes of the second inline name field, with the same caveat as
-    /// [`GameHeader::name1`].
+    /// The 16 bytes of the second inline text field.
     pub fn name2(&self) -> &[u8] {
         &self.b[0x78..0x78 + NAME_FIELD]
     }
 
-    /// [`GameHeader::name1`] decoded into the caller's buffer, which
-    /// [`NameBuf::as_str`] then borrows — the classic format's no-allocation
-    /// name path, reused so both generations decode text identically.
+    /// [`GameHeader::name1`] decoded into the caller's buffer.
     pub fn name1_into<'b>(&self, buf: &'b mut NameBuf) -> &'b str {
         buf.set(self.name1());
         buf.as_str()
@@ -143,8 +242,7 @@ impl GameHeader {
         buf.as_str()
     }
 
-    /// The value at `0x98`, distinct in every game record of the largest local
-    /// set — a per-game hash or key of unknown construction (spec §4.3).
+    /// Value at `0x98`.
     pub fn key(&self) -> u64 {
         le_u64(&self.b, 0x98)
     }
@@ -160,44 +258,43 @@ impl Head for GameHeader {
     fn is_deleted(&self) -> bool {
         GameHeader::is_deleted(self)
     }
-    // 2CBH has no entity ids: names are inline (§4.3), so the shared shape's
-    // id-based fields have nothing to report. `-1` is the shape's own "absent"
-    // (see `Head::other`), which keeps a caller that sums them honest instead
-    // of reading a name id out of an offset field.
     fn white(&self) -> i64 {
-        -1
+        GameHeader::white(self)
     }
     fn black(&self) -> i64 {
-        -1
+        GameHeader::black(self)
     }
     fn tournament(&self) -> i64 {
-        -1
+        GameHeader::tournament(self)
     }
     fn annotator(&self) -> i64 {
-        -1
+        GameHeader::annotator(self)
     }
     fn other(&self) -> Option<(i64, i64)> {
-        None
+        match GameHeader::kind(self) {
+            RecordKind::Game => None,
+            RecordKind::Text => Some((self.text_title(), self.text_author())),
+            RecordKind::Analysis => Some((self.analysis_title(), self.analysis_author())),
+            RecordKind::Unknown(_) => Some((-1, -1)),
+        }
     }
     fn result(&self) -> GameResult {
-        // The result field is among the undecoded offsets (spec §4.3); field 0
-        // is the shape's "unknown", not a claim about the game.
-        GameResult::from_field(0)
+        GameHeader::result(self)
     }
     fn eco(&self) -> Eco {
-        Eco::from_field(0)
+        GameHeader::eco(self)
     }
     fn played_date(&self) -> Date {
-        Date(0)
+        GameHeader::played_date(self)
     }
     fn round(&self) -> (i32, i32) {
-        (0, 0)
+        (i32::from(GameHeader::round(self)), i32::from(GameHeader::subround(self)))
     }
     fn elo(&self) -> (i32, i32) {
-        (0, 0)
+        (i32::from(GameHeader::white_elo(self)), i32::from(GameHeader::black_elo(self)))
     }
     fn move_count(&self) -> i32 {
-        0
+        i32::from(GameHeader::move_count(self))
     }
     fn bytes(&self) -> &[u8] {
         GameHeader::bytes(self)

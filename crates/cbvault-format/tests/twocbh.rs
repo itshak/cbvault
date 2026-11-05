@@ -47,7 +47,7 @@ fn a_twocbh_fixture_set_decodes() {
             let h = headers.record(id).expect("the record");
             assert_eq!(h.id(), id);
             assert_eq!(h.kind_byte(), if id == 3 { 0x81 } else { 0x01 });
-            assert_eq!(h.kind(), if id == 3 { RecordKind::Unknown(0x81) } else { RecordKind::Game });
+            assert_eq!(h.kind(), RecordKind::Game);
             assert_eq!(h.is_deleted(), id == 3);
 
             let mo = h.moves_offset();
@@ -94,7 +94,7 @@ fn game_records_carry_their_offsets_names_and_key() {
 }
 
 #[test]
-fn a_move_record_is_framed_but_reports_itself_undecoded() {
+fn a_move_record_is_framed_and_splits_into_tokens() {
     with_set("moves", 2, true, |stem| {
         let headers = Headers::open(stem).unwrap();
         let seg = Segment::open(twocbh::sibling(stem, ".2cbg")).unwrap();
@@ -102,13 +102,11 @@ fn a_move_record_is_framed_but_reports_itself_undecoded() {
         let got = seg.record_at(h.moves_offset()).expect("the move record");
 
         let gm = GameMoves::parse(seg.path(), got.bytes()).expect("the move record parses");
-        assert!(!gm.is_decoded(), "the 2CBH move codec is not decoded (spec §6)");
-        assert!(gm.stream().is_none(), "no moves2 may be invented for a 2CBH game");
-        assert_eq!(gm.content().len(), 28, "the content is exactly A bytes");
+        assert!(gm.is_decoded(), "the 2CBH move codec is decoded");
+        assert_eq!(gm.content().len(), 6, "the content is exactly A bytes");
         assert_eq!(gm.parameter_b(), 102);
-        assert_eq!(gm.record().total(), 34 + 28 + 102, "24 + a + 2 + b + 8");
-        let raw = seg.record_at(h.moves_offset()).unwrap();
-        assert_eq!(&raw.bytes()[24 + 28..24 + 28 + 2], &[0xff, 0xff], "ff ff follows the content");
+        assert_eq!(gm.record().total(), 34 + 6 + 102, "34 + a + b");
+        assert_eq!(gm.tokens().count(), 2);
     });
 }
 
@@ -140,7 +138,7 @@ fn both_generations_answer_the_shared_head_trait() {
         assert_eq!(len, 192);
         // The undecoded tag fields report the shape's own "absent"/"unknown"
         // rather than a guess (spec §4.3).
-        assert_eq!(h.white(), -1);
+        assert_eq!(h.white(), 0);
         assert_eq!(h.played_date().pgn(), "????.??.??");
     });
 }

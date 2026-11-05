@@ -11,7 +11,8 @@
 
 use std::path::{Path, PathBuf};
 
-use super::bytes::{CONTENT_OFFSET, FILE_HEADER_SIZE, FIXED_OVERHEAD, RECORD_MAGIC, RECORD_SIZE, TERMINATOR_SIZE};
+use super::bytes::{FILE_HEADER_SIZE, FIXED_OVERHEAD, FRAME_HEADER, RECORD_MAGIC, RECORD_SIZE};
+use super::frame::checksum;
 
 /// A 12-byte `.2cbg`/`.2cba` file header for a file of `size` bytes, with the
 /// first record at [`FILE_HEADER_SIZE`].
@@ -22,13 +23,8 @@ pub fn file_header(size: u64) -> [u8; FILE_HEADER_SIZE] {
     h
 }
 
-/// A whole record: the magic, `a` and `b`, the 8-byte tag, `content`, the
-/// `ff ff` terminator, zero padding and the length trailer. Every arithmetic
-/// rule of spec §5 is applied here, so a fixture that round-trips through
-/// [`crate::twocbh::Record::parse`] is a fixture the format allows.
-///
-/// `a` is taken from the content length, so a caller passes the bytes it wants
-/// and the frame is built around them.
+/// A whole record: the magic, `a` and `b`, checksum, tag, `content`,
+/// zero padding and the length trailer.
 pub fn record(b: u32, content: &[u8]) -> Vec<u8> {
     record_with(content.len() as u32, b, content)
 }
@@ -36,21 +32,21 @@ pub fn record(b: u32, content: &[u8]) -> Vec<u8> {
 /// The same as [`record`], with `a` stated explicitly — for a test that
 /// corrupts a length field and needs the stated value not to be recomputed.
 pub fn record_with(a: u32, b: u32, content: &[u8]) -> Vec<u8> {
-    assert_eq!(
-        CONTENT_OFFSET + a as usize + TERMINATOR_SIZE + b as usize + 8,
-        FIXED_OVERHEAD + a as usize + b as usize
-    );
+    record_with_tag(1, a, b, content)
+}
+
+/// The same as [`record_with`], with explicit tag.
+pub fn record_with_tag(tag: u16, a: u32, b: u32, content: &[u8]) -> Vec<u8> {
     let total = FIXED_OVERHEAD + a as usize + b as usize;
     let mut r = Vec::with_capacity(total);
     r.extend_from_slice(&RECORD_MAGIC);
-    r.extend_from_slice(&a.to_le_bytes());
-    r.extend_from_slice(&b.to_le_bytes());
-    r.extend_from_slice(&[0xa5; 8]); // the per-record word: distinct in the wild
+    r.extend_from_slice(&(a as i32).to_le_bytes());
+    r.extend_from_slice(&(b as i32).to_le_bytes());
+    r.extend_from_slice(&checksum(content).to_be_bytes());
+    r.extend_from_slice(&tag.to_le_bytes());
     r.extend_from_slice(content);
-    r.extend_from_slice(&[0xff, 0xff]);
-    r.resize(total, 0);
-    let n = r.len();
-    r[n - 8..].copy_from_slice(&(n as u64).to_le_bytes());
+    r.resize(FRAME_HEADER + a as usize + b as usize, 0);
+    r.extend_from_slice(&(a as i64 + b as i64 + 34).to_le_bytes());
     r
 }
 
@@ -136,10 +132,10 @@ pub fn write_set(tag: &str, games: &[Game], annotations: bool) -> PathBuf {
     let mut moves: Vec<Vec<u8>> = Vec::new();
     let mut notes: Vec<Vec<u8>> = Vec::new();
     for g in games {
-        let m = record(102, &[0x5a; 28]);
+        let m = record(102, &[0xfc, 0xff, 0x01, 0x00, 0xff, 0xff]);
         let mo = (FILE_HEADER_SIZE + moves.iter().map(|r| r.len()).sum::<usize>()) as u64;
         let ao = if annotations {
-            let a = record(198, &[0u8; 24]);
+            let a = record_with_tag(0x2000, 24, 198, &[0u8; 24]);
             let at = (FILE_HEADER_SIZE + notes.iter().map(|r| r.len()).sum::<usize>()) as u64;
             notes.push(a);
             at

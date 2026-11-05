@@ -239,20 +239,14 @@ fn a_two_cbh_set_is_classified_and_refused_rather_than_misread() {
     assert_eq!(Generation::TwoCbh.as_str(), "2CBH");
     assert_eq!(Generation::TwoCbh.to_string(), "2CBH");
 
-    // And it is refused, with the missing classic member named. This is the
-    // honest outcome rather than a hole in the façade: a 2CBH set has **no**
-    // `.cbp`/`.cbt`/`.cbc`/`.cbs` — 2CBH keeps its names inline in the `.2cbh`
-    // record (spec §4.3), so `Entities` has no 2CBH counterpart to open and
-    // `Database` cannot be handed one until task 4.2 gives it a generation
-    // behind the same fields. Opening it here would mean inventing entity ids
-    // the format does not have; refusing it says so.
-    let error = Database::open(&stem).expect_err("2CBH is not readable by this build");
+    // And it is refused when mandatory .2lid is missing, with the missing member named.
+    let error = Database::open(&stem).expect_err("2CBH without .2lid is refused");
     match error {
         Error::MissingFile { ref path, role } => {
             // `Path::ends_with` compares whole components rather than a string
             // suffix, so the file name is what is checked here.
-            assert_eq!(path.file_name().and_then(|f| f.to_str()), Some("fixture.cbh"), "{}", path.display());
-            assert_eq!(role, cbvault_format::error::Role::Headers);
+            assert_eq!(path.file_name().and_then(|f| f.to_str()), Some("fixture.2lid"), "{}", path.display());
+            assert_eq!(role, cbvault_format::error::Role::Entities);
         }
         other => panic!("expected MissingFile, got {other}"),
     }
@@ -280,10 +274,10 @@ fn a_base_name_containing_a_dot_is_classified_by_its_whole_name() {
 
     assert_eq!(generation_of(&dotted), Generation::TwoCbh, "a dotted 2CBH base name");
     assert_eq!(generation_of(format!("{}.2cbh", dotted.display())), Generation::TwoCbh, "and by its `.2cbh`");
-    let expected_missing = format!("{}.cbh", dotted.display());
+    let expected_missing = format!("{}.2lid", dotted.display());
     assert_eq!(
-        Database::open(&dotted).expect_err("still not readable").to_string(),
-        format!("{expected_missing}: missing headers file of the database set"),
+        Database::open(&dotted).expect_err("still not readable without .2lid").to_string(),
+        format!("{expected_missing}: missing entities file of the database set"),
         "the error names the dotted set's own missing sibling, not a truncated one"
     );
 

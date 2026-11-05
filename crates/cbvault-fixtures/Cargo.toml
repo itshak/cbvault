@@ -9,6 +9,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+cbvault-chess.workspace = true
 cbvault-format.workspace = true
 gigachess.workspace = true
 

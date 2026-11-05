@@ -32,6 +32,8 @@ use crate::file::DbFile;
 
 pub mod annotations;
 pub mod bytes;
+pub mod entities;
+pub mod frame;
 pub mod header;
 pub mod moves;
 pub mod record;
@@ -43,6 +45,8 @@ pub mod segment;
 pub mod testdata;
 
 pub use annotations::Annotations;
+pub use entities::Entities;
+pub use frame::checksum;
 pub use header::GameHeader;
 pub use moves::GameMoves;
 pub use record::Record;

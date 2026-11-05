@@ -449,6 +449,87 @@ fn write_tags<H: Head>(
     Ok(())
 }
 
+/// The tag roster of a 2CBH game.
+fn write_tags_v2(
+    out: &mut String,
+    header: &cbvault_format::twocbh::GameHeader,
+    entities: &cbvault_format::twocbh::Entities,
+    start: &Start,
+    board: &Board,
+    total_plies: u32,
+    names: &mut Names,
+) -> Result<()> {
+    let (event, place) = if header.tournament() >= 0 {
+        if let Some(t) = entities.tournament(header.tournament())? {
+            names.title.set(t.title.as_bytes());
+            names.place.set(t.place.as_bytes());
+            (
+                if names.title.as_str().is_empty() { "?" } else { names.title.as_str() },
+                if names.place.as_str().is_empty() { "?" } else { names.place.as_str() },
+            )
+        } else {
+            ("?", "?")
+        }
+    } else {
+        ("?", "?")
+    };
+    push_escaped_tag(out, "[Event \"", event);
+    push_escaped_tag(out, "[Site \"", place);
+    push_tag(out, "[Date \"", str_from_bytes(&header.played_date().text()));
+    push_round(out, (i32::from(header.round()), i32::from(header.subround())), names);
+
+    let white = if header.white() >= 0 {
+        if let Some(p) = entities.player(header.white())? {
+            names.white_last.set(p.last.as_bytes());
+            names.white_first.set(p.first.as_bytes());
+            Some((names.white_last.as_str(), names.white_first.as_str()))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    push_escaped_player(out, "[White \"", white);
+
+    let black = if header.black() >= 0 {
+        if let Some(p) = entities.player(header.black())? {
+            names.black_last.set(p.last.as_bytes());
+            names.black_first.set(p.first.as_bytes());
+            Some((names.black_last.as_str(), names.black_first.as_str()))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    push_escaped_player(out, "[Black \"", black);
+
+    push_tag(out, "[Result \"", result_tag(header.result()));
+    if let Some(eco) = header.eco().code_text() {
+        push_ascii_tag(out, "[ECO \"", &eco);
+    }
+    let (white_elo, black_elo) = (header.white_elo(), header.black_elo());
+    if white_elo > 0 {
+        push_number_tag(out, "[WhiteElo \"", white_elo as u32);
+    }
+    if black_elo > 0 {
+        push_number_tag(out, "[BlackElo \"", black_elo as u32);
+    }
+    if total_plies == 0 {
+        push_tag(out, "[PlyCount \"", "0");
+    }
+    if *start != Start::Standard {
+        if matches!(start, Start::Chess960(_)) || matches!(start, Start::Setup(s) if s.chess960) {
+            push_tag(out, "[Variant \"", "Chess960");
+        }
+        push_tag(out, "[SetUp \"", "1");
+        let fen = fen_tag(board, start);
+        push_tag(out, "[FEN \"", &fen);
+    }
+    out.push('\n');
+    Ok(())
+}
+
 /// The buffers the tag path decodes entity names and the round into, reused
 /// game to game: one name at a time, so a game's tags cost no allocation.
 #[derive(Debug, Default)]
@@ -728,6 +809,35 @@ impl PgnWriter {
         // buffer, so the sink is written once.
         // Short strings go in byte by byte: a `push_str` of one or two bytes is
         // a `memcpy` call, and this is once per game.
+        for b in result_tag(header.result()).as_bytes() {
+            self.game.push(char::from(*b));
+        }
+        self.game.push('\n');
+        self.game.push('\n');
+        out.write_all(self.game.as_bytes())
+    }
+
+    /// Writes a 2CBH game as PGN: tags, movetext with variations, and result.
+    pub fn write_game_v2(
+        &mut self,
+        out: &mut impl Write,
+        header: &cbvault_format::twocbh::GameHeader,
+        entities: &cbvault_format::twocbh::Entities,
+        game: &cbvault_format::twocbh::moves::GameMoves<'_>,
+        _anns: Option<&cbvault_format::twocbh::Annotations<'_>>,
+    ) -> io::Result<()> {
+        if header.kind() != RecordKind::Game {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, format!("record {} is not a game", header.id())));
+        }
+        let what = GameRef::new(header.id());
+        let start = cbvault_chess::v2::decode_v2_start(game).map_err(as_io)?;
+        let board = start_board_cached(&start, &mut self.starts).map_err(as_io)?;
+        self.tree.clear();
+        self.game.clear();
+        let stats = cbvault_chess::v2::walk_v2_from(what, game, &start, &mut self.tree).map_err(as_io)?;
+        write_tags_v2(&mut self.game, header, entities, &start, &board, stats.total_plies, &mut self.names)
+            .map_err(as_io)?;
+        emit(&self.tree, &mut Bare, &mut self.game, &mut self.steps).map_err(as_io)?;
         for b in result_tag(header.result()).as_bytes() {
             self.game.push(char::from(*b));
         }

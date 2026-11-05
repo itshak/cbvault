@@ -4,7 +4,10 @@
 # The commit is the one recorded in docs/port-inventory.md (task 0.1).
 set -eu
 
-COMMIT=ca9e8f8e4389edd6430f02a14b33ff53552bcadc
+# Pinned commits:
+# - v1.0.0: ca9e8f8e4389edd6430f02a14b33ff53552bcadc (initial classic CBH port)
+# - v1.0.3: bffebfc498d52b4e4631aed32b2f8e8194d125ff (MIT 2CBH foundation)
+COMMIT=${1:-bffebfc498d52b4e4631aed32b2f8e8194d125ff}
 REPO=https://github.com/asavis/oschess-cb-bridge
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 DEST="$ROOT/vendor/upstream-snapshot"
