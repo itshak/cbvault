@@ -1,10 +1,9 @@
 //! PGN text splitting: one rule for where a game starts.
 //!
-//! Ported from BlindBase `src-tauri/src/pgn.rs` (the canonical splitter the
-//! storage change unified seven copies into), with its rule and its test
-//! vectors unchanged: a boundary is a blank line **outside** a comment whose
-//! next non-blank line is a tag pair. cbvault owns the rule now so both sides
-//! of the bridge split the same bytes the same way.
+//! Provides canonical game boundary detection for multi-game PGN streams:
+//! a boundary is defined as a blank line **outside** a comment whose next
+//! non-blank line is a tag pair. This rule ensures consistent splitting across
+//! sequential and streaming pipelines without false splits inside commentary.
 //!
 use std::ops::Range;
 

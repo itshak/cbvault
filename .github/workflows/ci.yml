@@ -27,7 +27,7 @@ jobs:
         # `memmap2::Advice` — a `#[cfg(unix)]` type — called behind a default-on
         # feature without a target gate, so the crate did not compile on Windows
         # at all. Both CI operating systems were Unix, so the tree was green and
-        # a published version was unusable on a platform BlindBase ships. A
+        # a published version was unusable on Windows. A
         # Unix-only matrix cannot see a Unix-only API; the platform a consumer
         # builds on has to be a platform this job builds.
         os: [ubuntu-latest, macos-latest, windows-latest]

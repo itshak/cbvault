@@ -198,7 +198,7 @@ their header magic; both are read through the same model.
 - Internal currency is 16-bit `moves2 = from | to << 6 | promo << 12`; castling is
   king→rook (`e1h1`, `e1a1`, …) `[SPEC]`.
 - Polyglot Zobrist keys come from `gigachess`, with an en-passant square folded in only
-  when a capture is possible (BlindBase's index convention) `[FN]` `[SPEC]`.
+  when a capture is possible (standard Polyglot index convention) `[FN]` `[SPEC]`.
 
 
 ## 5. Annotations (both formats)

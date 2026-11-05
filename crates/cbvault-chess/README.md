@@ -5,7 +5,7 @@ The only bridge between `cbvault-format`'s move tokens and chess: `gigachess`.
 Decoding a game plays every token on a `gigachess` board, validates it, and
 emits the 16-bit `moves2` currency — `from | to << 6 | promo << 12`. Castling is
 king→rook (`e1h1`, `e1a1`, …), **including Chess960**. Incremental Polyglot
-Zobrist keys align with BlindBase's position index.
+Zobrist keys align with standard position index conventions.
 
 There is exactly one chess core in this project, and it is `gigachess`. A CI job
 fails the build if a second one (`chesscore`, `shakmaty`) ever appears.

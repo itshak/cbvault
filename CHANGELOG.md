@@ -16,7 +16,7 @@ The project is pre-1.0.
   every chunk had been replayed, so a cancelled search still walked the whole
   set (minutes on the Mega Database) before reporting `complete = false`. The
   cancel is now asked before each chunk and every 256 games within one; a
-  cancelled run replays no further games. Found when BlindBase moved its
+  cancelled run replays no further games. Found when integrating an
   unindexed `.cbh` explorer onto this API with the early-stop predicate, and a
   superseded query kept every core busy.
 
@@ -46,8 +46,8 @@ pipelined parallel conversion with an ordered reorder buffer, and `gigachess` 0.
 
 ## [0.1.4] - 2026-10-02
 
-Cooperative walk cancellation and one PGN game splitter, both driven by the
-BlindBase live-set position search: a 50-game answer over an 11M-game set no
+Cooperative walk cancellation and one PGN game splitter, both driven by
+live-set position search: a 50-game answer over an 11M-game set no
 longer costs a full decode.
 
 ### Added
@@ -58,8 +58,8 @@ longer costs a full decode.
   mirroring `PositionSearch::complete` — a prefix is never mistaken for a whole answer.
 - **`cbvault::pgn::split`** (`split_games`, `split_game_ranges`): the one
   boundary rule (blank line outside a comment whose next non-blank line is a
-  tag pair), byte-based with lossy UTF-8, ported from BlindBase with its test
-  vectors. The rule has one owner now so both sides of the bridge split the
+  tag pair), byte-based with lossy UTF-8, with verified test
+  vectors. The rule has one owner now so both sequential and streaming callers split the
   same bytes the same way.
 
 ---
@@ -155,8 +155,8 @@ A build fix, and a CI change that is the more important half of it.
   feature and not on the target. `Advice` and `Mmap::advise` are `#[cfg(unix)]` in
   `memmap2`, so on Windows the crate failed with `E0433: cannot find Advice in
   memmap2` and `E0599: no method named advise found for &Mmap` and nothing
-  depending on it could be built. Found by BlindBase's `v0.4.3` release build on
-  `windows-x64`; the same release's `macos-arm64` job passed. The advisory
+  depending on it could be built. Found during a Windows release build on
+  `windows-x64`; the corresponding `macos-arm64` job passed. The advisory
   `Sequential` hint is now gated `#[cfg(unix)]`, so where `memmap2` offers no
   equivalent the mapping is used as it is. No decoding, API, error or output
   change on any platform, and no change at all on Unix.

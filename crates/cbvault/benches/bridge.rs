@@ -1,4 +1,4 @@
-//! The bridge's permanent benchmark (`blindbase-bridge` task 0.4): the three
+//! The bridge's permanent benchmark: the three
 //! conversion passes of ADR-005 §2, the game list, the ordered parallel
 //! conversion, and the unindexed replay rate.
 //!

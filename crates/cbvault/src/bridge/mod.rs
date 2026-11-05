@@ -1,11 +1,11 @@
-//! The BlindBase-facing façade: a read-only [`Database`] over a validated
+//! The consumer-facing façade: a read-only [`Database`] over a validated
 //! classic `.cbh` file set, and the sink-based conversion API a consumer
 //! writes its target database against.
 //!
 //! # What this module is for
 //!
 //! A consumer's job with a `.cbh` set is two jobs. *Convert* it — stream every
-//! game into a `.bbrb` reference base or a `.bbdb` user database, as fast as
+//! game into a target reference base or user database, as fast as
 //! the source can be read. And *serve* it read-only: list games, show one,
 //! search by tag, search by position. Both are here, and both are read-only:
 //! cbvault never opens a source file for writing, never creates anything in a
@@ -33,7 +33,7 @@
 //!
 //! # Provenance
 //!
-//! Original to cbvault (the `blindbase-bridge` change). It consumes
+//! Original to cbvault. It consumes
 //! `cbvault-format` for bytes and `cbvault-chess` for chess, and re-reads the
 //! namebase tree itself because the format crate's reader addresses entities by
 //! id only — see the private `namebase` module.

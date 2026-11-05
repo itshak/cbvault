@@ -18,13 +18,13 @@ context: |
 
   Portions are derived from oschess-cb-bridge's cbformat (MIT, Copyright (c)
   2026 the oschess-cb-bridge contributors) with attribution; the chess layer is
-  re-based on gigachess (BlindBase's MIT chess core, ADR-013/015). Format facts
+  re-based on gigachess (the MIT chess core). Format facts
   also reference Yarin's morphy specifications (unlicensed: facts only, never
   copy text or code) and scidb/libcbh/uncbv/Source2Metal (GPL: test oracles
   only, never linked or copied).
 
-  This library is the BYOD foundation for BlindBase (read-only reference
-  databases and conversion to .bbdb). See AGENTS.md for the project
+  This library is the BYOD foundation for downstream chess applications (read-only
+  reference databases and streaming conversion). See AGENTS.md for the project
   constitution.
 githubCopilot:
   cloudAgent: false

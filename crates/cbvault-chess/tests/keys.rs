@@ -1,5 +1,5 @@
 //! Position keys through the decoder: the Polyglot Zobrist keys the library
-//! produces must be the published ones, so BlindBase's position index matches.
+//! produces must be the published ones, so downstream position indices match.
 
 use cbvault_chess::decode::{GameRef, MoveSink, walk};
 use cbvault_fixtures::classic::{self, Tok};

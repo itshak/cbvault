@@ -185,7 +185,21 @@ The library SHALL export a database or a selected game range to PGN as a streami
 
 ### Requirement: `.cbv` and `.cbz` archives are readable
 
-The library SHALL list and extract `.cbv` archives (header, member table, block-compressed and Huffman-coded members) and SHALL decrypt `.cbz` archives given the user password (legacy DES scheme), implementing the container **clean-room** from verified facts.
+The library SHALL list and extract `.cbv` archives (header, member table, and
+all four block modes: stored, LZ, Huffman, and Huffman-then-LZ) and SHALL decrypt
+`.cbz` archives given the user password (legacy DES scheme), implementing the
+container **clean-room** from verified facts.
+
+Extraction SHALL cover **every member** of a conforming archive, and the decoded
+bytes SHALL equal those of the reference implementation run as a separate
+process, on **every member of every test corpus**. A member the reader cannot
+decode SHALL be reported as a typed error and never written; it SHALL NOT be
+counted as extracted, and the library's own reporting SHALL state the extractable
+share in **bytes** as well as in member count, because a large member count of
+small members is not progress toward reading a database.
+
+The block mode SHALL be read **per block**, not per member, because a member's
+stream may switch mode between its blocks.
 
 #### Scenario: List members
 
@@ -202,6 +216,41 @@ The library SHALL list and extract `.cbv` archives (header, member table, block-
 
 - **WHEN** the password does not decrypt the archive
 - **THEN** the operation fails with a typed `WrongPassword` error.
+
+#### Scenario: A member's blocks mix modes
+
+- **WHEN** a member's stream switches mode between its blocks
+- **THEN** each block is decoded with the mode its **own** payload names, since
+  the mode belongs to a block rather than to a member.
+
+#### Scenario: A block names a mode the format does not define
+
+- **WHEN** a block's mode byte falls outside `0x00`–`0x03`
+- **THEN** the member is refused with a typed corruption error naming the offset,
+  because every defined mode is decoded and an unknown one is damage rather than
+  a missing feature.
+
+#### Scenario: A password that is not exactly eight bytes long
+
+- **WHEN** a `.cbz` is opened with a password shorter or longer than eight bytes
+- **THEN** the key is derived by **repeat**ing the password when it is shorter and
+  by **fold**ing it when it is longer, as the format specifies
+- **AND** the archive opens, verified against the reference's own samples for
+  each of the three rules.
+
+#### Scenario: A member name that would escape the destination
+
+- **WHEN** a member's name is absolute, or contains a `..` component
+- **THEN** the archive is refused **before any file is written**, so a refused
+  archive leaves nothing behind.
+
+#### Scenario: Reporting what the reader can do
+
+- **WHEN** a caller asks what an archive yields
+- **THEN** the share of members and the share of bytes are both reported
+- **AND** a member that cannot be decoded is named rather than counted
+
+- **AND** the parity comparison SHALL be performed separately, by the lead
 
 ### Requirement: CLI covers the workflows
 
@@ -280,7 +329,7 @@ The database layer SHALL provide batched span reads for game move streams (`.cbg
 
 ### Requirement: Parallel Database Replay and Verification
 
-The database processing layer SHALL support multi-threaded verification and replay utilizing Rayon work-stealing parallelism, matching the concurrency stack used in `gigachess` (ADR-002) and `blind-base`.
+The database processing layer SHALL support multi-threaded verification and replay utilizing Rayon work-stealing parallelism, matching the concurrency stack used in `gigachess` (ADR-002) and downstream consumer applications.
 
 #### Scenario: Rayon-Parallel Processing
 - **GIVEN** an open database and a Rayon thread pool
@@ -509,3 +558,535 @@ movetext, and annotations (when requested).
 - **WHEN** `db.game_pgn(id, &mut buf)` is called on a valid historical game with 0 moves
 - **THEN** it returns a valid PGN string with `[PlyCount "0"]` and the terminal game result
 - **AND** no error or panic is raised.
+
+### Requirement: One name for the project, and honest names for formats
+
+The project, its crates, its binary, its capability and its environment
+variables SHALL be named `cbvault` or `cbvault-*`, and no current-facing
+artifact SHALL name the project by a retired project name. Names that refer to a file
+format — a file extension, a format-specific reader module, a role, a format
+fact or a documented byte layout — SHALL keep their `cbh`/`2cbh`/`cbv`/`cbz`
+spelling. Historical records SHALL NOT be rewritten: the archived change
+directory, the git history, vendored upstream sources and third-party
+attribution entries keep the names they were written with.
+
+#### Scenario: The reader module keeps its format name
+
+- **WHEN** a consumer reads a classic database's headers
+- **THEN** the path is `cbvault_format::cbh::Headers`
+- **AND** the crate that provides it is named `cbvault-format`.
+
+#### Scenario: A stale name is caught
+
+- **WHEN** the tracked tree is searched for the old crate names, crate paths or
+  environment variables
+- **THEN** no hit is found outside the explicit allowlist of historical
+  records.
+
+#### Scenario: Attribution is untouched
+
+- **WHEN** the rename is applied
+- **THEN** third-party and upstream project names in the provenance ledger and
+  the notices file are byte-identical to before.
+
+### Requirement: A `.cbz` archive opens with a password
+
+The library SHALL open a password-protected `.cbz` container from a path and a
+password. The scheme SHALL be DES in ECB over the whole file with the key taken
+as the password's first eight bytes, zero-padded when the password is shorter,
+and the container's magic SHALL be enciphered along with the rest of the file.
+
+Opening SHALL verify the password by deciphering the first block and checking it
+against the container magic, and SHALL NOT read the remainder of the file to do
+so.
+
+#### Scenario: A protected archive opens with the right password
+
+- **WHEN** a `.cbz` is opened with the password it was written under
+- **THEN** its member table is parsed and its members are listed
+- **AND** a member decodes to the same bytes the equivalent `.cbv` yields
+
+#### Scenario: Opening reads one block, not the archive
+
+- **WHEN** a protected archive is opened
+- **THEN** the number of bytes deciphered is the eight of the header check
+- **AND** the data pool is not read
+
+### Requirement: A wrong password is reported as a wrong password
+
+When the deciphered first block is not a container magic the library SHALL
+report `Error::WrongPassword`, naming the archive. It SHALL NOT report a corrupt
+archive, a truncated file or a missing codec, because the file is none of those:
+it is a well-formed container under a key the caller did not supply.
+
+#### Scenario: A wrong password is named as such
+
+- **WHEN** a `.cbz` is opened with a password that is not the right one
+- **THEN** the error is `WrongPassword` and names the archive
+- **AND** the error is not a corruption, a truncation or a missing codec
+
+#### Scenario: A password of another length is still a wrong password
+
+- **WHEN** a `.cbz` is opened with a password shorter or longer than the right one
+- **THEN** the result is `WrongPassword`
+- **AND** the reader does not panic
+
+### Requirement: A protected archive deciphers on demand
+
+The reader SHALL hold the key and SHALL decipher each member stream as it is
+read, rather than deciphering the archive into memory when it is opened. Listing
+the members of a protected archive SHALL read only the member table, and SHALL
+NOT decipher the data pool.
+
+#### Scenario: Listing a protected archive reads only the table
+
+- **WHEN** the members of a protected archive are listed
+- **THEN** no member stream is deciphered
+- **AND** the cost does not grow with the size of the data pool
+
+#### Scenario: A member at an unaligned offset deciphers correctly
+
+- **WHEN** a member's stream does not begin on an eight-byte boundary
+- **THEN** the read is aligned down, deciphered, and sliced
+- **AND** the member decodes to the same bytes an unencrypted archive yields
+
+### Requirement: Extraction refuses to guess
+
+A member whose compression mode this build cannot decode SHALL be reported as
+`Error::CodecUnavailable`, naming the member and its mode. The library SHALL NOT
+write partially decoded or guessed bytes to disk, and SHALL NOT report a
+partial extraction as a complete one.
+
+#### Scenario: An undecodable member stops the extraction
+
+- **WHEN** extraction reaches a member in a mode no codec handles
+- **THEN** it reports `CodecUnavailable` naming the member and its mode
+- **AND** it does not report a partial extraction as a complete one
+
+#### Scenario: A stored member whose head lies is rejected
+
+- **WHEN** a stored member's stream body is not the length the table states
+- **THEN** it is reported as corrupt rather than written out as the wrong bytes
+
+### Requirement: Compression modes are named, not assumed
+
+The codec table SHALL name every mode observed in the reference archive and
+SHALL state, per mode, whether it is decoded. A mode marked undecoded SHALL
+have the differential work that was attempted and the reason it was not closed
+recorded next to it, so the next reader inherits the evidence rather than the
+dead end.
+
+#### Scenario: Every observed mode is named in the codec table
+
+- **WHEN** the codec table is read
+- **THEN** each mode observed in the reference archive is listed
+- **AND** each is marked decoded or not, with the evidence for the claim
+
+#### Scenario: An unclosed mode keeps its differential evidence
+
+- **WHEN** a mode remains undecoded
+- **THEN** the attempts made and the reason they did not close it are recorded
+    next to it
+
+### Requirement: A clean-room specification records only non-copyrightable facts
+
+The project SHALL maintain a specification of the reference `.cbv`/`.cbz`
+behaviour that contains only material that is not copyrightable: byte layouts,
+field semantics, algorithms expressed as procedures, constants, observable
+control flow, error conditions, and measured observations.
+
+It SHALL NOT contain any Rust, C or pseudocode mirroring the reference's
+structure; any identifier, module, file or type name from the reference; any
+comment, doc comment or error-message string; the order in which the reference's
+functions run; or anything else that would let a reader reconstruct the
+reference's source.
+
+Every claim in the specification SHALL carry an evidence note, and every citation
+SHALL be to an observation — a byte range, a run of the reference binary, or a
+published description — and never to a line of source.
+
+#### Scenario: A paragraph is tested against the source
+
+- **WHEN** any paragraph of the specification is reviewed
+- **THEN** the reviewer asks whether it could have been written by someone who
+  never opened the reference
+- **AND** a paragraph that could not is removed
+
+#### Scenario: A behaviour is stated
+
+- **WHEN** the specification states what the reference does under some input
+- **THEN** it is stated as a rule with a condition and an outcome
+- **AND** it is not accompanied by code that mirrors how the source expresses it
+
+### Requirement: The implementer is separated from the reference source
+
+Code that implements the reference's behaviour SHALL be written by an agent that
+has no access to the reference source, the reference's tests, or the reference
+binary. The separation SHALL be enforced by a mechanism, and SHALL be recorded,
+not merely asserted.
+
+The specification SHALL be reviewed and frozen before the implementer begins, so
+that the specification cannot be altered after the barrier is in force.
+
+#### Scenario: The implementer begins work
+
+- **WHEN** the implementer agent is started
+- **THEN** it has been given the frozen specification and the existing crate
+- **AND** it has no access to the reference source, tests or binary
+- **AND** the fact is recorded before it starts, not afterwards
+
+#### Scenario: The specification is still being edited
+
+- **WHEN** the specification changes after the implementer has started
+- **THEN** the change is refused, because it would defeat the barrier
+- **AND** the change is deferred until the implementer has finished
+
+### Requirement: Parity is demonstrated against the reference process
+
+The project SHALL demonstrate parity by comparing its own output with the
+reference implementation run as a separate process, for every member of the
+reference corpus, and SHALL require byte equality on every member.
+
+A member known to differ for a reason outside the codec — a file the reference
+rewrites locally, or a special case — SHALL be named and accounted for rather
+than excluded silently.
+
+#### Scenario: The corpus is compared
+
+- **WHEN** the differential test runs
+- **THEN** every member of the corpus is compared by content, not by size
+- **AND** any member that differs is reported by name
+
+#### Scenario: The implementer cannot check its own work
+
+- **WHEN** the implementer completes
+- **THEN** it SHALL NOT have run the reference binary
+
+### Requirement: Header filter vocabulary
+
+The library SHALL provide header predicates for rating ranges, played-year
+ranges, results, rounds and ECO codes, in addition to the existing name and
+rating-threshold predicates. A rating predicate SHALL express an **open** range
+where either bound is absent, and an absent bound SHALL NOT be treated as zero.
+
+Every predicate SHALL be a comparison of a field the 46-byte header record
+already holds, so a tag search remains one pass over `.cbh` and SHALL NOT open the
+moves file.
+
+#### Scenario: A rating range with one open end
+- **WHEN** a filter carries a rating range with a lower bound and no upper bound
+- **THEN** games at or above the lower bound match
+- **AND** a game below it does not, including an unrated game whose rating is zero.
+
+#### Scenario: A rating threshold is a special case of a range
+- **WHEN** a threshold predicate and the equivalent open-ended range are evaluated against the same header
+- **THEN** they select the same games.
+
+#### Scenario: An inverted range matches nothing
+- **WHEN** a range's lower bound is above its upper bound
+- **THEN** no game matches, rather than every game.
+
+#### Scenario: A date range is compared on the year
+- **WHEN** a played-year range is given
+- **THEN** games whose packed date falls within it match
+- **AND** a game with no date does not match, because "unknown" is not "in the range the user asked for".
+
+#### Scenario: Result, round and ECO predicates
+- **WHEN** a filter carries a result, a round (optionally a sub-round) or an ECO code
+- **THEN** games with that exact value match
+- **AND** an ECO code with no sub-code matches every sub-code of that opening
+- **AND** a game with no ECO, a Chess960 start, or an unrecognised value does not match an ECO predicate.
+
+#### Scenario: A text ECO code is parsed as a filter
+- **WHEN** text such as `"B20"` or `"b"` is given
+- **THEN** it resolves to the header's ECO code, case-insensitively and ignoring surrounding space
+- **AND** text that is not an ECO code yields no filter, so a caller can report the typo rather than build a predicate that silently matches nothing.
+
+#### Scenario: No criterion forces a read of the moves file
+- **WHEN** a filter built from these predicates runs
+- **THEN** only the header file and the namebases are read.
+
+### Requirement: Entity name resolution returns every matching id
+
+The library SHALL resolve a name to **every** entity id whose sorted name field
+equals it, not to a single one. A namebase is keyed by last name for a player and
+by title for a tournament, so one key may have many records.
+
+An absent name SHALL resolve to an empty set. An empty set SHALL produce a
+predicate that matches nothing, never one that matches everything.
+
+#### Scenario: A shared last name resolves to all its players
+- **WHEN** several players share a last name and that name is resolved
+- **THEN** every one of their ids is returned, in ascending order.
+
+#### Scenario: A longer name is not a prefix match
+- **WHEN** a name that is a strict prefix of a stored name is resolved
+- **THEN** the longer stored name is not returned.
+
+#### Scenario: An absent name resolves to nothing
+- **WHEN** a name the file does not hold is resolved
+- **THEN** the result is empty, and a predicate built from it matches no game.
+
+#### Scenario: Every namebase resolves its whole match set
+- **WHEN** a name is resolved in the player, tournament, annotator, source or team namebase
+- **THEN** every matching id in that namebase is returned.
+
+### Requirement: Criteria compose into one query
+
+The library SHALL provide a conjunction builder so that several criteria are
+expressed as one filter. An empty conjunction SHALL match every game. Several
+criteria SHALL narrow each other, so a query carrying two criteria returns fewer
+games than either criterion alone.
+
+#### Scenario: Two criteria narrow each other
+- **WHEN** a filter carries a player and a rating range
+- **THEN** games matching both are returned
+- **AND** the result is smaller than the result of either criterion alone.
+
+#### Scenario: An empty conjunction matches everything
+- **WHEN** no criteria are supplied
+- **THEN** every game matches, so clearing a consumer's search form yields the whole database rather than nothing.
+
+#### Scenario: The result does not depend on the worker count
+- **WHEN** the same filter is scanned at one thread and at many
+- **THEN** the returned games and their order are identical.
+
+### Requirement: A game's exact ply count is available to a sink
+
+The library SHALL expose a game's exact ply count — one per move played — to a
+consumer's sink, derived from the move stream the walk has already read. The
+header's move-count field SHALL NOT be used for this, and the documentation SHALL
+state that it counts moves rather than plies and is capped.
+
+#### Scenario: The ply count is the move count, not twice it
+- **WHEN** a sink reads a game's ply count
+- **THEN** it equals the number of moves in the main line
+- **AND** it equals the key count minus one when keys were requested.
+
+#### Scenario: Asking for keys is distinguishable from a game having none
+- **WHEN** a sink did not request position keys
+- **THEN** the absence of keys is reported as such, rather than as a game with no positions.
+
+### Requirement: Conversion walks are cancellable
+
+The conversion walk SHALL honour a sink-provided cancellation signal and stop
+early with partial statistics marked incomplete.
+
+#### Scenario: Sequential walk stops at the signal
+- **WHEN** a sink's `cancelled()` returns `true` after N games
+- **THEN** `for_each_game` / `for_each_range` deliver no further games
+- **AND** the returned `ConvertStats` reports the N delivered games with
+  `complete = false`.
+
+#### Scenario: Parallel walk stops at the signal
+- **WHEN** a sink's `cancelled()` returns `true` mid-run
+- **THEN** `convert_parallel` delivers no further waves
+- **AND** the returned `ConvertStats` has `complete = false`
+- **AND** games already delivered keep ascending game-number order.
+
+#### Scenario: No signal means today's behaviour
+- **WHEN** a sink does not override `cancelled` (default `false`)
+- **THEN** all three walks deliver every game and report `complete = true`.
+
+### Requirement: PGN text splits into games by one rule
+
+The library SHALL split PGN text into games at a blank line outside a comment
+whose next non-blank line is a tag pair, byte-based over `&[u8]` with lossy
+UTF-8 output.
+
+#### Scenario: Comment and RAV shapes do not split
+- **WHEN** a blank line or `[` line occurs inside a `{ … }` comment or RAV
+- **THEN** no boundary is produced there.
+
+#### Scenario: CRLF and missing trailing newline
+- **WHEN** input uses `\r\n` or lacks a final newline
+- **THEN** the same games are produced with normalized `\n`.
+
+### Requirement: A read-only database façade
+
+The library SHALL expose a `Database` façade over a validated ChessBase file
+set, opened from a base name or any member file, reporting its format
+generation, its game count and which optional members it found. It SHALL hold
+no writable handle on any source file and SHALL NOT create, modify or delete
+anything inside the database's directory.
+
+#### Scenario: Opening a complete set
+
+- **WHEN** `Database::open("Mega Database 2025")` is called on a complete classic set
+- **THEN** the database reports generation `Classic` and the game count
+- **AND** no file in the directory is opened for writing.
+
+#### Scenario: A member file is given instead of the base name
+
+- **WHEN** `Database::open("Mega Database 2025.cbh")` is called
+- **THEN** the siblings are resolved case-insensitively from the same directory
+- **AND** the result is identical to opening the base name.
+
+#### Scenario: The mandatory set is incomplete
+
+- **WHEN** a mandatory member is missing
+- **THEN** opening fails with a typed error naming the file and its role
+- **AND** nothing is left open.
+
+### Requirement: Conversion streams records to a consumer sink
+
+The library SHALL convert a database by streaming each game to a
+consumer-implemented sink: the borrowed header fields, the resolved entity
+names, the main line as 16-bit `moves2`, and — when the sink asks for them —
+the per-position Polyglot keys. The library SHALL NOT write target database
+files, SHALL NOT depend on an embedded or external database engine, and SHALL
+allocate no per-game row, string or vector across the sink boundary.
+
+#### Scenario: A moves-only conversion
+
+- **WHEN** a sink whose `wants_keys` is `false` consumes a database
+- **THEN** every game arrives with its `moves2` main line and resolved tags
+- **AND** the walk uses the fast move that maintains neither hash nor checkers.
+
+#### Scenario: An indexed conversion
+
+- **WHEN** a sink whose `wants_keys` is `true` consumes a database
+- **THEN** every game also arrives with one Polyglot key per position reached,
+  in position order
+- **AND** the keys equal those an independent replay of the same `moves2`
+  produces.
+
+#### Scenario: Annotations are not wanted
+
+- **WHEN** a sink whose `wants_annotations` is `false` consumes a database
+- **THEN** no annotation record is read
+- **AND** the conversion is faster than the same conversion with annotations on.
+
+#### Scenario: A game that cannot be decoded
+
+- **WHEN** a record is damaged beyond recovery
+- **THEN** the sink's `failed` callback receives the game id and a typed error
+- **AND** the conversion continues with the next game.
+
+### Requirement: Parallel conversion is ordered by game id
+
+The library SHALL provide a parallel conversion that delivers games to the
+sink in ascending game-number order for any thread count, by cutting the id
+space into chunks, decoding each chunk with private buffers, and emitting the
+chunks in order. The sink SHALL be called from one thread at a time, and the
+sink call sequence SHALL be identical to the sequential conversion's.
+
+#### Scenario: One thread, many threads
+
+- **WHEN** the same database is converted with 1, 2 and 10 threads
+- **THEN** the sink observes the same games in the same order
+- **AND** the per-game payloads are identical.
+
+#### Scenario: A bounded number of chunks in flight
+
+- **WHEN** a conversion runs on a database larger than memory would allow
+- **THEN** at most one wave of chunk buffers per worker is resident
+- **AND** buffers are recycled between chunks.
+
+### Requirement: Read-only serving of a database
+
+The library SHALL list a database's games from its header and entity files
+alone, SHALL return one game's moves and annotations on demand, and SHALL NOT
+read the moves file while listing. Tag queries and position queries are the
+consumer's to answer; the library SHALL supply the streams they need.
+
+#### Scenario: Listing games
+
+- **WHEN** a consumer iterates the games of an 11-million-game database
+- **THEN** each game yields its header fields and resolved player, tournament,
+  annotator and source names
+- **AND** the moves file is never opened.
+
+#### Scenario: One game with its annotations
+
+- **WHEN** a consumer asks for game *n* including annotations
+- **THEN** it receives the header, the `moves2` main line and the annotation
+  items, each carrying the position it belongs to
+- **AND** nothing is allocated per item.
+
+#### Scenario: Entity tables for interning
+
+- **WHEN** a consumer needs to intern names into its own tables
+- **THEN** it can iterate every player, tournament, annotator and source
+  without materialising the tables.
+
+### Requirement: Position keys are a by-product of conversion
+
+A consumer that maintains a position index SHALL be able to receive every
+position's Polyglot key from the conversion pass, and the cost of that SHALL
+be bounded: the keyed conversion SHALL stay within 15 % of the moves-only
+conversion for the same database. An unindexed position search SHALL replay the
+source directly with the fast move, in parallel, with progress and
+cancellation.
+
+#### Scenario: One pass beats two
+
+- **WHEN** the keyed conversion is measured against a moves-only conversion and
+  against a separate pass that would walk the same source again
+- **THEN** the keyed conversion's overhead is reported as a fraction of the
+  moves-only pass
+- **AND** it is materially smaller than the cost of a second walk.
+
+#### Scenario: Cancelling an unindexed search
+
+- **WHEN** a consumer cancels an unindexed position search
+- **THEN** the search stops within one chunk
+- **AND** no partial result is reported as complete.
+
+### Requirement: A tag search over a raw database is a scan, and this library runs it
+
+The library SHALL answer which games match a predicate over a database's headers
+without converting it: it SHALL read the header records in bulk, evaluate the
+predicate during the scan, run the scan in parallel, and emit matching games in
+ascending game-number order. It SHALL resolve entity names to ids by lookup in
+the entity tables, so a name predicate costs one lookup rather than a resolution
+per record, and it SHALL return the names of the matching games as slices of the
+mapped entity data without copying them. The scan SHALL NOT open the moves file.
+
+A position query is different in kind and SHALL be served two ways: by replaying
+the source with progress and cancellation, and by handing the consumer each
+position's Polyglot key so the consumer's own index can answer it. The library
+SHALL NOT define, write or read a position index format.
+
+#### Scenario: Filtering a whole database
+
+- **WHEN** a consumer filters the games of an 11-million-game database by an
+  integer predicate such as an Elo threshold
+- **THEN** the matching game numbers arrive in ascending order
+- **AND** the same predicate over the same range yields the same set on any
+  thread count.
+
+#### Scenario: A name predicate resolves once
+
+- **WHEN** a consumer searches by a player's name
+- **THEN** the name resolves to one entity id, and the scan compares that id per
+  record
+- **AND** the player's and opponent's names for each match are returned as
+  borrowed slices, with no per-game string allocated.
+
+#### Scenario: Listing never reads the moves
+
+- **WHEN** a consumer lists or filters a database
+- **THEN** the moves file is never opened.
+
+#### Scenario: An unindexed position search can be stopped
+
+- **WHEN** a consumer runs a position search by replay and cancels it
+- **THEN** the search stops within one chunk and reports no partial result as
+  complete.
+
+### Requirement: Public library contracts and documentation remain consumer-neutral
+
+The library's public documentation, README, crate root headers, module comments, integration examples, and metadata SHALL NOT reference or disclose unreleased proprietary downstream product names, internal schemas, or private target formats. All conversion traits, database façade methods, and command-line interfaces SHALL be documented in terms of generic downstream callers, consumers, and data pipelines.
+
+#### Scenario: Crate documentation uses generic consumer terminology
+
+- **WHEN** a developer inspects public crate documentation, module headers, or `README.md`
+- **THEN** all conversion patterns describe generic downstream consumers
+- **AND** no references to unreleased proprietary product names or private schema formats appear.
+
+#### Scenario: Conversion examples demonstrate generic consumption
+
+- **WHEN** a developer inspects integration examples such as `examples/convert.rs`
+- **THEN** the example demonstrates populating caller-defined application structures
+- **AND** the code does not claim or quote internal schemas of unreleased products.

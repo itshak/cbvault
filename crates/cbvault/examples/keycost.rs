@@ -16,8 +16,8 @@
 //! turns out to be the whole story — the `checkers` refresh is ~4.4 ns/ply and
 //! the incremental hash is noise.
 //!
-//! The recorded numbers live in `benchmarks/baseline.json`; `blindbase-bridge`
-//! task 0.4 turns this probe into a Criterion benchmark.
+//! The recorded numbers live in `benchmarks/baseline.json`; the bridge
+//! Criterion benchmark measures this systematically.
 #![allow(missing_docs)]
 
 use std::path::Path;

@@ -75,7 +75,7 @@
 | `fixture.rs` | 331 | **chess swap** | `cbvault-fixtures` | Test-only 2CBH database writer |
 | `fixture_cbh.rs` | 303 | **chess swap** | `cbvault-fixtures` | Test-only classic writer (independent move encoder) |
 | `fixture_cbh/builder.rs` | 158 | port as-is | `cbvault-fixtures` | File layout of a small classic database |
-| `pgnfile/mod.rs` | 714 | not needed | — | PGN *reading* is BlindBase's existing domain; export only here |
+| `pgnfile/mod.rs` | 714 | not needed | — | PGN *reading* is handled by downstream consumers; export only here |
 | `pgnfile/lex.rs` | 697 | not needed | — | — |
 | `pgnfile/scan.rs` | 578 | not needed | — | — |
 | `pgnfile/line.rs` | 216 | not needed | — | — |

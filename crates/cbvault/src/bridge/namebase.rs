@@ -696,7 +696,7 @@ impl Entities {
     /// that name appears in. Empty for a name the file does not hold.
     ///
     /// `name` is the last name as stored. Matching is exact and case-sensitive,
-    /// as the tree's own comparison is — see [`Namebase::find_all`].
+    /// as the tree's own comparison is — see `Namebase::find_all`.
     pub fn find_players(&self, name: &str) -> Result<Vec<u32>> {
         self.players.find_all(name)
     }

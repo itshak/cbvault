@@ -1,8 +1,8 @@
 //! The conversion contract, end to end: convert a database into an in-memory
 //! target, read the target back, and check that it holds what the source held.
 //!
-//! This example is the contract BlindBase implements against, so it is written
-//! the way a consumer should write its sink rather than the way a library would
+//! This example demonstrates an end-to-end conversion contract, written
+//! the way a downstream consumer implements its sink rather than the way a library would
 //! like to be called: one struct, one `impl GameSink`, a `game` method that
 //! copies what it wants into its own row, and a read-back that proves the row
 //! is the game. Nothing here knows about the walk, and nothing here allocates
@@ -31,7 +31,7 @@ use cbvault::bridge::{Database, GameRef, GameSink};
 /// How many games to convert.
 const GAMES: u32 = 2_000;
 
-/// One converted game: what BlindBase's `Games` row holds.
+/// One converted game: an example of what an application's game table row holds.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Row {
     /// The game's number in the source, which is what the target keys off.
@@ -49,7 +49,7 @@ struct Row {
     result: u8,
     white_elo: u16,
     black_elo: u16,
-    /// The main line, little-endian `u16` per ply, exactly as `.bbdb` stores it.
+    /// The main line, little-endian `u16` per ply, as binary move storage.
     moves2: Vec<u8>,
     /// One Polyglot key per position of the main line, the start position
     /// first. The consumer's sidecar maps each to `(game id, ply)`.
@@ -173,7 +173,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(row.white_elo, game.header.white_elo(), "game {}: WhiteElo", row.id);
         assert_eq!(row.black_elo, game.header.black_elo(), "game {}: BlackElo", row.id);
 
-        // The main line, byte for byte, as `.bbdb` stores it.
+        // The main line, byte for byte, as stored in binary format.
         assert_eq!(row.moves2.len(), game.moves.len() * 2, "game {}: Moves2 length", row.id);
         let words: Vec<u16> = row.moves2.as_chunks::<2>().0.iter().map(|p| u16::from_le_bytes(*p)).collect();
         assert_eq!(words, game.moves, "game {}: Moves2", row.id);

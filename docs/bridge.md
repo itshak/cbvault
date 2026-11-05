@@ -105,13 +105,13 @@ report the same failures in the same order, and every record is accounted for.
 
 ### The annotated-preservation rule
 
-`.bbdb` has no comment column, so an annotated game does not go through the
-PGN path by default:
+Where a target schema has no dedicated comment column, an annotated game does not go through the
+bare moves path:
 
 - **Unannotated games** never touch the PGN writer and never open `.cba`.
   The conversion cost is `moves2` and the tags.
-- **Annotated games** are a `Games` row plus the game in
-  `OriginalMovesZstd`, as cbvault's own PGN writer renders it — the movetext
+- **Annotated games** can be stored as a game row plus the game in
+  compressed PGN format (e.g. zstd), as cbvault's own PGN writer renders it — the movetext
   the reader will recognise, comments included, in the placement
   `docs/format-spec.md` §2.3 defines (positions count moves in *stored* order,
   which is depth first with the main line first, not PGN order).
@@ -380,7 +380,7 @@ Two answers, and cbvault does not define an index format for either.
 cbvault is designed to support **two distinct position index construction pathways**:
 
 - **Pathway A: Simultaneous Build during Stream Loading / Conversion**
-  When importing or converting `.cbh` games (e.g. to `.bbrb` or another store), the sink
+  When importing or converting `.cbh` games (e.g. to a reference store or user database), the sink
   returns `wants_keys() -> true`. The reader computes Polyglot Zobrist keys incrementally
   via `gigachess::play_hashed` during decoding and delivers them in `game.keys`. The consumer
   streams `(hash, game_id)` records directly into index shard buffers concurrently with
@@ -413,7 +413,7 @@ against a 15 M/s budget (5.1–5.8s for full 11.1M-game position scan).
 
 ## What cbvault does not do
 
-- **It does not write `.bbdb` or `.bbrb`.** No schema, no engine dependency, no
+- **It does not write target databases.** No schema, no engine dependency, no
   target format. The sink is the whole contract, and
   `examples/convert.rs` is the shape of a target written against it.
 - **It does not write ChessBase data.** Read-only, permanently. Nothing opens a

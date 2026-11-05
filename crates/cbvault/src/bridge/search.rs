@@ -323,10 +323,9 @@ impl Filter {
     /// Games whose ECO code is the `code` part of a text like `"B20"`, with every
     /// sub-code matching.
     ///
-    /// The text form is what every consumer's UI actually holds — BlindBase's
-    /// own `SearchCriteria` passes `"B20"` — and turning it into a predicate here
-    /// means no consumer writes a second conversion of the same three characters.
-    /// Case-insensitive, and tolerant of surrounding space. `None` for text that
+    /// The text form is what every consumer's UI typically holds (e.g. passing `"B20"`)
+    /// and turning it into a predicate here means no consumer writes a second conversion
+    /// of the same three characters. Case-insensitive, and tolerant of surrounding space. `None` for text that
     /// is not an ECO code, so a caller can report the typo instead of building a
     /// filter that matches nothing and looking like an empty database.
     pub fn eco_text(text: &str) -> Option<Filter> {

@@ -2,9 +2,9 @@
 
 ## Why
 
-`cbvault` already has an MIT, high-throughput, read-only classic ChessBase reader and a partly inspected `.2cbh` family, but refuses to open 2CBH games because `.2cbg` is not decoded. This excludes newer ChessBase personal libraries from BlindBase GUI and future MCP. The earlier assumption that no reusable 2CBH implementation exists is **superseded** by the finding of a working **MIT Rust reader in `asavis/oschess-cb-bridge` tag `v1.0.3`**, plus comprehensive format documentation and a Java reader/writer in Morphy. The current oschess branch is AGPL-3.0 and must not be ported.
+`cbvault` already has an MIT, high-throughput, read-only classic ChessBase reader and a partly inspected `.2cbh` family, but refuses to open 2CBH games because `.2cbg` is not decoded. This excludes newer ChessBase personal libraries from downstream GUI and analysis tools. The earlier assumption that no reusable 2CBH implementation exists is **superseded** by the finding of a working **MIT Rust reader in `asavis/oschess-cb-bridge` tag `v1.0.3`**, plus comprehensive format documentation and a Java reader/writer in Morphy. The current oschess branch is AGPL-3.0 and must not be ported.
 
-This change is **planned, not implemented**. Keep BlindBase's MCP MVP priority independent; complete this in cbvault as a separately gated library capability. The most important release criterion is not a successful demo, but **local-only byte-level parity against real ChessBase's own PGN export**, with the pre-existing, fully evidenced differences kept intact.
+This change is **planned, not implemented**. Complete this in cbvault as a separately gated library capability. The most important release criterion is not a successful demo, but **local-only byte-level parity against real ChessBase's own PGN export**, with the pre-existing, fully evidenced differences kept intact.
 
 ## What Changes
 
@@ -35,7 +35,7 @@ This change is **planned, not implemented**. Keep BlindBase's MCP MVP priority i
 
 - Writing/modifying ChessBase `.2cbh`, `.2cbg`, `.2cba`, `.2lid`, `.2lgd`, `.2lcd` or rebuilding its native indexes.
 - Linking or vendoring later AGPL `oschess` code or unlicensed Morphy source, reverse-engineering ChessBase executables as a prerequisite, committing licensed real game content.
-- Requiring BlindBase GUI/MCP implementation or reprioritizing its MCP MVP, inventing a second chess rules engine, bundling Mega Database.
+- Requiring downstream consumer UI/MCP implementation, inventing a second chess rules engine, bundling Mega Database.
 - Claiming bit-identical raw PGN files when ChessBase's line wrapping/tag order differs; the gold comparator must state exactly **what bytes** it canonicalizes and why.
 
 ## Impact and references

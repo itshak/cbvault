@@ -4,7 +4,7 @@
 
 ## Mission
 
-`cbvault` reads ChessBase databases (classic `.cbh` family, 2CBH `.2cbh` family, `.cbv`/`.cbz` archives) as a fast, MIT-licensed Rust library and CLI. It is the BYOD foundation for BlindBase: users bring their own databases; nothing is redistributed. **Read-only, always** — this project never writes ChessBase data.
+`cbvault` reads ChessBase databases (classic `.cbh` family, 2CBH `.2cbh` family, `.cbv`/`.cbz` archives) as a fast, MIT-licensed Rust library and CLI. It is a BYOD foundation for downstream chess applications: users bring their own databases; nothing is redistributed. **Read-only, always** — this project never writes ChessBase data.
 
 ## Tech stack
 
@@ -62,4 +62,4 @@ a hot path.
 
 ## Related projects
 
-- BlindBase (consumer): `../blind-base` — see its ADR-004/013/015 and `docs/research/cbh-vs-bbdb-comparison.md`.
+- Downstream chess applications and consumer pipelines: read-only reference databases and streaming conversion.

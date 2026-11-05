@@ -48,7 +48,7 @@ Before claiming production-ready 2CBH support, the change MUST compare the same 
 Real `.2cbh` companions, ChessBase PGN exports, user metadata, per-game diffs and test output SHALL stay on the developer's local machine. Public CI MUST use synthetic fixtures only; env-gated local tests SHALL accept explicitly configured paths and skip visibly when absent **without** satisfying the release gold gate.
 
 #### Scenario: CI runs without a Mega Database
-- **GIVEN** public CI has no local ChessBase files or `CBVAULT_2CBH_TEST_DB` and `CBVAULT_2CBH_GOLD_PGN`
+- **GIVEN** public CI has no local ChessBase files or `CBVAULT_TEST_DB_2CBH` and `CBVAULT_2CBH_GOLD_PGN`
 - **WHEN** the normal test suite runs
 - **THEN** generated synthetic 2CBH tests run and the local gold test is reported as NOT RUN
 - **AND** no private chess database is uploaded, referenced by absolute path or synthesized as an apparent gold result.

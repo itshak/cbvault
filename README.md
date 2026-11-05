@@ -4,7 +4,7 @@
   <strong>Read ChessBase databases from Rust — 100% MIT.</strong><br>
   The classic <code>.cbh</code> family and <code>.cbv</code>/<code>.cbz</code> archives,
   with <a href="https://crates.io/crates/gigachess">gigachess</a> as the one and only
-  chess core, a conversion sink for BlindBase and a streaming PGN exporter.
+  chess core, a zero-allocation conversion sink for downstream engines and a streaming PGN exporter.
 </p>
 
 <p align="center">
@@ -871,8 +871,8 @@ times** on this database. It now reads into a stack buffer through the new
 
 ### Other gaps
 
-- **No writers.** cbvault does not write `.bbdb` or `.bbrb` and defines no target
-  format: the sink is the whole contract. It does not write ChessBase data, ever.
+- **No writers.** cbvault does not write target databases and defines no proprietary
+  storage format: the sink is the whole contract. It does not write ChessBase data, ever.
 - **No position index format.** It emits the keys; the consumer owns the index.
 - **Boosters and derived accelerators are not read.** `.cbb`, `.cbgi`, `.cit`,
   `.cib`, `.cko` and `.cpo` are recognised and ignored by design; the reasons and
