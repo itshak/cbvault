@@ -62,7 +62,7 @@ pub fn start_of(moves: &GameMoves<'_>) -> Result<Start> {
     }
     let mut words = moves.start_words();
     let first = words.next().ok_or_else(|| Error::corrupt("<.2cbg>", 0, "2CBH: empty setup section"))?;
-    if moves.is_chess960() && words.clone().next().is_none() {
+    if moves.is_chess960() && moves.start_words().count() == 1 {
         if first >= 960 { return Err(Error::corrupt("<.2cbg>", 0, "2CBH: invalid Chess960 start index")); }
         return Ok(Start::Chess960(first));
     }
