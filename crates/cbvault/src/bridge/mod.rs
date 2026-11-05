@@ -38,6 +38,7 @@
 //! namebase tree itself because the format crate's reader addresses entities by
 //! id only — see the private `namebase` module.
 
+mod any;
 mod convert;
 mod namebase;
 mod search;
@@ -51,6 +52,7 @@ mod real;
 #[cfg(test)]
 mod tests;
 
+pub use any::{AnyDatabase, open_any};
 pub use convert::{ConvertStats, DEFAULT_BATCH, convert_parallel, for_each_game, for_each_range};
 pub use namebase::{Entities, Found, Name, Via};
 pub use search::{
@@ -168,6 +170,17 @@ fn stem_of(path: &Path) -> PathBuf {
 /// rather than reading a [`Error::MissingFile`] for a `.cbh` that will never be
 /// there.
 pub fn generation_of(path: impl AsRef<Path>) -> Generation {
+    // An explicitly selected member chooses its generation even when the
+    // same stem has both classic and 2CBH files. Never silently export the
+    // classic set when the caller passed an actual .2cbh file.
+    if let Some(ext) = path.as_ref().extension().and_then(|e| e.to_str()) {
+        if TWOCBH_MEMBERS.iter().any(|candidate| candidate[1..].eq_ignore_ascii_case(ext)) {
+            return Generation::TwoCbh;
+        }
+        if CLASSIC_MEMBERS.iter().any(|candidate| candidate[1..].eq_ignore_ascii_case(ext)) {
+            return Generation::Classic;
+        }
+    }
     let stem = stem_of(path.as_ref());
     if [".cbh", ".cbg"].iter().any(|e| sibling(&stem, e).symlink_metadata().is_ok()) {
         return Generation::Classic;

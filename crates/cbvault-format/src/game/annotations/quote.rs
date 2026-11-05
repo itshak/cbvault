@@ -1,3 +1,6 @@
+// The parse_2cbh metadata layout is adapted from oschess-cb-bridge
+// v1.0.3 (MIT) bffebfc498d52b4e4631aed32b2f8e8194d125ff;
+// copyright (c) 2026 the oschess-cb-bridge contributors.
 //! Game quotations (type `13`): a game quoted in a comment, with a header of
 //! its own. The layout is in `docs/format-notes.md`; what is not understood
 //! is kept in the annotation's data. [`Quotation::chessbase_text`] is the
@@ -72,6 +75,15 @@ impl<'a> Cursor<'a> {
     fn be32(&mut self) -> Option<i32> {
         Some(i32::from_be_bytes(self.take(4)?.try_into().ok()?))
     }
+    fn le32(&mut self) -> Option<i32> {
+        Some(i32::from_le_bytes(self.take(4)?.try_into().ok()?))
+    }
+    /// The 2CBH count includes the terminating NUL.
+    fn counted(&mut self) -> Option<String> {
+        let n = self.u8()? as usize;
+        let bytes = self.take(n)?;
+        Some(decode(bytes.strip_suffix(&[0]).unwrap_or(bytes)))
+    }
     /// A classic string: a length byte, the text and a zero.
     fn classic(&mut self) -> Option<String> {
         let n = self.u8()? as usize;
@@ -82,6 +94,54 @@ impl<'a> Cursor<'a> {
 }
 
 impl Quotation {
+    /// Parse a v2 quotation's metadata. Quoted *move payloads* are still
+    /// unsupported by this formatter; return None instead of silently
+    /// truncating their PGN text. Layout from pinned MIT v1.0.3.
+    pub fn parse_2cbh(data: &[u8]) -> Option<Quotation> {
+        let mut c = Cursor { b: data, i: 0 };
+        c.take(10)?;
+        let (white_last, white_first, black_last, black_first) =
+            (c.counted()?, c.counted()?, c.counted()?, c.counted()?);
+        let (site, event) = (c.counted()?, c.counted()?);
+        let fixed = c.take(79)?;
+        let le16 = |o: usize| u16::from_le_bytes([fixed[o], fixed[o + 1]]);
+        let q = Quotation {
+            white: QuotedPlayer { last: white_last, first: white_first, elo: le16(28) },
+            black: QuotedPlayer { last: black_last, first: black_first, elo: le16(30) },
+            event,
+            site,
+            date: Date(i32::from_le_bytes(fixed[0..4].try_into().ok()?)),
+            kind: fixed[4],
+            round: fixed[43],
+            subround: fixed[44] as i8,
+            result: fixed[34],
+            eco: Eco::from_field(le16(32)),
+        };
+        for _ in 0..2 {
+            c.take(5)?;
+            let n = usize::try_from(c.le32()?).ok()?;
+            c.take(n)?;
+        }
+        c.take(26)?;
+        match c.u8()? {
+            1 => {}
+            // Quoted positions with setup boards require separate replay.
+            0 => {
+                c.take(64 + 11)?;
+                return None;
+            }
+            _ => return None,
+        }
+        c.take(2)?;
+        let n = usize::try_from(c.le32()?).ok()?;
+        // A nonempty quotation has a 5-byte-per-move stream; never drop it.
+        if n != 0 {
+            return None;
+        }
+        c.take(4)?;
+        Some(q)
+    }
+
     /// A classic quotation's data, the bytes after the type. Its header is
     /// read; the moves of a classic quotation are not understood and stay in
     /// the data. `None` when it does not have the known layout.

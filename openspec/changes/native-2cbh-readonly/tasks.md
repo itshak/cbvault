@@ -1,19 +1,21 @@
 # Implementation tasks — small auditable steps
 
+**Checkpoint:** The MIT core reader, per-game v2 PGN writer, CLI, and bounded ordered export are implemented. See [implementation-status.md](implementation-status.md) for validated capabilities and remaining limitations. Unchecked tasks are not waived: rare annotations/quoted games, unified bridge/sinks, independent clean-room delta, and the critical local real-file ChessBase gold/throughput gate remain open. Do **not** mark the change complete merely because synthetic CI is green.
+
 ## 1. Source pin, license and baseline
 - [ ] 1.1 Record oschess tag `v1.0.3` -> annotated tag -> commit `bffebfc498d52b4e4631aed32b2f8e8194d125ff`; verify LICENSE/Cargo/workspace and file authorship at commit. List exact MIT modules, transitive dependencies, and unchanged earlier cbvault port provenance.
 - [ ] 1.2 Inventory cbvault `twocbh`, `Database` facade, gigachess `moves2`, `PgnWriter` and gold comparator; capture classic CBH, CBV/CBZ, throughput and allocation baselines.
-- [ ] 1.3 Write the correction table into `docs/format-spec-2cbh.md` with byte-level probes: checksum, tag vs content offsets, padding B, .2lid entity IDs, rating types; mark prior conflicting interpretations as superseded without deleting the original measured evidence.
-- [ ] 1.4 Establish synthetic 2CBH fixtures from MIT-eligible facts and generated non-user game data, including corrupted/truncated frames; no real database files in commits.
+- [x] 1.3 Write the correction table into `docs/format-spec-2cbh.md` with byte-level probes: checksum, tag vs content offsets, padding B, .2lid entity IDs, rating types; mark prior conflicting interpretations as superseded without deleting the original measured evidence.
+- [x] 1.4 Establish synthetic 2CBH fixtures from MIT-eligible facts and generated non-user game data, including corrupted/truncated frames; no real database files in commits.
 
 ## 2. Phase 1 — MIT foundation and one chess core
-- [ ] 2.1 Port/reconstruct MIT v1.0.3 2CBH record/frame reader, checksum and proper tag, preserve notices; test exact offsets and bad checksums. No later AGPL code.
-- [ ] 2.2 Implement 16-bit v2 move-word enumeration and markers, setup positions/Chess960, promotions, en passant, null and variation stack; adapt decode to gigachess `moves2`, never import `chesscore`.
-- [ ] 2.3 Implement .2lid entity names, headers/metadata, typed record classification and version detection; optional .2lgd/.2lcd read-only use only where independent correctness warrants.
+- [x] 2.1 Port/reconstruct MIT v1.0.3 2CBH record/frame reader, checksum and proper tag, preserve notices; test exact offsets and bad checksums. No later AGPL code.
+- [x] 2.2 Implement 16-bit v2 move-word enumeration and markers, setup positions/Chess960, promotions, en passant, null and variation stack; adapt decode to gigachess `moves2`, never import `chesscore`.
+- [x] 2.3 Implement .2lid entity names, headers/metadata, typed record classification and version detection; optional .2lgd/.2lcd read-only use only where independent correctness warrants.
 - [ ] 2.4 Implement .2cba annotation-to-move mapping, NAGs/comments/clocks/evals, multilingual fields and explicit unsupported-value reporting.
 - [ ] 2.5 Wire 2CBH reader into current cbvault facade/CLI `info`, `verify`, `pgn`, `game_pgn`, sink/cancellation and ordered-parallel conversion; classic CBH stays untouched where possible.
 - [ ] 2.6 Test legal replay/PGN of generated positions, nested variations, Chess960, malformed frames, deleted records, move-less records and source mutation; no unknown record silently converted to a game.
-- [ ] 2.7 Update per-module `docs/provenance.md` ledger and MIT `THIRD_PARTY_NOTICES.md`, verify dependency tree contains no GPL/AGPL runtime and no second chess core.
+- [x] 2.7 Update per-module `docs/provenance.md` ledger and MIT `THIRD_PARTY_NOTICES.md`, verify dependency tree contains no GPL/AGPL runtime and no second chess core.
 
 ## 3. Phase 2 — facts-only later AGPL and unlicensed Java improvements
 - [ ] 3.1 Build a **delta inventory**: specific files/behaviors from pinned MIT oschess to current AGPL oschess plus Morphy Java, with versions, observable input/output and known unsupported cases. Keep full source access restricted to Room 1.

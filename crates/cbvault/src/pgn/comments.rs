@@ -18,9 +18,9 @@
 
 use std::fmt::Write as _;
 
-use cbvault_format::cbh::annotations::GameAnnotations;
 use cbvault_format::codepage::CodePage;
 use cbvault_format::error::Result;
+use cbvault_format::game::annotations::AnnotationView;
 use cbvault_format::game::annotations::timing::Evaluation;
 use cbvault_format::game::annotations::{Annotation, GAME_POSITION, Quotation, arrows, language, squares, timing};
 
@@ -63,7 +63,9 @@ impl Notes for Bare {
 /// allocated per game.
 pub(super) struct Commentary<'a> {
     /// The game's parsed record.
-    pub(super) anns: &'a GameAnnotations<'a>,
+    pub(super) anns: &'a dyn AnnotationView,
+    /// True for classic .cbh annotation layouts; false for native .2cba.
+    pub(super) classic: bool,
     /// (position, byte offset) of every item, ascending.
     pub(super) index: &'a [(i32, u32)],
     /// The game comment's `[%evp …]`, empty when the game has none.
@@ -158,12 +160,6 @@ impl Parts {
         &mut self.items[at]
     }
 
-    /// The part before the one being written.
-    #[inline]
-    pub(super) fn last_mut(&mut self) -> &mut Part {
-        &mut self.items[self.len - 1]
-    }
-
     /// The bytes the parts keep for reuse (their high-water mark).
     pub(super) fn capacity(&self) -> usize {
         self.items.capacity() * size_of::<Part>() + self.items.iter().map(|p| p.text.capacity()).sum::<usize>()
@@ -180,12 +176,12 @@ impl Commentary<'_> {
         self.parts.clear();
         let items = [range(index, GAME_POSITION), &[][..]];
         graphics(self.parts, anns, items)?;
-        medals(self.parts, anns, items)?;
+        medals(self.parts, anns, items, self.classic)?;
         if !self.evp.is_empty() {
             let part = self.parts.push(Sep::None);
             part.text.push_str(self.evp);
         }
-        texts(self.parts, anns, items, false)?;
+        texts(self.parts, anns, items, false, self.classic)?;
         comment(out, self.parts, "", " ");
         Ok(())
     }
@@ -195,7 +191,7 @@ impl Notes for Commentary<'_> {
     fn before(&mut self, at: At, out: &mut String) -> Result<bool> {
         let (anns, index) = (self.anns, self.index);
         self.parts.clear();
-        texts(self.parts, anns, [range(index, at.stored as i32), &[][..]], true)?;
+        texts(self.parts, anns, [range(index, at.stored as i32), &[][..]], true, self.classic)?;
         // The comment trails a space: it lands before the move's number.
         Ok(comment(out, self.parts, "", " "))
     }
@@ -213,13 +209,13 @@ impl Notes for Commentary<'_> {
 
         self.parts.clear();
         evaluations(self.parts, anns, items)?;
-        times(self.parts, anns, items)?;
+        times(self.parts, anns, items, self.classic)?;
         graphics(self.parts, anns, items)?;
-        medals(self.parts, anns, items)?;
+        medals(self.parts, anns, items, self.classic)?;
         // The texts and the quotations share one pass: ChessBase's export
         // writes a quoted game where its record stands among the texts.
-        texts(self.parts, anns, items, false)?;
-        past_texts(self.parts, anns, past)?;
+        texts(self.parts, anns, items, false, self.classic)?;
+        past_texts(self.parts, anns, past, self.classic)?;
         // The comment leads a space, after the SAN or the NAGs; the writer
         // trails the space that separates the moves.
         Ok(comment(out, self.parts, " ", ""))
@@ -281,7 +277,7 @@ fn past_range(index: &[(i32, u32)], moves: u32) -> &[(i32, u32)] {
 
 /// The move's NAGs, straight into the movetext in the stored slot order:
 /// on the move, on the position, then the prefix.
-fn nags(out: &mut String, anns: &GameAnnotations<'_>, items: [&[(i32, u32)]; 2]) -> Result<()> {
+fn nags(out: &mut String, anns: &dyn AnnotationView, items: [&[(i32, u32)]; 2]) -> Result<()> {
     for &(_, offset) in items.into_iter().flatten() {
         let Annotation::Symbols { on_move, on_position, prefix } = anns.annotation_at(offset)? else {
             continue;
@@ -304,7 +300,7 @@ fn nags(out: &mut String, anns: &GameAnnotations<'_>, items: [&[(i32, u32)]; 2])
 /// `int` of medal bits, big-endian in the classic format. A medal of any
 /// other length is left out, as the ancestor's reader leaves what it does
 /// not understand.
-fn medals(parts: &mut Parts, anns: &GameAnnotations<'_>, items: [&[(i32, u32)]; 2]) -> Result<()> {
+fn medals(parts: &mut Parts, anns: &dyn AnnotationView, items: [&[(i32, u32)]; 2], classic: bool) -> Result<()> {
     for &(_, offset) in items.into_iter().flatten() {
         let Annotation::Other { code: 0x22, data } = anns.annotation_at(offset)? else { continue };
         let Ok(bytes) = <[u8; 4]>::try_from(data) else { continue };
@@ -313,7 +309,10 @@ fn medals(parts: &mut Parts, anns: &GameAnnotations<'_>, items: [&[(i32, u32)]; 
         // part's buffer is reused, so the token costs no allocation.
         let part = parts.push(Sep::None);
         part.text.push_str("[%mdl ");
-        push_number(&mut part.text, i64::from(u32::from_be_bytes(bytes)));
+        push_number(
+            &mut part.text,
+            i64::from(if classic { u32::from_be_bytes(bytes) } else { u32::from_le_bytes(bytes) }),
+        );
         part.text.push(']');
     }
     Ok(())
@@ -321,7 +320,7 @@ fn medals(parts: &mut Parts, anns: &GameAnnotations<'_>, items: [&[(i32, u32)]; 
 
 /// The engine evaluations (type `21`), as ChessBase writes them
 /// `[%eval score,depth]` — see [`timing::evaluation_pair`] for the reading.
-fn evaluations(parts: &mut Parts, anns: &GameAnnotations<'_>, items: [&[(i32, u32)]; 2]) -> Result<()> {
+fn evaluations(parts: &mut Parts, anns: &dyn AnnotationView, items: [&[(i32, u32)]; 2]) -> Result<()> {
     for &(_, offset) in items.into_iter().flatten() {
         let Annotation::Other { code: 0x21, data } = anns.annotation_at(offset)? else { continue };
         let Some((score, depth)) = timing::evaluation_pair(data) else { continue };
@@ -337,10 +336,10 @@ fn evaluations(parts: &mut Parts, anns: &GameAnnotations<'_>, items: [&[(i32, u3
 
 /// The times spent on a move (type `07`), as ChessBase writes them
 /// `[%emt h:mm:ss]`, whole seconds, a space after the `[%eval …]`.
-fn times(parts: &mut Parts, anns: &GameAnnotations<'_>, items: [&[(i32, u32)]; 2]) -> Result<()> {
+fn times(parts: &mut Parts, anns: &dyn AnnotationView, items: [&[(i32, u32)]; 2], classic: bool) -> Result<()> {
     for &(_, offset) in items.into_iter().flatten() {
         let Annotation::Other { code: 0x07, data } = anns.annotation_at(offset)? else { continue };
-        let Some((h, m, s, hundredths)) = timing::time_spent(data, true) else { continue };
+        let Some((h, m, s, hundredths)) = timing::time_spent(data, classic) else { continue };
         let part = parts.push(Sep::Space);
         part.text.push_str("[%emt ");
         // The hours are written as they stand (`1:25:00`), the minutes, seconds
@@ -363,7 +362,7 @@ fn times(parts: &mut Parts, anns: &GameAnnotations<'_>, items: [&[(i32, u32)]; 2
 /// known colour, joined into the one token ChessBase writes them in, with
 /// `[%csl …]` and `[%cal …]` and a later `[%mdl …]` all following each other
 /// with nothing between them. The colours 7, 8 and 9 are unknown and left out.
-fn graphics(parts: &mut Parts, anns: &GameAnnotations<'_>, items: [&[(i32, u32)]; 2]) -> Result<()> {
+fn graphics(parts: &mut Parts, anns: &dyn AnnotationView, items: [&[(i32, u32)]; 2]) -> Result<()> {
     let csl_at = parts.as_slice().len();
     parts.push(Sep::None);
     let mut marks = 0usize;
@@ -413,9 +412,11 @@ fn graphics(parts: &mut Parts, anns: &GameAnnotations<'_>, items: [&[(i32, u32)]
         if squares_written {
             // One token, as ChessBase and Lichess write them: `[%csl …][%cal …]`.
             // The arrow part is the last one, so it moves out and appends.
-            let arrows = parts.last_mut().text.clone();
+            // Borrow both live buffers without cloning the arrows String:
+            // they are retained for the next game (zero allocation warm path).
+            let (before, after) = parts.items.split_at_mut(cal_at);
+            before[csl_at].text.push_str(&after[0].text);
             parts.remove(cal_at);
-            parts.get_mut(csl_at).text.push_str(&arrows);
         }
     }
     Ok(())
@@ -428,7 +429,13 @@ fn graphics(parts: &mut Parts, anns: &GameAnnotations<'_>, items: [&[(i32, u32)]
 /// French …), record order breaking ties. 3,735 of 3,752 mixed-language
 /// comment groups of the Mega follow it; the fast path, one text or a slice
 /// already in that order, costs no allocation.
-fn texts(parts: &mut Parts, anns: &GameAnnotations<'_>, items: [&[(i32, u32)]; 2], before: bool) -> Result<()> {
+fn texts(
+    parts: &mut Parts,
+    anns: &dyn AnnotationView,
+    items: [&[(i32, u32)]; 2],
+    before: bool,
+    classic: bool,
+) -> Result<()> {
     let key_of = |&(_, offset): &(i32, u32)| -> Result<Option<(i32, u32)>> {
         match anns.annotation_at(offset)? {
             Annotation::Text { before: b, language, .. } if b == before => Ok(Some((write_key(language), offset))),
@@ -466,13 +473,19 @@ fn texts(parts: &mut Parts, anns: &GameAnnotations<'_>, items: [&[(i32, u32)]; 2
                 clean_into(part, text, own_language);
             }
             Annotation::Other { code: 0x13, data } => {
-                if let Some(q) = Quotation::parse_classic(data) {
+                if let Some(q) = if classic { Quotation::parse_classic(data) } else { Quotation::parse_2cbh(data) } {
                     // A quoted game follows the part before it with the `;`
                     // ChessBase's export writes (`[%csl Gd5];0-1 Alapin…`). It
                     // renders into the part's own buffer, so a quotation costs
                     // no allocation either.
                     let part = parts.push(Sep::Semicolon);
                     q.chessbase_text_into(&mut part.text);
+                } else if !classic {
+                    return Err(cbvault_format::error::Error::corrupt(
+                        "<.2cba>",
+                        0,
+                        "2CBH quoted-game layout or embedded moves are not supported yet",
+                    ));
                 }
             }
             _ => {}
@@ -531,14 +544,14 @@ fn write_key(language: u16) -> i32 {
 /// position, the texts meant to precede a move first (there is no move to
 /// precede them there), then the rest — the order the ancestor writes them
 /// in, and the game served in full.
-fn past_texts(parts: &mut Parts, anns: &GameAnnotations<'_>, past: &[(i32, u32)]) -> Result<()> {
+fn past_texts(parts: &mut Parts, anns: &dyn AnnotationView, past: &[(i32, u32)], classic: bool) -> Result<()> {
     let mut at = 0;
     while at < past.len() {
         let position = past[at].0;
         let end = at + past[at..].iter().take_while(|&&(p, _)| p == position).count();
         let group = [&past[at..end], &[][..]];
-        texts(parts, anns, group, true)?;
-        texts(parts, anns, group, false)?;
+        texts(parts, anns, group, true, classic)?;
+        texts(parts, anns, group, false, classic)?;
         at = end;
     }
     Ok(())

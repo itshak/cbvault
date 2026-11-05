@@ -11,12 +11,16 @@ use std::path::{Path, PathBuf};
 use crate::error::{Error, Result};
 use crate::file::DbFile;
 
+pub mod annotation_items;
 pub mod annotations;
 pub mod bytes;
+pub mod database;
+pub mod entities;
 pub mod header;
 pub mod moves;
 pub mod record;
 pub mod segment;
+pub mod word;
 
 /// Synthetic fixture builders, used by this crate's tests and available to a
 /// consumer that wants to exercise the reader without a real database. They
@@ -24,6 +28,8 @@ pub mod segment;
 pub mod testdata;
 
 pub use annotations::Annotations;
+pub use database::Database;
+pub use entities::Entities;
 pub use header::GameHeader;
 pub use moves::GameMoves;
 pub use record::Record;

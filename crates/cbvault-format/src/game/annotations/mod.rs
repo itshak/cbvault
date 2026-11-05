@@ -79,6 +79,25 @@ impl<'a> Annotation<'a> {
     }
 }
 
+/// Borrowed annotations readable by the common PGN formatter. Both
+/// generations return exactly the same high-level annotation variants,
+/// while their on-disk item boundaries remain independently validated.
+pub trait AnnotationView {
+    /// Read one annotated item by its record-local offset, without allocating.
+    fn annotation_at(&self, offset: u32) -> crate::error::Result<Annotation<'_>>;
+}
+
+impl AnnotationView for crate::cbh::annotations::GameAnnotations<'_> {
+    fn annotation_at(&self, offset: u32) -> crate::error::Result<Annotation<'_>> {
+        crate::cbh::annotations::GameAnnotations::annotation_at(self, offset)
+    }
+}
+impl AnnotationView for crate::twocbh::annotation_items::GameAnnotations<'_> {
+    fn annotation_at(&self, offset: u32) -> crate::error::Result<Annotation<'_>> {
+        crate::twocbh::annotation_items::GameAnnotations::annotation_at(self, offset)
+    }
+}
+
 /// The kinds of annotation record. The classic format gives every type its
 /// size, so a kind is recognized from its code and its data stay in
 /// [`Annotation::Other`] until a boundary decodes them; the reading form of
