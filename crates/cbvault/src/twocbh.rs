@@ -79,14 +79,13 @@ impl Database {
             let result = (|| -> Result<()> {
                 let at = u64::try_from(h.moves_offset())
                     .map_err(|_| Error::corrupt(self.inner.moves().path(), 0, "negative 2CBH move frame offset"))?;
-                let frame = self.inner.moves().record_into(at, &mut move_bytes)?;
+                self.inner.moves().record_into(at, &mut move_bytes)?;
                 let moves = GameMoves::parse(self.inner.moves().path(), &move_bytes)?;
                 let tree = cbvault_chess::v2::verify(GameRef::at(id, at), &moves, &mut scratch)?;
                 if let Some(record) = self.inner.annotations_of(&h)? {
                     let ann = GameAnnotations::parse(record_path(self.inner.annotations()), record.bytes())?;
                     ann.check_positions(tree.total_plies)?;
                 }
-                std::hint::black_box(frame.tag());
                 Ok(())
             })();
             match result {
@@ -129,10 +128,8 @@ impl Database {
                 RecordKind::Analysis => stats.analyses += 1,
                 RecordKind::Game => {
                     stats.games += 1;
-                    // Write each game into a staging buffer to prevent an
-                    // invalid game from producing a malformed PGN fragment.
-                    // The output stream remains bounded to one game's size.
-                    // The writer itself retains its PGN buffer across games.
+                    // The writer checks the complete tree and all annotations
+                    // before its single write_all per game.
                     self.write_game(id, &mut writer, out)?;
                     stats.verified += 1;
                 }
