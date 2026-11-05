@@ -189,8 +189,8 @@ pub fn walk_from(
     stack.clear();
     let mut saved = None;
     let mut stats = TreeStats { lines: 1, ..TreeStats::default() };
-    // A line is main only at depth zero. An alternative temporarily
-    // leaves the main line and must restore that status on resume.
+    // The main line is stored first; alternatives follow it after an
+    // end-of-line sentinel. Mark subsequent decoded lines as variations.
     let mut main = true;
     let mut ended = false;
     let mut tokens = game.tokens().peekable();
@@ -231,15 +231,14 @@ pub fn walk_from(
                     return Err(error(what, stats.total_plies, "variation nesting beyond 1024"));
                 }
                 stack.push(before);
-                main = false;
                 sink.branch();
             }
             Token::EndOfLine => {
+                main = false;
                 saved = None;
                 match stack.pop() {
                     Some(before) => {
                         board = before;
-                        main = stack.is_empty();
                         stats.lines += 1;
                         sink.resume();
                     }
@@ -338,8 +337,8 @@ mod tests {
             move_word(White, WPiece::Pawn, 12, 28, Captured::Nothing), // main 1. e4
             move_word(Black, WPiece::Pawn, 52, 36, Captured::Nothing), // main ... e5
             word::ALTERNATIVE,
+            word::END_OF_LINE, // main line ends, restore board before ...e5
             move_word(Black, WPiece::Pawn, 51, 35, Captured::Nothing), // (1... d5)
-            word::END_OF_LINE,
             word::END_OF_LINE,
         ];
         let frame = framed_words(&words);
