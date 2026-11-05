@@ -4,7 +4,7 @@
 
 `cbvault` already has an MIT, high-throughput, read-only classic ChessBase reader and a partly inspected `.2cbh` family, but refuses to open 2CBH games because `.2cbg` is not decoded. This excludes newer ChessBase personal libraries from downstream GUI and analysis tools. The earlier assumption that no reusable 2CBH implementation exists is **superseded** by the finding of a working **MIT Rust reader in `asavis/oschess-cb-bridge` tag `v1.0.3`**, plus comprehensive format documentation and a Java reader/writer in Morphy. The current oschess branch is AGPL-3.0 and must not be ported.
 
-This change is **planned, not implemented**. Complete this in cbvault as a separately gated library capability. The most important release criterion is not a successful demo, but **local-only byte-level parity against real ChessBase's own PGN export**, with the pre-existing, fully evidenced differences kept intact.
+This change has an **implemented native read-only reader and PGN integration under review**, not yet a verified complete ChessBase-equivalent release. The real-database gold gate, rare annotated content, unified classic/v2 bridge integration, and independent clean-room delta review remain open; see [implementation-status.md](implementation-status.md). Treat it as a separately gated library capability. The most important release criterion is not a successful demo, but **local-only byte-level parity against real ChessBase's own PGN export**, with the pre-existing, fully evidenced differences kept intact.
 
 ## What Changes
 
