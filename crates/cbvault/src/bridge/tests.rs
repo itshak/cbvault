@@ -227,7 +227,7 @@ fn generation_is_reported_without_opening_anything() {
 fn a_two_cbh_set_is_classified_and_refused_rather_than_misread() {
     use cbvault_format::twocbh::testdata::{Game, remove_set, write_set};
 
-    let games = [Game::new(1, b"FIDE", b"FIDE"), Game::new(2, b"FIDE", b"FIDE")];
+    let games = [Game::new(1, 1, 2), Game::new(2, 3, 4)];
     let stem = write_set("bridge-twocbh", &games, true);
     assert!(std::path::Path::new(&format!("{}.2cbh", stem.display())).exists(), "the fixture set is really there");
 
@@ -269,7 +269,7 @@ fn a_base_name_containing_a_dot_is_classified_by_its_whole_name() {
     // only a *known member* extension and leaves this name whole.
     assert_eq!(std::path::Path::new("ChessBase 17.2").with_extension(""), std::path::Path::new("ChessBase 17"));
 
-    let games = [Game::new(1, b"FIDE", b"FIDE")];
+    let games = [Game::new(1, 1, 2)];
     let stem = write_set("bridge-dot", &games, true);
     let dotted = stem.parent().expect("the fixture dir").join("ChessBase 17.2");
     for ext in [".2cbh", ".2cbg", ".2cba"] {
