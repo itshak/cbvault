@@ -336,17 +336,17 @@ mod tests {
         let words = [
             word::MOVES,
             move_word(White, WPiece::Pawn, 12, 28, Captured::Nothing), // main 1. e4
-            word::ALTERNATIVE,
-            move_word(White, WPiece::Pawn, 11, 27, Captured::Nothing), // (1. d4)
-            word::END_OF_LINE,
             move_word(Black, WPiece::Pawn, 52, 36, Captured::Nothing), // main ... e5
+            word::ALTERNATIVE,
+            move_word(Black, WPiece::Pawn, 51, 35, Captured::Nothing), // (1... d5)
+            word::END_OF_LINE,
             word::END_OF_LINE,
         ];
         let frame = framed_words(&words);
         let moves = GameMoves::parse(Path::new("variation.2cbg"), &frame).unwrap();
         let stats = verify(GameRef::new(2), &moves, &mut V2Scratch::default()).unwrap();
         assert_eq!(stats.total_plies, 3);
-        assert_eq!(stats.main_line_plies, 2, "mainline resumed after a completed alternative");
+        assert_eq!(stats.main_line_plies, 2, "only the primary two moves count toward the main line");
         assert_eq!(stats.lines, 2);
     }
 
