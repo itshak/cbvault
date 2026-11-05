@@ -12,9 +12,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::thread;
 
-use cbvault_format::game::RecordKind;
-use crate::pgn::PgnWriter;
 use super::{Database, ReadScratch, ScanStats, io_error};
+use crate::pgn::PgnWriter;
+use cbvault_format::game::RecordKind;
 
 type ExportChunk = io::Result<(Vec<u8>, ScanStats)>;
 
@@ -34,15 +34,21 @@ impl Database {
     /// their chess/writer/record scratch. Bounded in-flight chunks control
     /// memory regardless of input size or worker scheduling.
     pub fn export_parallel(
-        &self, out: &mut impl Write, first: u32, last: u32,
-        threads: usize, batch_size: usize,
+        &self,
+        out: &mut impl Write,
+        first: u32,
+        last: u32,
+        threads: usize,
+        batch_size: usize,
     ) -> io::Result<ScanStats> {
         if threads == 0 || batch_size == 0 {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, "threads and batch_size must be positive"));
         }
         let first = first.max(1) as u64;
         let last = if last == 0 { self.records() as u64 } else { (last as u64).min(self.records() as u64) };
-        if first > last { return Ok(ScanStats::default()); }
+        if first > last {
+            return Ok(ScanStats::default());
+        }
         let nrecords = last - first + 1;
         let size = batch_size as u64;
         let chunks = nrecords.div_ceil(size);
@@ -70,21 +76,30 @@ impl Database {
                     let mut writer = PgnWriter::new();
                     let mut scratch = ReadScratch::default();
                     loop {
-                        if stopped.load(Ordering::Acquire) { break; }
+                        if stopped.load(Ordering::Acquire) {
+                            break;
+                        }
                         let index = next.fetch_add(1, Ordering::AcqRel);
-                        if index >= chunks { break; }
+                        if index >= chunks {
+                            break;
+                        }
                         // Claim a bounded window: this prevents workers from
                         // outrunning an early, unusually expensive batch.
                         while index >= completed.load(Ordering::Acquire).saturating_add(window) {
-                            if stopped.load(Ordering::Acquire) { return; }
+                            if stopped.load(Ordering::Acquire) {
+                                return;
+                            }
                             thread::yield_now();
                         }
                         let lo = first + index * size;
                         let hi = (lo + size - 1).min(last);
                         let mut bytes = Vec::new();
-                        let result = self.export_chunk(&mut bytes, lo, hi, &mut writer, &mut scratch)
+                        let result = self
+                            .export_chunk(&mut bytes, lo, hi, &mut writer, &mut scratch)
                             .map(|stats| (bytes, stats));
-                        if sender.send((index, result)).is_err() { return; }
+                        if sender.send((index, result)).is_err() {
+                            return;
+                        }
                     }
                 });
             }
@@ -121,15 +136,22 @@ impl Database {
     }
 
     fn export_chunk(
-        &self, out: &mut impl Write, first: u64, last: u64,
-        writer: &mut PgnWriter, scratch: &mut ReadScratch,
+        &self,
+        out: &mut impl Write,
+        first: u64,
+        last: u64,
+        writer: &mut PgnWriter,
+        scratch: &mut ReadScratch,
     ) -> io::Result<ScanStats> {
         let mut stats = ScanStats::default();
         for id in first..=last {
             let id = id as u32;
             let header = self.record(id).map_err(io_error)?;
             stats.records += 1;
-            if header.is_deleted() { stats.deleted += 1; continue; }
+            if header.is_deleted() {
+                stats.deleted += 1;
+                continue;
+            }
             match header.kind() {
                 RecordKind::Game => {
                     self.write_game_reuse(id, writer, out, scratch)?;
@@ -140,7 +162,8 @@ impl Database {
                 RecordKind::Analysis => stats.analyses += 1,
                 RecordKind::Unknown(kind) => {
                     return Err(io::Error::new(
-                        io::ErrorKind::InvalidData, format!("unknown 2CBH record kind {kind} at record {id}"),
+                        io::ErrorKind::InvalidData,
+                        format!("unknown 2CBH record kind {kind} at record {id}"),
                     ));
                 }
             }
