@@ -1,4 +1,7 @@
-// Copyright (c) 2026 the cbvault contributors (MIT). See LICENSE.
+// Adapted from oschess-cb-bridge v1.0.3 (MIT), commit bffebfc498d52b4e4631aed32b2f8e8194d125ff.
+// Copyright (c) 2026 the oschess-cb-bridge contributors.
+// Modifications copyright (c) 2026 the cbvault contributors.
+// SPDX-License-Identifier: MIT
 //! 192-byte .2cbh record, with field semantics from the pinned MIT v1.0.3
 //! oschess-cb-bridge v2/record.rs baseline.
 //!
