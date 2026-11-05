@@ -1,3 +1,7 @@
+// Adapted from oschess-cb-bridge v1.0.3 (MIT), commit bffebfc498d52b4e4631aed32b2f8e8194d125ff.
+// Copyright (c) 2026 the oschess-cb-bridge contributors.
+// Modifications copyright (c) 2026 the cbvault contributors.
+// SPDX-License-Identifier: MIT
 //! One `.2cbg`/`.2cba` frame. The MIT v1.0.3 specification gives a
 //! big-endian checksum at 0x10, a two-byte tag at 0x18, and content at 0x1a.
 //! All content is borrowed; only error paths format strings.
