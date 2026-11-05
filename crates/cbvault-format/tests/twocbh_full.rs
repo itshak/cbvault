@@ -1,8 +1,11 @@
 // Copyright (c) 2026 the cbvault contributors (MIT). See LICENSE.
 //! Synthetic read-only 2CBH database family tests: headers, frames and .2lid.
 
-use cbvault_format::twocbh::testdata::{Game, write_set, remove_set};
-use cbvault_format::twocbh::{self, Database, word::{self, MoveWord, Captured, Piece, Color}};
+use cbvault_format::twocbh::testdata::{Game, remove_set, write_set};
+use cbvault_format::twocbh::{
+    self, Database,
+    word::{self, Captured, Color, MoveWord, Piece},
+};
 
 #[test]
 fn complete_family_resolves_player_entities() {
@@ -34,7 +37,10 @@ fn standard_move_words_are_reversible() {
     let encoded = MoveWord::Normal {
         color: Color::White,
         piece: Piece::Pawn,
-        from: 12, to: 28, captured: Captured::Nothing, promotion: None,
+        from: 12,
+        to: 28,
+        captured: Captured::Nothing,
+        promotion: None,
     }; // e2e4 (rank-major indices)
     let word = word::encode(encoded).expect("pawn double push is in table");
     assert_eq!(word::decode(word), Some(encoded));
