@@ -19,36 +19,56 @@ mod pieces;
 pub use pieces::{decode_piece_word, encode_piece_word};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// Colour as recorded in an encoded 2CBH move word.
 pub enum Color {
+    /// White.
     White,
+    /// Black.
     Black,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// Piece role as recorded in 2CBH words, not a chess rules engine.
 pub enum Piece {
+    /// King.
     King,
+    /// Queen.
     Queen,
+    /// Knight.
     Knight,
+    /// Bishop.
     Bishop,
+    /// Rook.
     Rook,
+    /// Pawn.
     Pawn,
 }
 
 /// What a move word says is standing on the destination square.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Captured {
+    /// No capture.
     Nothing,
+    /// Captures a queen.
     Queen,
+    /// Captures a knight.
     Knight,
+    /// Captures a bishop.
     Bishop,
+    /// Captures a rook.
     Rook,
+    /// Captures a pawn.
     Pawn,
+    /// Captures en passant on the vacant destination square.
     EnPassant,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// Castling wing named by the 2CBH word.
 pub enum CastleSide {
+    /// Queenside castling.
     Long,
+    /// Kingside castling.
     Short,
 }
 
@@ -59,32 +79,52 @@ pub enum CastleSide {
 pub type Sq = u8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// One structural move, before legal verification by gigachess.
 pub enum MoveWord {
+    /// A null move.
     Null,
+    /// An ordinary piece move with explicitly recorded capture metadata.
     Normal {
+        /// Stored moving colour.
         color: Color,
+        /// Stored moving piece role.
         piece: Piece,
+        /// Source square, rank-major 0..63.
         from: Sq,
+        /// Destination square, rank-major 0..63.
         to: Sq,
+        /// Stored captured role, or no capture/en passant.
         captured: Captured,
+        /// Optional promotion role.
         promotion: Option<Piece>,
     },
+    /// Castling in a standard-chess game.
     Castle {
+        /// Colour which castles.
         color: Color,
+        /// Castling wing.
         side: CastleSide,
     },
-    /// Castling in a Chess960 game from start position `position` (0-959).
+    /// Castling in a Chess960 game from start position `position` (0..959).
     Castle960 {
+        /// Chess960 start-position number.
         position: u16,
+        /// Colour which castles.
         color: Color,
+        /// Castling wing.
         side: CastleSide,
     },
 }
 
+/// Encoded null-move marker.
 pub const NULL_MOVE: u16 = 0xfffa;
+/// Start of the setup-position word section.
 pub const START_POSITION: u16 = 0xfffb;
+/// Start of the main move-tree word section.
 pub const MOVES: u16 = 0xfffc;
+/// Marker announcing the alternative to the preceding move.
 pub const ALTERNATIVE: u16 = 0xfffd;
+/// Marker ending one line of the move tree.
 pub const END_OF_LINE: u16 = 0xffff;
 
 const FIRST_CASTLE: u16 = 0xb129;
