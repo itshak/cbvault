@@ -13,10 +13,15 @@ use std::path::PathBuf;
 use crate::error::{Error, Result};
 use crate::file::DbFile;
 
+/// Player-name entities.
 pub const PLAYER: usize = 0;
+/// Tournament and venue entities.
 pub const TOURNAMENT: usize = 1;
+/// Source-name entities.
 pub const SOURCE: usize = 2;
+/// Team-name entities.
 pub const TEAM: usize = 4;
+/// Multilingual game-text title entities.
 pub const GAME_TAG: usize = 5;
 const TYPES_MAX: usize = 32;
 const MAX_CONTAINER: usize = 1 << 20;
