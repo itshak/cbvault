@@ -18,9 +18,9 @@
 
 use std::fmt::Write as _;
 
-use cbvault_format::game::annotations::AnnotationView;
 use cbvault_format::codepage::CodePage;
 use cbvault_format::error::Result;
+use cbvault_format::game::annotations::AnnotationView;
 use cbvault_format::game::annotations::timing::Evaluation;
 use cbvault_format::game::annotations::{Annotation, GAME_POSITION, Quotation, arrows, language, squares, timing};
 
@@ -309,7 +309,10 @@ fn medals(parts: &mut Parts, anns: &dyn AnnotationView, items: [&[(i32, u32)]; 2
         // part's buffer is reused, so the token costs no allocation.
         let part = parts.push(Sep::None);
         part.text.push_str("[%mdl ");
-        push_number(&mut part.text, i64::from(if classic { u32::from_be_bytes(bytes) } else { u32::from_le_bytes(bytes) }));
+        push_number(
+            &mut part.text,
+            i64::from(if classic { u32::from_be_bytes(bytes) } else { u32::from_le_bytes(bytes) }),
+        );
         part.text.push(']');
     }
     Ok(())
@@ -426,7 +429,13 @@ fn graphics(parts: &mut Parts, anns: &dyn AnnotationView, items: [&[(i32, u32)];
 /// French …), record order breaking ties. 3,735 of 3,752 mixed-language
 /// comment groups of the Mega follow it; the fast path, one text or a slice
 /// already in that order, costs no allocation.
-fn texts(parts: &mut Parts, anns: &dyn AnnotationView, items: [&[(i32, u32)]; 2], before: bool, classic: bool) -> Result<()> {
+fn texts(
+    parts: &mut Parts,
+    anns: &dyn AnnotationView,
+    items: [&[(i32, u32)]; 2],
+    before: bool,
+    classic: bool,
+) -> Result<()> {
     let key_of = |&(_, offset): &(i32, u32)| -> Result<Option<(i32, u32)>> {
         match anns.annotation_at(offset)? {
             Annotation::Text { before: b, language, .. } if b == before => Ok(Some((write_key(language), offset))),
@@ -473,7 +482,9 @@ fn texts(parts: &mut Parts, anns: &dyn AnnotationView, items: [&[(i32, u32)]; 2]
                     q.chessbase_text_into(&mut part.text);
                 } else if !classic {
                     return Err(cbvault_format::error::Error::corrupt(
-                        "<.2cba>", 0, "2CBH quoted-game layout or embedded moves are not supported yet",
+                        "<.2cba>",
+                        0,
+                        "2CBH quoted-game layout or embedded moves are not supported yet",
                     ));
                 }
             }
