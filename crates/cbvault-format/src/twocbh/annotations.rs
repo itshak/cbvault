@@ -82,7 +82,6 @@ impl<'a> Annotations<'a> {
         self.visit_printable_runs(|run| out.push(text(run)));
         out
     }
-
 }
 
 /// Shortest run of printable bytes [`Annotations::texts`] reports. Below this

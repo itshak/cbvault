@@ -7,8 +7,8 @@
 //! metadata is rating-related, not text. No incorrect placeholder PGN tags
 //! are invented. The full 192 bytes are held by value, without allocation.
 
-use crate::game::{Date, Eco, GameResult, Head, RecordKind};
 use super::bytes::RECORD_SIZE;
+use crate::game::{Date, Eco, GameResult, Head, RecordKind};
 
 #[derive(Clone, Copy)]
 /// A parsed 192-byte game or non-game header record, stored without heap allocation.
@@ -49,24 +49,40 @@ impl GameHeader {
     }
     #[inline]
     /// Return the one-based record identifier (zero for the file header).
-    pub fn id(&self) -> u32 { self.id }
+    pub fn id(&self) -> u32 {
+        self.id
+    }
     #[inline]
     /// Return the unmodified 192 source bytes.
-    pub fn bytes(&self) -> &[u8] { &self.b }
+    pub fn bytes(&self) -> &[u8] {
+        &self.b
+    }
 
     /// Only valid for file header (record 0).
-    pub fn generation_byte(&self) -> u8 { self.b[0x08] }
+    pub fn generation_byte(&self) -> u8 {
+        self.b[0x08]
+    }
     /// Only valid for file header (record 0).
-    pub fn stated_record_size(&self) -> u16 { le_u16(&self.b, 0x0a) }
+    pub fn stated_record_size(&self) -> u16 {
+        le_u16(&self.b, 0x0a)
+    }
     /// Only valid for file header (record 0).
-    pub fn stated_records(&self) -> u32 { le_u32(&self.b, 0x10) }
+    pub fn stated_records(&self) -> u32 {
+        le_u32(&self.b, 0x10)
+    }
 
     /// Record flags at byte 0; bit 0x80 is the deletion flag.
-    pub fn flags_byte(&self) -> u8 { self.b[0] }
+    pub fn flags_byte(&self) -> u8 {
+        self.b[0]
+    }
     /// Type discriminator at byte 2 (1 game/text, 2 analysis).
-    pub fn kind_byte(&self) -> u8 { self.b[2] }
+    pub fn kind_byte(&self) -> u8 {
+        self.b[2]
+    }
     /// Return whether the record has the deletion bit set.
-    pub fn is_deleted(&self) -> bool { self.b[0] & 0x80 != 0 }
+    pub fn is_deleted(&self) -> bool {
+        self.b[0] & 0x80 != 0
+    }
     /// Classify the record as game, guiding text, analysis, or unknown.
     pub fn kind(&self) -> RecordKind {
         match self.b[2] {
@@ -78,68 +94,132 @@ impl GameHeader {
     }
 
     /// Signed byte offset of moves or guiding text in .2cbg.
-    pub fn moves_offset(&self) -> i64 { le_i64(&self.b, 0x08) }
+    pub fn moves_offset(&self) -> i64 {
+        le_i64(&self.b, 0x08)
+    }
     /// Signed byte offset of annotations in .2cba.
-    pub fn annotations_offset(&self) -> i64 { le_i64(&self.b, 0x10) }
+    pub fn annotations_offset(&self) -> i64 {
+        le_i64(&self.b, 0x10)
+    }
 
     /// Entity IDs in .2lid. These are NOT UTF-8 or inline names.
-    pub fn white(&self) -> i64 { le_i64(&self.b, 0x18) }
+    pub fn white(&self) -> i64 {
+        le_i64(&self.b, 0x18)
+    }
     /// Return the Black player entity identifier in the .2lid registry.
-    pub fn black(&self) -> i64 { le_i64(&self.b, 0x20) }
+    pub fn black(&self) -> i64 {
+        le_i64(&self.b, 0x20)
+    }
     /// Return the tournament entity identifier.
-    pub fn tournament(&self) -> i64 { le_i64(&self.b, 0x28) }
+    pub fn tournament(&self) -> i64 {
+        le_i64(&self.b, 0x28)
+    }
     /// Return the annotator entity identifier.
-    pub fn annotator(&self) -> i64 { le_i64(&self.b, 0x30) }
+    pub fn annotator(&self) -> i64 {
+        le_i64(&self.b, 0x30)
+    }
     /// Return the source entity identifier.
-    pub fn source(&self) -> i64 { le_i64(&self.b, 0x38) }
+    pub fn source(&self) -> i64 {
+        le_i64(&self.b, 0x38)
+    }
     /// Return the White team entity identifier.
-    pub fn white_team(&self) -> i64 { le_i64(&self.b, 0x40) }
+    pub fn white_team(&self) -> i64 {
+        le_i64(&self.b, 0x40)
+    }
     /// Return the Black team entity identifier.
-    pub fn black_team(&self) -> i64 { le_i64(&self.b, 0x48) }
+    pub fn black_team(&self) -> i64 {
+        le_i64(&self.b, 0x48)
+    }
     /// Return the game-tag entity identifier.
-    pub fn game_tag(&self) -> i64 { le_i64(&self.b, 0x50) }
+    pub fn game_tag(&self) -> i64 {
+        le_i64(&self.b, 0x50)
+    }
     /// Return the guiding-text author entity identifier.
-    pub fn text_author(&self) -> i64 { le_i64(&self.b, 0x20) }
+    pub fn text_author(&self) -> i64 {
+        le_i64(&self.b, 0x20)
+    }
     /// Return the guiding-text title entity identifier.
-    pub fn text_title(&self) -> i64 { le_i64(&self.b, 0x28) }
+    pub fn text_title(&self) -> i64 {
+        le_i64(&self.b, 0x28)
+    }
     /// Return the analysis title entity identifier.
-    pub fn analysis_title(&self) -> i64 { le_i64(&self.b, 0x18) }
+    pub fn analysis_title(&self) -> i64 {
+        le_i64(&self.b, 0x18)
+    }
     /// Return the analysis author entity identifier.
-    pub fn analysis_author(&self) -> i64 { le_i64(&self.b, 0x28) }
+    pub fn analysis_author(&self) -> i64 {
+        le_i64(&self.b, 0x28)
+    }
 
     /// Decode the game result byte at offset 0x58.
-    pub fn result(&self) -> GameResult { GameResult::from_field(self.b[0x58]) }
+    pub fn result(&self) -> GameResult {
+        GameResult::from_field(self.b[0x58])
+    }
     /// Decode the ECO code or Chess960 start identifier.
-    pub fn eco(&self) -> Eco { Eco::from_field(le_u16(&self.b, 0x80)) }
+    pub fn eco(&self) -> Eco {
+        Eco::from_field(le_u16(&self.b, 0x80))
+    }
     /// Return additional format flags at offset 0x84.
-    pub fn flags(&self) -> u32 { le_u32(&self.b, 0x84) }
+    pub fn flags(&self) -> u32 {
+        le_u32(&self.b, 0x84)
+    }
     /// Decode the packed game date.
-    pub fn played_date(&self) -> Date { Date(le_i32(&self.b, 0xbc)) }
+    pub fn played_date(&self) -> Date {
+        Date(le_i32(&self.b, 0xbc))
+    }
     /// Return the board number.
-    pub fn board(&self) -> i16 { le_i16(&self.b, 0x5e) }
+    pub fn board(&self) -> i16 {
+        le_i16(&self.b, 0x5e)
+    }
     /// Return the primary and secondary round numbers.
-    pub fn round(&self) -> (i32, i32) { (i32::from(le_i16(&self.b, 0x5a)), i32::from(le_i16(&self.b, 0x5c))) }
+    pub fn round(&self) -> (i32, i32) {
+        (i32::from(le_i16(&self.b, 0x5a)), i32::from(le_i16(&self.b, 0x5c)))
+    }
     /// Return White and Black ELO fields.
-    pub fn elo(&self) -> (i32, i32) { (i32::from(le_i16(&self.b, 0x60)), i32::from(le_i16(&self.b, 0x70))) }
+    pub fn elo(&self) -> (i32, i32) {
+        (i32::from(le_i16(&self.b, 0x60)), i32::from(le_i16(&self.b, 0x70)))
+    }
     /// Return the declared mainline move count.
-    pub fn move_count(&self) -> i32 { i32::from(le_i16(&self.b, 0x8a)) }
+    pub fn move_count(&self) -> i32 {
+        i32::from(le_i16(&self.b, 0x8a))
+    }
     /// Original uninterpreted per-record value (not yet proven unique key).
-    pub fn key(&self) -> u64 { le_u64(&self.b, 0x98) }
+    pub fn key(&self) -> u64 {
+        le_u64(&self.b, 0x98)
+    }
 
     /// Raw rating-related fields: never interpret as player names.
-    pub fn rating_white_bytes(&self) -> &[u8] { &self.b[0x68..0x78] }
+    pub fn rating_white_bytes(&self) -> &[u8] {
+        &self.b[0x68..0x78]
+    }
     /// Borrow the raw Black rating metadata region; not a player name.
-    pub fn rating_black_bytes(&self) -> &[u8] { &self.b[0x78..0x88] }
+    pub fn rating_black_bytes(&self) -> &[u8] {
+        &self.b[0x78..0x88]
+    }
 }
 
 impl Head for GameHeader {
-    fn id(&self) -> u32 { GameHeader::id(self) }
-    fn kind(&self) -> RecordKind { GameHeader::kind(self) }
-    fn is_deleted(&self) -> bool { GameHeader::is_deleted(self) }
-    fn white(&self) -> i64 { GameHeader::white(self) }
-    fn black(&self) -> i64 { GameHeader::black(self) }
-    fn tournament(&self) -> i64 { GameHeader::tournament(self) }
-    fn annotator(&self) -> i64 { GameHeader::annotator(self) }
+    fn id(&self) -> u32 {
+        GameHeader::id(self)
+    }
+    fn kind(&self) -> RecordKind {
+        GameHeader::kind(self)
+    }
+    fn is_deleted(&self) -> bool {
+        GameHeader::is_deleted(self)
+    }
+    fn white(&self) -> i64 {
+        GameHeader::white(self)
+    }
+    fn black(&self) -> i64 {
+        GameHeader::black(self)
+    }
+    fn tournament(&self) -> i64 {
+        GameHeader::tournament(self)
+    }
+    fn annotator(&self) -> i64 {
+        GameHeader::annotator(self)
+    }
     fn other(&self) -> Option<(i64, i64)> {
         match self.kind() {
             RecordKind::Game => None,
@@ -148,13 +228,27 @@ impl Head for GameHeader {
             RecordKind::Unknown(_) => Some((-1, -1)),
         }
     }
-    fn result(&self) -> GameResult { GameHeader::result(self) }
-    fn eco(&self) -> Eco { GameHeader::eco(self) }
-    fn played_date(&self) -> Date { GameHeader::played_date(self) }
-    fn round(&self) -> (i32, i32) { GameHeader::round(self) }
-    fn elo(&self) -> (i32, i32) { GameHeader::elo(self) }
-    fn move_count(&self) -> i32 { GameHeader::move_count(self) }
-    fn bytes(&self) -> &[u8] { GameHeader::bytes(self) }
+    fn result(&self) -> GameResult {
+        GameHeader::result(self)
+    }
+    fn eco(&self) -> Eco {
+        GameHeader::eco(self)
+    }
+    fn played_date(&self) -> Date {
+        GameHeader::played_date(self)
+    }
+    fn round(&self) -> (i32, i32) {
+        GameHeader::round(self)
+    }
+    fn elo(&self) -> (i32, i32) {
+        GameHeader::elo(self)
+    }
+    fn move_count(&self) -> i32 {
+        GameHeader::move_count(self)
+    }
+    fn bytes(&self) -> &[u8] {
+        GameHeader::bytes(self)
+    }
 }
 
 #[cfg(test)]

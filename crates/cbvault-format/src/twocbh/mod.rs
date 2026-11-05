@@ -118,12 +118,9 @@ pub fn probe_all(stem: &Path) -> (Generation, PathBuf) {
     const MEMBERS_CLASSIC: [&str; 11] = ["cbh", "cbg", "cba", "cbe", "cbc", "cbl", "cbm", "cbo", "cbp", "cbs", "cbt"];
     // A stem that already names a member keeps its own name; otherwise the
     // extension, if it is one we know, is dropped.
-    let member = stem
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| {
-            MEMBERS_2CBH.iter().chain(MEMBERS_CLASSIC.iter()).any(|candidate| candidate.eq_ignore_ascii_case(ext))
-        });
+    let member = stem.extension().and_then(|ext| ext.to_str()).is_some_and(|ext| {
+        MEMBERS_2CBH.iter().chain(MEMBERS_CLASSIC.iter()).any(|candidate| candidate.eq_ignore_ascii_case(ext))
+    });
     let base = if member { stem.with_extension("") } else { stem.to_path_buf() };
     // Only a valid header-member presence classifies a usable set.
     // Sidecars on their own are not a database, and the header is the

@@ -50,7 +50,8 @@ impl<'a> Record<'a> {
             return Err(bad(format!("length field {total}, but 34 + {a} + {b} = {expect}")));
         }
         let end = CONTENT_OFFSET + a as usize;
-        let content = raw.get(CONTENT_OFFSET..end).ok_or_else(|| bad(format!("content runs past the {total}-byte record")))?;
+        let content =
+            raw.get(CONTENT_OFFSET..end).ok_or_else(|| bad(format!("content runs past the {total}-byte record")))?;
         let stored_checksum = u64::from_be_bytes(raw[16..24].try_into().expect("8 checksum bytes"));
         if stored_checksum != checksum(content) {
             return Err(bad("checksum mismatch".to_owned()));

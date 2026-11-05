@@ -19,11 +19,7 @@ use cbvault_format::twocbh::{self, Annotations, GameMoves, Generation, Headers, 
 fn games() -> Vec<twocbh::testdata::Game> {
     let mut flagged = twocvh::game(7, 5, 6);
     flagged.kind = 0x81;
-    vec![
-        twocvh::game(0x1111_2222_3333_4444, 1, 2),
-        twocvh::game(0xaaaa_bbbb_cccc_dddd, 3, 4),
-        flagged,
-    ]
+    vec![twocvh::game(0x1111_2222_3333_4444, 1, 2), twocvh::game(0xaaaa_bbbb_cccc_dddd, 3, 4), flagged]
 }
 
 /// Runs `f` over a synthetic set of `count` games, then removes the set.

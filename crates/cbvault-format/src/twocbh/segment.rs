@@ -81,7 +81,9 @@ impl Segment {
         let mut n = 0;
         while at < self.len {
             let total = self.total_at(at)?;
-            at = at.checked_add(total).ok_or_else(|| Error::corrupt(&self.path, at, "2CBH segment: record offset overflow"))?;
+            at = at
+                .checked_add(total)
+                .ok_or_else(|| Error::corrupt(&self.path, at, "2CBH segment: record offset overflow"))?;
             n += 1;
         }
         if at != self.len {
@@ -166,7 +168,6 @@ impl Segment {
         self.file.read_into(offset, buf)?;
         Record::parse(&self.path, offset, buf)
     }
-
 }
 
 /// A record read from a [`Segment`], which is either a slice of the memory map

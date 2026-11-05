@@ -4,8 +4,8 @@
 //! legal board in cbvault-chess before any PGN or search result is emitted.
 //! Structure follows the pinned MIT v1.0.3 v2/moves.rs baseline.
 
-use crate::error::{Error, Result};
 use super::record::Record;
+use crate::error::{Error, Result};
 
 const START_POSITION: u16 = 0xfffb;
 const MOVES: u16 = 0xfffc;
@@ -58,16 +58,24 @@ impl<'a> GameMoves<'a> {
 
     #[inline]
     /// Borrow the validated underlying frame.
-    pub fn record(&self) -> &Record<'a> { &self.record }
+    pub fn record(&self) -> &Record<'a> {
+        &self.record
+    }
     #[inline]
     /// Return B, the spare-capacity byte count.
-    pub fn parameter_b(&self) -> u32 { self.record.parameter_b() }
+    pub fn parameter_b(&self) -> u32 {
+        self.record.parameter_b()
+    }
     #[inline]
     /// Return the original encoded word bytes.
-    pub fn content(&self) -> &'a [u8] { self.record.content() }
+    pub fn content(&self) -> &'a [u8] {
+        self.record.content()
+    }
     /// Variant 2 is Chess960 in the low tag byte.
     #[inline]
-    pub fn is_chess960(&self) -> bool { self.record.tag() & 0xff == 2 }
+    pub fn is_chess960(&self) -> bool {
+        self.record.tag() & 0xff == 2
+    }
 
     /// Raw setup words after FFFB and before FFFC, if any.
     pub fn start_words(&self) -> impl Iterator<Item = u16> + '_ {
@@ -80,21 +88,23 @@ impl<'a> GameMoves<'a> {
     /// Structural move tree tokens. Iteration uses no heap memory. The words
     /// are NOT moves2 and have not undergone chess-legality validation.
     pub fn tokens(&self) -> impl Iterator<Item = Token> + '_ {
-        self.content()[self.tree_start..].chunks_exact(2).map(|b| {
-            match u16::from_le_bytes([b[0], b[1]]) {
-                ALTERNATIVE => Token::Alternative,
-                END_OF_LINE => Token::EndOfLine,
-                w => Token::MoveWord(w),
-            }
+        self.content()[self.tree_start..].chunks_exact(2).map(|b| match u16::from_le_bytes([b[0], b[1]]) {
+            ALTERNATIVE => Token::Alternative,
+            END_OF_LINE => Token::EndOfLine,
+            w => Token::MoveWord(w),
         })
     }
 
     /// The actual move-to-moves2 conversion is not yet implemented.
     #[inline]
-    pub fn is_decoded(&self) -> bool { false }
+    pub fn is_decoded(&self) -> bool {
+        false
+    }
     /// Explicitly unavailable: never cast raw move words into moves2.
     #[inline]
-    pub fn stream(&self) -> Option<&'a [u16]> { None }
+    pub fn stream(&self) -> Option<&'a [u16]> {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -121,12 +131,10 @@ mod tests {
         let raw = record(4, &bytes);
         let g = GameMoves::parse(Path::new("db.2cbg"), &raw).unwrap();
         assert_eq!(g.start_words().collect::<Vec<_>>(), vec![9, 10]);
-        assert_eq!(g.tokens().collect::<Vec<_>>(), vec![
-            Token::MoveWord(0xfffa),
-            Token::Alternative,
-            Token::MoveWord(42),
-            Token::EndOfLine,
-        ]);
+        assert_eq!(
+            g.tokens().collect::<Vec<_>>(),
+            vec![Token::MoveWord(0xfffa), Token::Alternative, Token::MoveWord(42), Token::EndOfLine,]
+        );
     }
 
     #[test]
