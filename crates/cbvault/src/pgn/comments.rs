@@ -160,12 +160,6 @@ impl Parts {
         &mut self.items[at]
     }
 
-    /// The part before the one being written.
-    #[inline]
-    pub(super) fn last_mut(&mut self) -> &mut Part {
-        &mut self.items[self.len - 1]
-    }
-
     /// The bytes the parts keep for reuse (their high-water mark).
     pub(super) fn capacity(&self) -> usize {
         self.items.capacity() * size_of::<Part>() + self.items.iter().map(|p| p.text.capacity()).sum::<usize>()
