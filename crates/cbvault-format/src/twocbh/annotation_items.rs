@@ -25,8 +25,11 @@ pub struct GameAnnotations<'a> {
 /// One v2 annotation, with its position and byte offset in the content.
 #[derive(Clone, Copy, Debug)]
 pub struct Item<'a> {
+    /// Stored-order ply index, or -1 for the whole-game comment.
     pub position: i32,
+    /// Byte offset of the type code in the annotation content.
     pub offset: u32,
+    /// Fully parsed borrowed item.
     pub annotation: Annotation<'a>,
 }
 
