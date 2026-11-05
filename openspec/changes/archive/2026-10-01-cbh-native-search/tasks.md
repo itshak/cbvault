@@ -28,5 +28,5 @@
 - [x] 6. Docs: the new predicates, multi-id resolution, the open-end semantics,
       and why `2 × header.move_count()` is wrong. *Verify: `cargo doc` and
       `cargo clippy` produce no warnings; README updated.*
-- [ ] 7. `cargo fmt`, `cargo clippy`, `cargo test` green on Linux, macOS and
-      Windows; version bumped to `0.1.2`; published and tagged.
+- [x] 7. `cargo fmt`, `cargo clippy`, `cargo test` green on Linux, macOS and
+      Windows; version bumped to `0.1.2`; published and tagged. Done: released as v0.1.2.
