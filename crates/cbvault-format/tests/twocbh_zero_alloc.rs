@@ -22,21 +22,29 @@ unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         count();
         #[allow(unsafe_code)]
-        unsafe { System.alloc(layout) }
+        unsafe {
+            System.alloc(layout)
+        }
     }
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         count();
         #[allow(unsafe_code)]
-        unsafe { System.alloc_zeroed(layout) }
+        unsafe {
+            System.alloc_zeroed(layout)
+        }
     }
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, size: usize) -> *mut u8 {
         count();
         #[allow(unsafe_code)]
-        unsafe { System.realloc(ptr, layout, size) }
+        unsafe {
+            System.realloc(ptr, layout, size)
+        }
     }
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         #[allow(unsafe_code)]
-        unsafe { System.dealloc(ptr, layout) }
+        unsafe {
+            System.dealloc(ptr, layout)
+        }
     }
 }
 fn count() {
