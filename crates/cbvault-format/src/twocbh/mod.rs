@@ -12,6 +12,7 @@ use crate::error::{Error, Result};
 use crate::file::DbFile;
 
 pub mod annotations;
+pub mod annotation_items;
 pub mod entities;
 pub mod database;
 pub mod word;
