@@ -44,7 +44,7 @@ impl<'a> GameMoves<'a> {
         let tree_start = if first == START_POSITION {
             // SETUP follows START_POSITION and finishes at MOVES. Reject an
             // incomplete section; we cannot guess where the game begins.
-            let Some(i) = content.chunks_exact(2).position(|b| u16::from_le_bytes([b[0], b[1]]) == MOVES) else {
+            let Some(i) = content.as_chunks::<2>().0.iter().position(|b| u16::from_le_bytes([b[0], b[1]]) == MOVES) else {
                 return Err(Error::corrupt(path, 0, "2CBH moves: missing MOVES marker after setup"));
             };
             (i + 1) * 2
@@ -81,14 +81,16 @@ impl<'a> GameMoves<'a> {
     pub fn start_words(&self) -> impl Iterator<Item = u16> + '_ {
         let begin = if self.tree_start > 2 { 2 } else { 0 };
         self.content()[begin..self.tree_start.saturating_sub(2)]
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|b| u16::from_le_bytes([b[0], b[1]]))
     }
 
     /// Structural move tree tokens. Iteration uses no heap memory. The words
     /// are NOT moves2 and have not undergone chess-legality validation.
     pub fn tokens(&self) -> impl Iterator<Item = Token> + '_ {
-        self.content()[self.tree_start..].chunks_exact(2).map(|b| match u16::from_le_bytes([b[0], b[1]]) {
+        self.content()[self.tree_start..] .as_chunks::<2>().0.iter().map(|b| match u16::from_le_bytes([b[0], b[1]]) {
             ALTERNATIVE => Token::Alternative,
             END_OF_LINE => Token::EndOfLine,
             w => Token::MoveWord(w),
