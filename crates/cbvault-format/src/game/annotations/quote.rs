@@ -108,7 +108,8 @@ impl Quotation {
         let q = Quotation {
             white: QuotedPlayer { last: white_last, first: white_first, elo: le16(28) },
             black: QuotedPlayer { last: black_last, first: black_first, elo: le16(30) },
-            event, site,
+            event,
+            site,
             date: Date(i32::from_le_bytes(fixed[0..4].try_into().ok()?)),
             kind: fixed[4],
             round: fixed[43],
@@ -125,13 +126,18 @@ impl Quotation {
         match c.u8()? {
             1 => {}
             // Quoted positions with setup boards require separate replay.
-            0 => { c.take(64 + 11)?; return None; }
+            0 => {
+                c.take(64 + 11)?;
+                return None;
+            }
             _ => return None,
         }
         c.take(2)?;
         let n = usize::try_from(c.le32()?).ok()?;
         // A nonempty quotation has a 5-byte-per-move stream; never drop it.
-        if n != 0 { return None; }
+        if n != 0 {
+            return None;
+        }
         c.take(4)?;
         Some(q)
     }
