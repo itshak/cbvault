@@ -15,10 +15,10 @@ use cbvault_format::twocbh::moves::{GameMoves, Token};
 use cbvault_format::twocbh::word::{self, Captured, CastleSide, MoveWord, Piece as WPiece};
 use gigachess::{Board, Color, Move, Role, Square};
 
-use crate::decode::{GameRef, MoveSink, TreeStats, MAX_VARIATION_DEPTH};
-use crate::start::{Start, Setup, start_board_cached, StartCache};
+use crate::decode::{GameRef, MAX_VARIATION_DEPTH, MoveSink, TreeStats};
 #[cfg(test)]
 use crate::start::standard_board;
+use crate::start::{Setup, Start, StartCache, start_board_cached};
 
 /// Scratch buffers retained across 2CBH games.
 #[derive(Default, Debug)]
@@ -30,13 +30,19 @@ pub struct V2Scratch {
 }
 
 fn color(c: word::Color) -> Color {
-    match c { word::Color::White => Color::White, word::Color::Black => Color::Black }
+    match c {
+        word::Color::White => Color::White,
+        word::Color::Black => Color::Black,
+    }
 }
 fn role(p: WPiece) -> Role {
     match p {
-        WPiece::King => Role::King, WPiece::Queen => Role::Queen,
-        WPiece::Knight => Role::Knight, WPiece::Bishop => Role::Bishop,
-        WPiece::Rook => Role::Rook, WPiece::Pawn => Role::Pawn,
+        WPiece::King => Role::King,
+        WPiece::Queen => Role::Queen,
+        WPiece::Knight => Role::Knight,
+        WPiece::Bishop => Role::Bishop,
+        WPiece::Rook => Role::Rook,
+        WPiece::Pawn => Role::Pawn,
     }
 }
 fn other_role(p: Captured) -> Option<Role> {
@@ -65,7 +71,9 @@ pub fn start_of(moves: &GameMoves<'_>) -> Result<Start> {
     let mut words = moves.start_words();
     let first = words.next().ok_or_else(|| Error::corrupt("<.2cbg>", 0, "2CBH: empty setup section"))?;
     if moves.is_chess960() && moves.start_words().count() == 1 {
-        if first >= 960 { return Err(Error::corrupt("<.2cbg>", 0, "2CBH: invalid Chess960 start index")); }
+        if first >= 960 {
+            return Err(Error::corrupt("<.2cbg>", 0, "2CBH: invalid Chess960 start index"));
+        }
         return Ok(Start::Chess960(first));
     }
 
@@ -81,15 +89,17 @@ pub fn start_of(moves: &GameMoves<'_>) -> Result<Start> {
     };
     let mut pieces: [Option<(Color, Role)>; 64] = [None; 64];
     for w in words {
-        let (side, piece, sq) = word::decode_piece_word(w)
-            .ok_or_else(|| Error::corrupt("<.2cbg>", 0, "2CBH: unknown setup piece word"))?;
+        let (side, piece, sq) =
+            word::decode_piece_word(w).ok_or_else(|| Error::corrupt("<.2cbg>", 0, "2CBH: unknown setup piece word"))?;
         let slot = &mut pieces[sq as usize];
         if slot.is_some() {
             return Err(Error::corrupt("<.2cbg>", 0, "2CBH: duplicate setup square"));
         }
         *slot = Some((color(side), role(piece)));
     }
-    if ep > 8 { return Err(Error::corrupt("<.2cbg>", 0, "2CBH: invalid en-passant file")); }
+    if ep > 8 {
+        return Err(Error::corrupt("<.2cbg>", 0, "2CBH: invalid en-passant file"));
+    }
     Ok(Start::Setup(Setup {
         chess960: moves.is_chess960(),
         move_number,
@@ -111,10 +121,11 @@ pub fn to_move(board: &Board, word_value: u16, start: &Start) -> std::result::Re
     let word = word::decode(word_value).ok_or("not a legal 2CBH move word")?;
     match word {
         MoveWord::Null => Ok(Move::NULL),
-        MoveWord::Castle { color: c, side }
-        | MoveWord::Castle960 { color: c, side, .. } => {
+        MoveWord::Castle { color: c, side } | MoveWord::Castle960 { color: c, side, .. } => {
             let c = color(c);
-            if board.turn() != c { return Err("castling by wrong side"); }
+            if board.turn() != c {
+                return Err("castling by wrong side");
+            }
             if let MoveWord::Castle960 { position, .. } = word
                 && let Start::Chess960(start_position) = start
                 && position != *start_position
@@ -123,12 +134,16 @@ pub fn to_move(board: &Board, word_value: u16, start: &Start) -> std::result::Re
             }
             let kingside = matches!(side, CastleSide::Short);
             let bit = gigachess::types::castle_right_bit(c, kingside);
-            if board.castling_rights() & (1 << bit) == 0 { return Err("missing castling right"); }
+            if board.castling_rights() & (1 << bit) == 0 {
+                return Err("missing castling right");
+            }
             Ok(Move::new(board.king_square(c), board.castling_rook_square(bit), None))
         }
         MoveWord::Normal { color: c, piece, from, to, captured, promotion } => {
             let (c, p) = (color(c), role(piece));
-            if board.turn() != c { return Err("move out of turn"); }
+            if board.turn() != c {
+                return Err("move out of turn");
+            }
             let from = Square(from);
             let to = Square(to);
             if board.piece_at(from).is_none_or(|v| v.color != c || v.role != p) {
@@ -148,8 +163,10 @@ pub fn to_move(board: &Board, word_value: u16, start: &Start) -> std::result::Re
             if captured == Captured::EnPassant && board.en_passant() != Some(to) {
                 return Err("en passant target differs from stored word");
             }
-            if captured == Captured::Nothing && p == Role::Pawn && board.en_passant() == Some(to) &&
-               from.file() != to.file()
+            if captured == Captured::Nothing
+                && p == Role::Pawn
+                && board.en_passant() == Some(to)
+                && from.file() != to.file()
             {
                 return Err("en passant must be explicitly encoded");
             }
@@ -161,8 +178,12 @@ pub fn to_move(board: &Board, word_value: u16, start: &Start) -> std::result::Re
 /// Replay one game with a reusable variation stack; the sink receives
 /// gigachess moves2 (including its canonical null word), plus branch events.
 pub fn walk_from(
-    what: GameRef, game: &GameMoves<'_>, start: &Start,
-    sink: &mut impl MoveSink, stack: &mut Vec<Board>, cache: &mut StartCache,
+    what: GameRef,
+    game: &GameMoves<'_>,
+    start: &Start,
+    sink: &mut impl MoveSink,
+    stack: &mut Vec<Board>,
+    cache: &mut StartCache,
 ) -> Result<TreeStats> {
     let mut board = start_board_cached(start, cache)?;
     stack.clear();
@@ -172,13 +193,20 @@ pub fn walk_from(
     let mut ended = false;
     let mut tokens = game.tokens().peekable();
     while let Some(token) = tokens.next() {
-        if ended { return Err(error(what, stats.total_plies, "words after final end-of-line")); }
-        if sink.stopped() { return Ok(stats); }
+        if ended {
+            return Err(error(what, stats.total_plies, "words after final end-of-line"));
+        }
+        if sink.stopped() {
+            return Ok(stats);
+        }
         match token {
             Token::MoveWord(w) => {
                 let mv = to_move(&board, w, start).map_err(|why| error(what, stats.total_plies, why))?;
-                if tokens.peek() == Some(&Token::Alternative) { saved = Some(board); }
-                else { saved = None; }
+                if tokens.peek() == Some(&Token::Alternative) {
+                    saved = Some(board);
+                } else {
+                    saved = None;
+                }
                 sink.play(&board, mv.word(), main);
                 let result = match (sink.wants_zobrist(), sink.wants_checkers()) {
                     (true, true) => board.play(mv).map(|_| ()),
@@ -189,10 +217,14 @@ pub fn walk_from(
                 result.map_err(|_| error(what, stats.total_plies, "gigachess rejected the encoded move"))?;
                 sink.played(&board);
                 stats.total_plies += 1;
-                if main { stats.main_line_plies += 1; }
+                if main {
+                    stats.main_line_plies += 1;
+                }
             }
             Token::Alternative => {
-                let before = saved.take().ok_or_else(|| error(what, stats.total_plies, "alternative without a preceding move"))?;
+                let before = saved
+                    .take()
+                    .ok_or_else(|| error(what, stats.total_plies, "alternative without a preceding move"))?;
                 if stack.len() >= MAX_VARIATION_DEPTH {
                     return Err(error(what, stats.total_plies, "variation nesting beyond 1024"));
                 }
@@ -220,7 +252,12 @@ pub fn walk_from(
 }
 
 /// Replay with all allocation-managed scratch owned by the caller.
-pub fn walk_reuse(what: GameRef, game: &GameMoves<'_>, sink: &mut impl MoveSink, scratch: &mut V2Scratch) -> Result<TreeStats> {
+pub fn walk_reuse(
+    what: GameRef,
+    game: &GameMoves<'_>,
+    sink: &mut impl MoveSink,
+    scratch: &mut V2Scratch,
+) -> Result<TreeStats> {
     let start = start_of(game)?;
     walk_from(what, game, &start, sink, &mut scratch.stack, &mut scratch.starts)
 }
