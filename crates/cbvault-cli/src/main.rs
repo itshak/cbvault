@@ -590,9 +590,7 @@ fn run_info_v2(path: &Path, json: bool) -> Result<bool, Box<dyn std::error::Erro
     let players = entities.count(cbvault_format::twocbh::entities::PLAYER);
     let tournaments = entities.count(cbvault_format::twocbh::entities::TOURNAMENT);
     if json {
-        println!(
-            "{{\"format\":\"2CBH\",\"records\":{records},\"players\":{players},\"tournaments\":{tournaments}}}"
-        );
+        println!("{{\"format\":\"2CBH\",\"records\":{records},\"players\":{players},\"tournaments\":{tournaments}}}");
     } else {
         println!("format          2CBH");
         println!("records         {records}");
@@ -609,15 +607,16 @@ fn run_verify_v2(path: &Path, json: bool, limit: usize) -> Result<bool, Box<dyn 
     let started = Instant::now();
     let mut errors = Vec::new();
     let stats = db.verify(|id, error| {
-        if errors.len() < limit { errors.push(format!("record {id}: {error}")); }
+        if errors.len() < limit {
+            errors.push(format!("record {id}: {error}"));
+        }
     })?;
     let seconds = started.elapsed().as_secs_f64();
     if json {
         let list = errors.iter().map(|s| json_str(s)).collect::<Vec<_>>().join(",");
         println!(
             "{{\"format\":\"2CBH\",\"records\":{},\"games\":{},\"deleted\":{},\"guiding_texts\":{},\"analyses\":{},\"verified\":{},\"failures\":{},\"seconds\":{seconds:.2},\"threads\":1,\"failure_items\":[{list}]}}",
-            stats.records, stats.games, stats.deleted, stats.texts, stats.analyses,
-            stats.verified, stats.failures,
+            stats.records, stats.games, stats.deleted, stats.texts, stats.analyses, stats.verified, stats.failures,
         );
     } else {
         println!("2CBH verification: {} records, {} live games", stats.records, stats.games);
@@ -627,7 +626,9 @@ fn run_verify_v2(path: &Path, json: bool, limit: usize) -> Result<bool, Box<dyn 
         println!("deleted          {}", stats.deleted);
         println!("failed           {}", stats.failures);
         println!("elapsed          {seconds:.2} seconds (sequential)");
-        for error in &errors { println!("  {error}"); }
+        for error in &errors {
+            println!("  {error}");
+        }
     }
     Ok(stats.failures == 0)
 }
