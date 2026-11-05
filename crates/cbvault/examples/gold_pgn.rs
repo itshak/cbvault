@@ -21,7 +21,7 @@
 //! and `test_games.pgn` beside it. Prints a summary and the first diffs.
 
 use std::collections::HashMap;
-use std::io::Write;
+use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 
 use cbvault::pgn::PgnWriter;
@@ -37,9 +37,13 @@ fn main() {
     let mut ours_path: Option<PathBuf> = None;
     let mut dump_path: Option<PathBuf> = None;
     let mut parallel: usize = 0;
+    let mut force_2cbh = false;
+    let mut force_cbh = false;
     let mut probe: Vec<u32> = Vec::new();
     while let Some(arg) = args.next() {
         match arg.as_str() {
+            "--2cbh" => force_2cbh = true,
+            "--cbh" => force_cbh = true,
             "--limit" => limit = args.next().expect("--limit N").parse().expect("a number"),
             "--out" => out_path = args.next().map(PathBuf::from),
             "--ours" => ours_path = args.next().map(PathBuf::from),
@@ -56,33 +60,72 @@ fn main() {
                     .collect();
             }
             other => {
-                panic!("unknown flag {other} (want --limit N / --out FILE / --ours FILE / --dump FILE / --probe IDS)")
+                panic!(
+                    "unknown flag {other} (want --2cbh / --cbh / --limit N / --out FILE / --ours FILE / --dump FILE / --probe IDS)"
+                )
             }
         }
     }
-    let base = std::env::var("CBVAULT_TEST_DB").unwrap_or_else(|_| {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../Mega Database 2025/Mega Database 2025").display().to_string()
-    });
-    let base = PathBuf::from(base);
-    let gold_path = sibling_pgn(&base);
+    let use_2cbh = if force_2cbh {
+        true
+    } else if force_cbh {
+        false
+    } else {
+        std::env::var("CBVAULT_TEST_DB_2CBH").is_ok()
+            || std::env::var("CBVAULT_2CBH_GOLD_PGN").is_ok()
+            || Path::new("/Users/ais/Documents/ChessBase/Bases/Mega2026/Mega Database 2026.2cbh").exists()
+    };
+    let (base, gold_path) = if use_2cbh {
+        let db = std::env::var("CBVAULT_TEST_DB_2CBH")
+            .unwrap_or_else(|_| "/Users/ais/Documents/ChessBase/Bases/Mega2026/Mega Database 2026.2cbh".to_string());
+        let gold = std::env::var("CBVAULT_2CBH_GOLD_PGN").unwrap_or_else(|_| {
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures-local/mega-db/mega26_2cbh_export.pgn")
+                .display()
+                .to_string()
+        });
+        (cbvault::stem_of(Path::new(&db)), PathBuf::from(gold))
+    } else {
+        let base = std::env::var("CBVAULT_TEST_DB").unwrap_or_else(|_| {
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../Mega Database 2025/Mega Database 2025")
+                .display()
+                .to_string()
+        });
+        let base = PathBuf::from(base);
+        let gold_path = sibling_pgn(&base);
+        (base, gold_path)
+    };
     if parallel > 1 {
         // The parallel pipeline writes the whole database; the comparison then
         // reads the games the gold file holds (`--ours`), so the gate is the
         // same one the sequential writer passes (task 5.3).
-        let path = std::env::temp_dir().join(format!("cbh-parallel-{parallel}.pgn"));
+        let prefix = if use_2cbh { "2cbh" } else { "cbh" };
+        let path = std::env::temp_dir().join(format!("{prefix}-parallel-{parallel}.pgn"));
         let mut file = std::fs::File::create(&path).expect("the parallel dump");
         let t0 = std::time::Instant::now();
-        let stats = cbvault::pgn::export_parallel(&base, &mut file, parallel, 8192, 20).expect("the parallel export");
+        let (stats, failures) = if limit < usize::MAX {
+            cbvault::pgn::export_span_report(&base, &mut file, parallel, 8192, 20, 1, (limit + 1000) as u32)
+                .expect("the parallel export")
+        } else {
+            cbvault::pgn::export_span_report(&base, &mut file, parallel, 8192, 20, 1, 0).expect("the parallel export")
+        };
         drop(file);
         eprintln!(
-            "parallel export: {} games, {} bytes, {:.1} s on {parallel} threads",
+            "parallel export: {} games, {} failures: {:?}, {} bytes, {:.1} s on {parallel} threads",
             stats.games,
+            stats.failures,
+            failures,
             stats.bytes,
             t0.elapsed().as_secs_f64()
         );
         ours_path = Some(path);
     }
-    let report = run(&base, &gold_path, limit, ours_path.as_deref(), dump_path.as_deref(), &probe);
+    let report = if use_2cbh {
+        run_2cbh(&base, &gold_path, limit, ours_path.as_deref(), dump_path.as_deref(), &probe)
+    } else {
+        run(&base, &gold_path, limit, ours_path.as_deref(), dump_path.as_deref(), &probe)
+    };
     let mut out: Box<dyn Write> = match out_path {
         Some(p) => Box::new(std::fs::File::create(p).expect("out file")),
         None => Box::new(std::io::stdout()),
@@ -258,43 +301,90 @@ struct GoldGame {
     tokens: Vec<String>,
 }
 
-/// Parses gold games streaming: tag lines grouped with the movetext that
-/// follows. Bytes that are valid UTF-8 read as UTF-8 (ChessBase's export is
-/// UTF-8 with a BOM); only the bytes around an invalid sequence fall back,
-/// as U+FFFD, instead of the whole file reading as latin-1. The
-/// `strip_prefix` below removes a real U+FEFF character.
+/// Streaming reader for gold PGN files that decodes one game at a time with O(1) memory.
+struct GoldReader<R: BufRead> {
+    reader: R,
+    byte_buf: Vec<u8>,
+    pending_tag: Option<String>,
+    eof: bool,
+    first_line: bool,
+}
+
+impl<R: BufRead> GoldReader<R> {
+    fn new(reader: R) -> Self {
+        Self { reader, byte_buf: Vec::new(), pending_tag: None, eof: false, first_line: true }
+    }
+
+    fn next_game(&mut self) -> Option<GoldGame> {
+        if self.eof && self.pending_tag.is_none() {
+            return None;
+        }
+
+        let mut tags: Vec<(String, String)> = Vec::new();
+        let mut tokens: Vec<String> = Vec::new();
+        let mut in_movetext = false;
+
+        if let Some(tag_line) = self.pending_tag.take()
+            && let Some((k, v)) = parse_tag(&tag_line)
+        {
+            tags.push((k, v));
+        }
+
+        loop {
+            self.byte_buf.clear();
+            match self.reader.read_until(b'\n', &mut self.byte_buf) {
+                Ok(0) => {
+                    self.eof = true;
+                    break;
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!("error reading gold pgn: {e}");
+                    self.eof = true;
+                    break;
+                }
+            };
+
+            let line_str = cbvault_format::codepage::decode_auto(&self.byte_buf);
+            let mut line = line_str.trim_end_matches(&['\r', '\n'][..]);
+            if self.first_line {
+                self.first_line = false;
+                line = line.strip_prefix('\u{feff}').unwrap_or(line);
+            }
+            let trimmed = line.trim();
+
+            if trimmed.starts_with('[') && trimmed.ends_with(']') {
+                if in_movetext || (!tags.is_empty() && trimmed.starts_with("[Event ")) {
+                    self.pending_tag = Some(trimmed.to_string());
+                    break;
+                }
+                if let Some((k, v)) = parse_tag(trimmed) {
+                    tags.push((k, v));
+                }
+                continue;
+            }
+
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            in_movetext = true;
+            tokens.extend(tokenize_movetext(trimmed));
+        }
+
+        if tags.is_empty() && tokens.is_empty() { None } else { Some(GoldGame { tags, tokens }) }
+    }
+}
+
+/// Parses gold games streaming: tag lines grouped with the movetext that follows.
 fn parse_gold(path: &Path, limit: usize) -> Vec<GoldGame> {
-    let data = std::fs::read(path).expect("gold pgn");
-    let text = String::from_utf8_lossy(&data);
-    let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
+    let file = std::fs::File::open(path).expect("gold pgn file opens");
+    let mut reader = GoldReader::new(std::io::BufReader::with_capacity(1 << 20, file));
     let mut games = Vec::new();
-    let mut tags: Vec<(String, String)> = Vec::new();
-    let mut in_tags = false;
-    for line in text.split('\n') {
-        let line = line.strip_suffix('\r').unwrap_or(line);
-        if line.starts_with('[') && line.ends_with(']') {
-            if !in_tags {
-                tags.clear();
-                in_tags = true;
-            }
-            if let Some((k, v)) = parse_tag(line) {
-                tags.push((k, v));
-            }
-            continue;
-        }
-        if line.trim().is_empty() {
-            continue;
-        }
-        if in_tags {
-            if games.len() < limit {
-                games.push(GoldGame { tags: std::mem::take(&mut tags), tokens: tokenize_movetext(line) });
-            }
-            in_tags = false;
-        } else if let Some(last) = games.last_mut() {
-            last.tokens.extend(tokenize_movetext(line));
-        }
-        if games.len() >= limit {
-            break;
+    while games.len() < limit {
+        match reader.next_game() {
+            Some(g) => games.push(g),
+            None => break,
         }
     }
     games
@@ -315,7 +405,14 @@ fn unescape(v: &str) -> String {
     while let Some(c) = chars.next() {
         if c == '\\' {
             if let Some(n) = chars.next() {
-                out.push(n);
+                if n == '"' || n == '\\' || n == '[' || n == ']' {
+                    out.push(n);
+                } else {
+                    out.push('\\');
+                    out.push(n);
+                }
+            } else {
+                out.push('\\');
             }
         } else {
             out.push(c);
@@ -403,6 +500,31 @@ fn our_game(
 ) -> Option<(GoldGame, String)> {
     let mut buf = Vec::new();
     writer.write_game(&mut buf, header, entities, game, anns).ok()?;
+    let text = String::from_utf8_lossy(&buf).into_owned();
+    let mut tags = Vec::new();
+    let mut tokens = Vec::new();
+    for line in text.split('\n') {
+        let line = line.trim();
+        if line.starts_with('[') && line.ends_with(']') {
+            if let Some((k, v)) = parse_tag(line) {
+                tags.push((k, v));
+            }
+        } else if !line.is_empty() {
+            tokens.extend(tokenize_movetext(line));
+        }
+    }
+    Some((GoldGame { tags, tokens }, text))
+}
+
+fn our_game_v2(
+    writer: &mut PgnWriter,
+    header: &cbvault_format::twocbh::GameHeader,
+    entities: &cbvault_format::twocbh::Entities,
+    game: &cbvault_format::twocbh::moves::GameMoves<'_>,
+    anns: Option<&cbvault_format::twocbh::Annotations<'_>>,
+) -> Option<(GoldGame, String)> {
+    let mut buf = Vec::new();
+    writer.write_game_v2(&mut buf, header, entities, game, anns).ok()?;
     let text = String::from_utf8_lossy(&buf).into_owned();
     let mut tags = Vec::new();
     let mut tokens = Vec::new();
@@ -605,123 +727,242 @@ fn run(
                     &rendered
                 }
             };
-            report.compared += 1;
-            if has_annotations(&g.tokens) {
-                report.compared_annotated += 1;
-            }
-            let want_tags = comparable_tags(&g.tags);
-            let got_tags = comparable_tags(&ours.tags);
-            let want_moves: Vec<&str> = g.tokens.iter().map(String::as_str).collect();
-            let got_moves: Vec<&str> = ours.tokens.iter().map(String::as_str).collect();
-            let rid = header.id();
-            if probe.contains(&rid) {
-                // A probe: the record's items and both readings, for the
-                // format questions one game at a time (the `[#]`/`\x04` rule).
-                println!("probe {rid}: gold tags {:?}", g.tags.iter().take(4).collect::<Vec<_>>());
-                for t in &g.tokens {
-                    if t.contains('\u{4}') || t.contains("[#]") {
-                        println!("  gold token: {:?}", t);
-                    }
-                }
-                for t in &ours.tokens {
-                    if t.contains('\u{4}') || t.contains("[#]") {
-                        println!("  ours token: {:?}", t);
-                    }
-                }
-                if let Ok(probe_anns) = annotations.of(&header, wide.as_ref(), &mut ann_scratch) {
-                    for item in probe_anns.iter().flatten() {
-                        match item.annotation {
-                            cbvault_format::game::annotations::Annotation::Text { before, language, text } => {
-                                let head: Vec<String> = text.iter().take(12).map(|b| format!("{b:02x}")).collect();
-                                println!(
-                                    "  item pos {} before {before} lang {:#x} text [{}]",
-                                    item.position,
-                                    language,
-                                    head.join(" ")
-                                );
-                            }
-                            cbvault_format::game::annotations::Annotation::Other { code, data } => {
-                                let head: Vec<String> = data.iter().take(12).map(|b| format!("{b:02x}")).collect();
-                                println!("  item pos {} type {code:#04x} data [{}]", item.position, head.join(" "));
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
-            if want_tags == got_tags && want_moves == got_moves {
-                report.matched += 1;
-            } else if want_tags != got_tags {
-                let category = format!("tags: {}", differing_tag_keys(&want_tags, &got_tags).join(","));
-                let sample = format!("game {rid}: tags differ:\n  gold: {want_tags:?}\n  ours: {got_tags:?}");
-                report.bump(&category, sample);
-            } else {
-                let at = want_moves.iter().zip(got_moves.iter()).position(|(a, b)| a != b);
-                if probe.contains(&rid) {
-                    match at {
-                        Some(i) => println!(
-                            "probe {rid} differs at {i}: gold {:?}\n                       ours {:?}",
-                            want_moves.get(i),
-                            got_moves.get(i)
-                        ),
-                        None => {
-                            let tail = |v: &[&str]| -> Vec<String> {
-                                v.iter().rev().take(3).rev().map(|s| (*s).to_owned()).collect()
-                            };
-                            println!(
-                                "probe {rid}: {} vs {} tokens\n  gold tail {:?}\n  ours tail {:?}",
-                                want_moves.len(),
-                                got_moves.len(),
-                                tail(&want_moves),
-                                tail(&got_moves)
-                            );
-                        }
-                    }
-                }
-                let over = movetext_over_disambiguated(&want_moves, &got_moves);
-                // A difference at a comment, a NAG or a variation marker is
-                // an annotation difference; the sample shows which.
-                let annotation_diff = at.is_some_and(|i| {
-                    let annotation = |t: &str| t.starts_with('{') || t.starts_with('$') || t == "(" || t == ")";
-                    annotation(want_moves[i]) || annotation(got_moves[i])
-                });
-                let category = if over {
-                    "movetext: ChessBase over-disambiguation only".to_owned()
-                } else if annotation_diff {
-                    "movetext: annotation".to_owned()
-                } else {
-                    "movetext: other".to_owned()
-                };
-                // Equal-length differing comments: pair the characters up to
-                // learn ChessBase's export character table. Any comment pair
-                // (whatever its lengths) is also signed, so the remaining
-                // classes are named exactly, not sampled.
-                if let Some(i) = at {
-                    let (w, o) = (&want_moves[i], &got_moves[i]);
-                    if w.starts_with('{') && o.starts_with('{') {
-                        if w.chars().count() == o.chars().count() {
-                            for (a, b) in o.chars().zip(w.chars()) {
-                                if a != b {
-                                    *report.char_pairs.entry((a, b)).or_default() += 1;
-                                }
-                            }
-                        }
-                        let signature = comment_signature(w, o);
-                        report.bump_signature(signature, format!("game {rid}"));
-                    }
-                }
-                let sample = format!(
-                    "game {rid}: movetext differs at token {} ({} vs {} tokens):\n  gold: ...{}\n  ours: ...{}",
-                    at.map(|i| i.to_string()).unwrap_or("len".into()),
-                    want_moves.len(),
-                    got_moves.len(),
-                    context(&want_moves, at),
-                    context(&got_moves, at),
-                );
-                report.bump(&category, sample);
-            }
+            compare_game(&mut report, header.id(), g, ours, probe);
         }
         id += n;
     }
+    report
+}
+
+fn compare_game(report: &mut Report, rid: u32, g: &GoldGame, ours: &GoldGame, probe: &[u32]) {
+    report.compared += 1;
+    if has_annotations(&g.tokens) {
+        report.compared_annotated += 1;
+    }
+    let want_tags = comparable_tags(&g.tags);
+    let got_tags = comparable_tags(&ours.tags);
+    let want_moves: Vec<&str> = g.tokens.iter().map(String::as_str).collect();
+    let got_moves: Vec<&str> = ours.tokens.iter().map(String::as_str).collect();
+    if probe.contains(&rid) {
+        println!("probe {rid}: gold tags {:?}", g.tags.iter().take(4).collect::<Vec<_>>());
+        for t in &g.tokens {
+            if t.contains('\u{4}') || t.contains("[#]") {
+                println!("  gold token: {:?}", t);
+            }
+        }
+        for t in &ours.tokens {
+            if t.contains('\u{4}') || t.contains("[#]") {
+                println!("  ours token: {:?}", t);
+            }
+        }
+    }
+    if want_tags == got_tags && want_moves == got_moves {
+        report.matched += 1;
+    } else if want_tags != got_tags {
+        let category = format!("tags: {}", differing_tag_keys(&want_tags, &got_tags).join(","));
+        let sample = format!("game {rid}: tags differ:\n  gold: {want_tags:?}\n  ours: {got_tags:?}");
+        report.bump(&category, sample);
+    } else {
+        let at = want_moves.iter().zip(got_moves.iter()).position(|(a, b)| a != b);
+        if probe.contains(&rid) {
+            match at {
+                Some(i) => println!(
+                    "probe {rid} differs at {i}: gold {:?}\n                       ours {:?}",
+                    want_moves.get(i),
+                    got_moves.get(i)
+                ),
+                None => {
+                    let tail =
+                        |v: &[&str]| -> Vec<String> { v.iter().rev().take(3).rev().map(|s| (*s).to_owned()).collect() };
+                    println!(
+                        "probe {rid}: {} vs {} tokens\n  gold tail {:?}\n  ours tail {:?}",
+                        want_moves.len(),
+                        got_moves.len(),
+                        tail(&want_moves),
+                        tail(&got_moves)
+                    );
+                }
+            }
+        }
+        let over = movetext_over_disambiguated(&want_moves, &got_moves);
+        let annotation_diff = at.is_some_and(|i| {
+            let annotation = |t: &str| t.starts_with('{') || t.starts_with('$') || t == "(" || t == ")";
+            annotation(want_moves[i]) || annotation(got_moves[i])
+        });
+        let category = if over {
+            "movetext: ChessBase over-disambiguation only".to_owned()
+        } else if annotation_diff {
+            "movetext: annotation".to_owned()
+        } else {
+            "movetext: other".to_owned()
+        };
+        if let Some(i) = at {
+            let (w, o) = (&want_moves[i], &got_moves[i]);
+            if w.starts_with('{') && o.starts_with('{') {
+                if w.chars().count() == o.chars().count() {
+                    for (a, b) in o.chars().zip(w.chars()) {
+                        if a != b {
+                            *report.char_pairs.entry((a, b)).or_default() += 1;
+                        }
+                    }
+                }
+                let signature = comment_signature(w, o);
+                report.bump_signature(signature, format!("game {rid}"));
+            }
+        }
+        let sample = format!(
+            "game {rid}: movetext differs at token {} ({} vs {} tokens):\n  gold: ...{}\n  ours: ...{}",
+            at.map(|i| i.to_string()).unwrap_or("len".into()),
+            want_moves.len(),
+            got_moves.len(),
+            context(&want_moves, at),
+            context(&got_moves, at),
+        );
+        report.bump(&category, sample);
+    }
+}
+
+fn run_2cbh(
+    base: &Path,
+    gold_path: &Path,
+    limit: usize,
+    ours_file: Option<&Path>,
+    dump_path: Option<&Path>,
+    probe: &[u32],
+) -> Report {
+    let gold_file = std::fs::File::open(gold_path).expect("gold file opens");
+    let mut gold_reader = GoldReader::new(std::io::BufReader::with_capacity(1 << 20, gold_file));
+    let mut dump: Box<dyn Write> = match dump_path {
+        Some(p) => Box::new(std::fs::File::create(p).expect("dump file")),
+        None => Box::new(std::io::sink()),
+    };
+    let mut ours_reader = ours_file.map(|path| {
+        let f = std::fs::File::open(path).expect("ours file opens");
+        GoldReader::new(std::io::BufReader::with_capacity(1 << 20, f))
+    });
+
+    let headers = cbvault_format::twocbh::Headers::open(base).expect("2cbh headers");
+    let entities_path = cbvault_format::twocbh::sibling(base, ".2lid");
+    let entities = cbvault_format::twocbh::Entities::open(entities_path).expect("2cbh entities");
+    let cbg_path = cbvault_format::twocbh::sibling(base, ".2cbg");
+    let cbg = cbvault_format::twocbh::Segment::open(cbg_path).expect("2cbg segment");
+    let cba_path = cbvault_format::twocbh::sibling(base, ".2cba");
+    let cba = cbvault_format::twocbh::Segment::open(cba_path).ok();
+
+    let mut writer = PgnWriter::new();
+    let mut report = Report {
+        gold_games: 0,
+        compared: 0,
+        compared_annotated: 0,
+        matched: 0,
+        skipped_decode_err: 0,
+        skipped_annotation_err: 0,
+        counts: Vec::new(),
+        char_pairs: HashMap::new(),
+        signatures: Vec::new(),
+    };
+
+    let total_records = headers.records();
+    let t0 = std::time::Instant::now();
+
+    for rec_id in 1..=total_records {
+        if report.compared >= limit {
+            break;
+        }
+
+        let header = match headers.record(rec_id) {
+            Ok(h) => h,
+            Err(_) => {
+                report.skipped_decode_err += 1;
+                continue;
+            }
+        };
+
+        if header.is_deleted() {
+            continue;
+        }
+
+        match header.kind() {
+            RecordKind::Game | RecordKind::Analysis => {}
+            RecordKind::Text => continue,
+            _ => continue,
+        }
+
+        let g = match gold_reader.next_game() {
+            Some(g) => g,
+            None => {
+                report
+                    .bump("database: gold games left after last record", format!("gold exhausted at record {rec_id}"));
+                break;
+            }
+        };
+        report.gold_games += 1;
+
+        let ours = match ours_reader.as_mut() {
+            Some(reader) => match reader.next_game() {
+                Some(o) => o,
+                None => {
+                    report.bump("ours: dump exhausted before gold", format!("ours dump exhausted at record {rec_id}"));
+                    break;
+                }
+            },
+            None => {
+                let seg_rec = match cbg.record_at(header.moves_offset()) {
+                    Ok(r) => r,
+                    Err(_) => {
+                        report.skipped_decode_err += 1;
+                        continue;
+                    }
+                };
+                let moves = match cbvault_format::twocbh::moves::GameMoves::from_record(cbg.path(), seg_rec.record()) {
+                    Ok(m) => m,
+                    Err(_) => {
+                        report.skipped_decode_err += 1;
+                        continue;
+                    }
+                };
+                let anns_rec = if header.annotations_offset() != 0 {
+                    cba.as_ref().and_then(|cba| cba.record_at(header.annotations_offset()).ok())
+                } else {
+                    None
+                };
+                let anns = anns_rec.as_ref().map(|r| cbvault_format::twocbh::Annotations::from_record(r.record()));
+                if probe.contains(&rec_id) {
+                    println!("probe {rec_id} annotations:");
+                    if let Some(a) = anns.as_ref() {
+                        for it in a.iter_items().flatten() {
+                            println!("  item pos={} offset={} annot={:?}", it.position, it.offset, it.annotation);
+                        }
+                    }
+                    println!("probe {rec_id} tokens:");
+                    for (i, tok) in moves.tokens().enumerate() {
+                        println!("  token {i}: {tok:?}");
+                    }
+                }
+                let Some((r, raw)) = our_game_v2(&mut writer, &header, &entities, &moves, anns.as_ref()) else {
+                    report.skipped_decode_err += 1;
+                    continue;
+                };
+                writeln!(dump, "{}", raw.trim_end()).expect("dump");
+                writeln!(dump).expect("dump");
+                r
+            }
+        };
+
+        compare_game(&mut report, rec_id, &g, &ours, probe);
+
+        if report.compared.is_multiple_of(100_000) && report.compared > 0 {
+            let elapsed = t0.elapsed().as_secs_f64();
+            let gps = report.compared as f64 / elapsed;
+            eprintln!(
+                "compared {} games ({:.0} games/s) | matched: {} | diffs: {}",
+                report.compared,
+                gps,
+                report.matched,
+                report.diffs()
+            );
+        }
+    }
+
     report
 }

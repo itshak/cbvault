@@ -104,6 +104,13 @@ pub fn engine_evaluation(data: &[u8], classic: bool) -> Option<Score> {
 /// `0:00:02.96`, the one fractional one of the file). Hundredths are kept:
 /// ChessBase writes them when they are not zero.
 pub fn time_spent(data: &[u8], classic: bool) -> Option<(u8, u8, u8, u8)> {
+    if !classic && data.len() == 7 {
+        let (sec, min, hr) = (data[4], data[5], data[6]);
+        if sec >= 60 || min >= 60 {
+            return None;
+        }
+        return Some((hr, min, sec, 0));
+    }
     let d: &[u8; 4] = data.try_into().ok()?;
     if d[1] >= 60 || d[2] >= 60 {
         return None;

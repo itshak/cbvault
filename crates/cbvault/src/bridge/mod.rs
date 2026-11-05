@@ -154,7 +154,7 @@ pub(crate) fn sibling(stem: &Path, ext: &str) -> PathBuf {
 
 /// The base path of the set `path` names: `path` itself when it carries no
 /// member extension, and `path` without that extension when it does.
-fn stem_of(path: &Path) -> PathBuf {
+pub fn stem_of(path: &Path) -> PathBuf {
     let Some(ext) = path.extension().and_then(|e| e.to_str()) else { return path.to_owned() };
     let ext = format!(".{}", ext.to_ascii_lowercase());
     let member = CLASSIC_MEMBERS.contains(&ext.as_str()) || TWOCBH_MEMBERS.contains(&ext.as_str());
@@ -1063,11 +1063,18 @@ impl Database {
                 let seg_rec = seg.record_at(at)?;
                 let game =
                     cbvault_format::twocbh::moves::GameMoves::from_record(&self.members.moves, seg_rec.record())?;
+                let h = header.as_twocbh().copied().expect("2cbh header");
+                let anns_seg = self.annotations_segment()?;
+                let anns_rec = if h.annotations_offset() != 0 {
+                    anns_seg.and_then(|cba| cba.record_at(h.annotations_offset()).ok())
+                } else {
+                    None
+                };
+                let anns = anns_rec.as_ref().map(|r| cbvault_format::twocbh::Annotations::from_record(r.record()));
                 let mut writer = crate::pgn::PgnWriter::new();
                 let mut out = Vec::new();
-                let h = header.as_twocbh().copied().expect("2cbh header");
                 writer
-                    .write_game_v2(&mut out, &h, &t.entities, &game, None)
+                    .write_game_v2(&mut out, &h, &t.entities, &game, anns.as_ref())
                     .map_err(|e| Error::corrupt(self.base(), u64::from(id), e.to_string()))?;
                 String::from_utf8(out).map_err(|e| Error::corrupt(self.base(), u64::from(id), e.to_string()))
             }

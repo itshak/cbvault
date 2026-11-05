@@ -258,10 +258,10 @@ fn test_twocbh_results_and_tournament_types() {
     let move_words = words(&mut board, "e2e4 e7e5");
     let moves_offset = builder.moves(1, &move_words);
 
-    // Game 1: result 0 -> *
+    // Game 1: result 3 -> *
     let g1 = builder.game(moves_offset);
     set_entities(g1, p1, p2, blitz_tour);
-    g1[0x58] = 0;
+    g1[0x58] = 3;
 
     // Game 2: result 1 -> 1/2-1/2
     let g2 = builder.game(moves_offset);
@@ -273,10 +273,10 @@ fn test_twocbh_results_and_tournament_types() {
     set_entities(g3, p1, p2, blitz_tour);
     g3[0x58] = 2;
 
-    // Game 4: result 3 -> 0-1
+    // Game 4: result 0 -> 0-1
     let g4 = builder.game(moves_offset);
     set_entities(g4, p1, p2, blitz_tour);
-    g4[0x58] = 3;
+    g4[0x58] = 0;
 
     builder.write_to(&temp);
 

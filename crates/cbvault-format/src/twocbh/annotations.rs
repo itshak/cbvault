@@ -47,6 +47,12 @@ impl<'a> Annotations<'a> {
         Ok(Annotations { record: Record::parse(path, 0, raw)? })
     }
 
+    /// Wraps an already validated `.2cba` record frame.
+    #[inline]
+    pub fn from_record(record: Record<'a>) -> Self {
+        Annotations { record }
+    }
+
     /// The record's framing.
     #[inline]
     pub fn record(&self) -> &Record<'a> {
@@ -57,6 +63,27 @@ impl<'a> Annotations<'a> {
     #[inline]
     pub fn content(&self) -> &'a [u8] {
         self.record.content()
+    }
+
+    /// Whether the record carries no annotations.
+    pub fn is_empty(&self) -> bool {
+        self.content().is_empty()
+            || (self.content().len() == 4 && i32::from_le_bytes(self.content()[..4].try_into().unwrap()) == END_MARKER)
+    }
+
+    /// Returns the annotation at byte `offset` within the record's content.
+    pub fn annotation_at(&self, offset: u32) -> Result<Annotation<'a>> {
+        let content = self.content();
+        let off = offset as usize;
+        if off + 2 > content.len() {
+            return Err(Error::corrupt("<.2cba>", off as u64, "truncated annotation type"));
+        }
+        let type_code = u16::from_le_bytes(content[off..off + 2].try_into().unwrap());
+        let mut cur = off + 2;
+        match parse_annotation(content, &mut cur, type_code)? {
+            Some(a) => Ok(a),
+            None => Err(Error::corrupt("<.2cba>", off as u64, format!("unknown annotation type {type_code:#04x}"))),
+        }
     }
 
     /// Iterates over position blocks and their annotations.
@@ -212,17 +239,25 @@ impl<'a> ContentReader<'a> {
     }
 
     fn take(&mut self, n: usize) -> Result<&'a [u8]> {
-        if self.offset + n > self.content.len() {
+        let Some(end) = self.offset.checked_add(n) else {
+            return Err(self.bad("annotation offset overflow"));
+        };
+        if end > self.content.len() {
             return Err(self.bad("annotation runs past content"));
         }
-        let s = &self.content[self.offset..self.offset + n];
-        self.offset += n;
+        let s = &self.content[self.offset..end];
+        self.offset = end;
         Ok(s)
     }
 
     fn i32_val(&mut self) -> Result<i32> {
         let b = self.take(4)?;
         Ok(i32::from_le_bytes(b.try_into().unwrap()))
+    }
+
+    fn len_val(&mut self) -> Result<usize> {
+        let v = self.i32_val()?;
+        usize::try_from(v).map_err(|_| self.bad("negative length in annotation"))
     }
 
     fn u16_val(&mut self) -> Result<u16> {
@@ -237,7 +272,7 @@ fn parse_annotation<'a>(content: &'a [u8], offset: &mut usize, t: u16) -> Result
         0x02 | 0x82 => {
             r.take(2)?; // skip 2 zeros
             let language = r.u16_val()?;
-            let n = r.i32_val()? as usize;
+            let n = r.len_val()?;
             let text_bytes = r.take(n)?;
             Ok(Some(Annotation::Text { before: t == 0x82, language, text: text_bytes }))
         }
@@ -246,7 +281,7 @@ fn parse_annotation<'a>(content: &'a [u8], offset: &mut usize, t: u16) -> Result
             Ok(Some(Annotation::Symbols { on_move: b[0], on_position: b[1], prefix: b[2] }))
         }
         0x04 => {
-            let n = r.i32_val()? as usize;
+            let n = r.len_val()?;
             let items = r.take(n)?;
             if !items.len().is_multiple_of(2) {
                 return Err(r.bad("colored squares length not even"));
@@ -259,7 +294,7 @@ fn parse_annotation<'a>(content: &'a [u8], offset: &mut usize, t: u16) -> Result
             Ok(Some(Annotation::Squares(items)))
         }
         0x05 => {
-            let n = r.i32_val()? as usize;
+            let n = r.len_val()?;
             let items = r.take(n)?;
             if !items.len().is_multiple_of(3) {
                 return Err(r.bad("arrows length not multiple of 3"));
@@ -299,35 +334,60 @@ fn parse_annotation<'a>(content: &'a [u8], offset: &mut usize, t: u16) -> Result
         0x26 => {
             let start = r.offset;
             let _marker = r.take(1)?;
-            let len = r.i32_val()? as usize;
+            let len = r.len_val()?;
             let _ = r.take(len)?;
             let total = r.offset - start;
             Ok(Some(Annotation::Other { code: t, data: &content[start..start + total] }))
         }
         0x13 => {
             let start = r.offset;
-            for _ in 0..6 {
-                let len = r.i32_val()? as usize;
-                let _ = r.take(len)?;
+            if r.content.get(r.offset) == Some(&1) {
+                r.take(10)?;
+                for _ in 0..6 {
+                    let sl = r.take(1)?[0] as usize;
+                    r.take(sl)?;
+                }
+                r.take(53)?;
+                r.take(8)?;
+                r.take(18)?;
+                r.take(5)?;
+                let l1 = r.len_val()?;
+                r.take(l1)?;
+                r.take(5)?;
+                let l2 = r.len_val()?;
+                r.take(l2)?;
+                r.take(18)?;
+                let sl = r.len_val()?;
+                r.take(sl)?;
+                let move_count = r.u16_val()? as usize;
+                r.take(move_count * 5)?;
+                if r.offset + 4 <= r.content.len() && r.content[r.offset..r.offset + 4] == [0, 0, 0, 0] {
+                    r.take(4)?;
+                }
+            } else {
+                for _ in 0..6 {
+                    let len = r.len_val()?;
+                    let _ = r.take(len)?;
+                }
+                let _ = r.take(35)?;
+                for _ in 0..2 {
+                    let len = r.len_val()?;
+                    let _ = r.take(len)?;
+                }
+                let _ = r.take(29)?;
+                let _ = r.take(5)?;
             }
-            let _ = r.take(35)?;
-            for _ in 0..2 {
-                let len = r.i32_val()? as usize;
-                let _ = r.take(len)?;
-            }
-            let _ = r.take(29)?;
-            let _ = r.take(5)?;
             let total = r.offset - start;
             Ok(Some(Annotation::Other { code: t, data: &content[start..start + total] }))
         }
         0x15 => {
-            let n = r.i32_val()? as usize;
+            let n = r.len_val()?;
             let data = r.take(n)?;
             Ok(Some(Annotation::Other { code: t, data }))
         }
         0x20 => {
             let prefix = r.take(4)?;
-            let n = r.i32_val()? as usize;
+            let n = r.len_val()?;
             let _body = r.take(n)?;
             let start = prefix.as_ptr() as usize - content.as_ptr() as usize;
             let len = 4 + 4 + n;

@@ -4,7 +4,7 @@
 //! `info`, `verify`, `pgn`, `games` and `archive`, with stable `--json` output.
 
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::ExitCode;
 use std::time::Instant;
 
@@ -86,12 +86,13 @@ fn run_info(mut args: impl Iterator<Item = String>) -> Result<bool, Box<dyn std:
     }
 
     let db_path = db_path.ok_or(USAGE)?;
-    let base = Path::new(&db_path);
+    let base = cbvault::stem_of(Path::new(&db_path));
 
-    if cbvault_format::twocbh::sibling(base, ".2cbh").exists() {
-        let headers = cbvault_format::twocbh::Headers::open(base)?;
+    if cbvault_format::twocbh::sibling(&base, ".2cbh").exists() {
+        let headers = cbvault_format::twocbh::Headers::open(&base)?;
         let total = headers.records();
-        let entities = cbvault_format::twocbh::Entities::open(base).ok();
+        let lid_path = cbvault_format::twocbh::sibling(&base, ".2lid");
+        let entities = cbvault_format::twocbh::Entities::open(lid_path).ok();
         let counts = entities.as_ref().map(|e| e.counts());
         if json {
             let [p, t, a, s] = counts.unwrap_or([0, 0, 0, 0]);
@@ -111,10 +112,10 @@ fn run_info(mut args: impl Iterator<Item = String>) -> Result<bool, Box<dyn std:
         return Ok(true);
     }
 
-    let headers = Headers::open(base)?;
+    let headers = Headers::open(&base)?;
     let total = headers.records();
 
-    let entities = Entities::open(base).ok();
+    let entities = Entities::open(&base).ok();
     let counts = entities.as_ref().map(|e| e.counts());
 
     if json {
@@ -167,7 +168,7 @@ fn run_verify(mut args: impl Iterator<Item = String>) -> Result<bool, Box<dyn st
 
     apply_mem_flags(no_mmap, no_wide);
     let db_path = db_path.ok_or(USAGE)?;
-    let base = PathBuf::from(&db_path);
+    let base = cbvault::stem_of(Path::new(&db_path));
 
     let t0 = Instant::now();
     let (stats, failures) = verify_parallel(&base, threads, batch_size, failure_limit)?;
@@ -522,7 +523,7 @@ fn run_pgn(mut args: impl Iterator<Item = String>) -> Result<bool, Box<dyn std::
 
     apply_mem_flags(no_mmap, no_wide);
     let db_path = db_path.ok_or(USAGE)?;
-    let base = PathBuf::from(&db_path);
+    let base = cbvault::stem_of(Path::new(&db_path));
     if last != 0 && last < first {
         return Err("--to must not be below --from".into());
     }

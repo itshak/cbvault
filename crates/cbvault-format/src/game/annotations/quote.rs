@@ -116,6 +116,62 @@ impl Quotation {
         })
     }
 
+    /// A 2CBH quotation's data, the bytes after the type code.
+    pub fn parse_v2(data: &[u8]) -> Option<Quotation> {
+        if data.len() < 16 {
+            return None;
+        }
+        let mut i = 10; // skip 10-byte prefix
+        let mut get_str = |b: &[u8]| -> Option<String> {
+            let l = *b.get(i)? as usize;
+            i += 1;
+            let s = b.get(i..i + l)?;
+            i += l;
+            let trimmed = s.strip_suffix(b"\0").unwrap_or(s);
+            Some(decode(trimmed))
+        };
+        let white_last = get_str(data)?;
+        let white_first = get_str(data)?;
+        let black_last = get_str(data)?;
+        let black_first = get_str(data)?;
+        let site = get_str(data)?;
+        let event = get_str(data)?;
+        let date_bytes: [u8; 4] = data.get(i..i + 4)?.try_into().ok()?;
+        let date = i32::from_le_bytes(date_bytes);
+        let white_elo = data.get(i + 28..i + 30).and_then(|b| b.try_into().ok()).map(u16::from_le_bytes).unwrap_or(0);
+        let black_elo = data.get(i + 30..i + 32).and_then(|b| b.try_into().ok()).map(u16::from_le_bytes).unwrap_or(0);
+        let result_byte = *data.get(i + 34).unwrap_or(&3);
+        let round = *data.get(i + 43).unwrap_or(&0);
+        let subround = *data.get(i + 44).unwrap_or(&0) as i8;
+        let result = match result_byte {
+            0 => 0, // 0-1
+            1 => 1, // draw (1/2-1/2)
+            2 => 2, // 1-0
+            _ => 3, // unknown / line
+        };
+        Some(Quotation {
+            white: QuotedPlayer { last: white_last, first: white_first, elo: white_elo },
+            black: QuotedPlayer { last: black_last, first: black_first, elo: black_elo },
+            event,
+            site,
+            date: Date(date),
+            kind: 0,
+            round,
+            subround,
+            result,
+            eco: Eco::None,
+        })
+    }
+
+    /// Parses either a classic or 2CBH quotation.
+    pub fn parse(data: &[u8]) -> Option<Quotation> {
+        if data.starts_with(&[1, 2]) {
+            Self::parse_v2(data).or_else(|| Self::parse_classic(data))
+        } else {
+            Self::parse_classic(data).or_else(|| Self::parse_v2(data))
+        }
+    }
+
     /// The quotation as ChessBase writes it in its own PGN export: the result,
     /// both players as `Last,F (Elo)`, the event with its site and its speed
     /// unless the title holds them, the year unless the title holds it, and

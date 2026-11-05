@@ -374,7 +374,7 @@ pub fn export_span_report_v2(
                 continue;
             }
             match header.kind() {
-                cbvault_format::game::RecordKind::Game => {}
+                cbvault_format::game::RecordKind::Game | cbvault_format::game::RecordKind::Analysis => {}
                 cbvault_format::game::RecordKind::Text => {
                     local_stats.texts += 1;
                     continue;
@@ -400,7 +400,14 @@ pub fn export_span_report_v2(
                 }
             };
 
-            match writer.write_game_v2(&mut buf, &header, &entities, &moves, None) {
+            let anns_rec = if header.annotations_offset() != 0 {
+                _cba.as_ref().and_then(|cba| cba.record_at(header.annotations_offset()).ok())
+            } else {
+                None
+            };
+            let anns = anns_rec.as_ref().map(|r| cbvault_format::twocbh::Annotations::from_record(r.record()));
+
+            match writer.write_game_v2(&mut buf, &header, &entities, &moves, anns.as_ref()) {
                 Ok(()) => local_stats.games += 1,
                 Err(e) => {
                     local_stats.failures += 1;

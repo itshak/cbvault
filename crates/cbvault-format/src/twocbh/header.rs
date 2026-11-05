@@ -171,13 +171,16 @@ impl GameHeader {
         le_i64(&self.b, 0x28)
     }
 
-    /// Result of the game (0=*, 1=1/2, 2=1-0, 3=0-1).
+    /// Result of the game (0=0-1, 1=1/2, 2=1-0, 3=*). Analysis records are always *.
     pub fn result(&self) -> GameResult {
+        if self.kind() == RecordKind::Analysis {
+            return GameResult::Line;
+        }
         match self.b[0x58] {
-            0 => GameResult::Line,
+            0 => GameResult::BlackWins,
             1 => GameResult::Draw,
             2 => GameResult::WhiteWins,
-            3 => GameResult::BlackWins,
+            3 => GameResult::Line,
             4 => GameResult::BlackWinsForfeit,
             5 => GameResult::DrawForfeit,
             6 => GameResult::WhiteWinsForfeit,

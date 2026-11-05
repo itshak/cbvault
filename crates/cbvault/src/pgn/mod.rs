@@ -332,10 +332,13 @@ fn emit(tree: &Tree, notes: &mut impl Notes, out: &mut String, steps: &mut Vec<E
     // force the following number: ChessBase's export writes `e5` after a
     // comment, not `1... e5` — a number is due at the game's first move and
     // around variations only (see `docs/format-spec.md` §8).
+    let mut pgn_order = 0u32;
     let mut write = |out: &mut String, n: u32, force_number: bool| -> Result<()> {
         // Node 0 is the root; the moves are numbered from 1 as they were
         // played, and annotation positions count them the same way from 0.
-        let at = At { stored: n - 1 };
+        // For 2CBH, annotation positions count in PGN emission order.
+        let at = At { stored: n - 1, pgn: pgn_order };
+        pgn_order += 1;
         notes.before(at, out)?;
         write_move(out, tree, n, force_number);
         notes.after(at, out)?;
@@ -486,30 +489,34 @@ fn write_tags_v2(
     push_tag(out, "[Date \"", str_from_bytes(&header.played_date().text()));
     push_round(out, (i32::from(header.round()), i32::from(header.subround())), names);
 
-    let white = if header.white() >= 0 {
-        if let Some(p) = entities.player(header.white())? {
-            names.white_last.set(p.last.as_bytes());
-            names.white_first.set(p.first.as_bytes());
-            Some((names.white_last.as_str(), names.white_first.as_str()))
+    let (white, black) = if header.kind() == RecordKind::Analysis {
+        (None, None)
+    } else {
+        let white = if header.white() >= 0 {
+            if let Some(p) = entities.player(header.white())? {
+                names.white_last.set(p.last.as_bytes());
+                names.white_first.set(p.first.as_bytes());
+                Some((names.white_last.as_str(), names.white_first.as_str()))
+            } else {
+                None
+            }
         } else {
             None
-        }
-    } else {
-        None
+        };
+        let black = if header.black() >= 0 {
+            if let Some(p) = entities.player(header.black())? {
+                names.black_last.set(p.last.as_bytes());
+                names.black_first.set(p.first.as_bytes());
+                Some((names.black_last.as_str(), names.black_first.as_str()))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        (white, black)
     };
     push_escaped_player(out, "[White \"", white);
-
-    let black = if header.black() >= 0 {
-        if let Some(p) = entities.player(header.black())? {
-            names.black_last.set(p.last.as_bytes());
-            names.black_first.set(p.first.as_bytes());
-            Some((names.black_last.as_str(), names.black_first.as_str()))
-        } else {
-            None
-        }
-    } else {
-        None
-    };
     push_escaped_player(out, "[Black \"", black);
 
     push_tag(out, "[Result \"", result_tag(header.result()));
@@ -805,7 +812,7 @@ impl PgnWriter {
                 a.check_positions(stats.total_plies).map_err(as_io)?;
                 self.prepare(a).map_err(as_io)?;
                 let mut notes = Commentary {
-                    anns: a,
+                    anns: comments::AnnotationsRef::Classic(a),
                     index: &self.index,
                     evp: &self.evp,
                     parts: &mut self.parts,
@@ -835,7 +842,7 @@ impl PgnWriter {
         header: &cbvault_format::twocbh::GameHeader,
         entities: &cbvault_format::twocbh::Entities,
         game: &cbvault_format::twocbh::moves::GameMoves<'_>,
-        _anns: Option<&cbvault_format::twocbh::Annotations<'_>>,
+        anns: Option<&cbvault_format::twocbh::Annotations<'_>>,
     ) -> io::Result<()> {
         if header.kind() != RecordKind::Game && header.kind() != RecordKind::Analysis {
             return Err(io::Error::new(
@@ -851,13 +858,59 @@ impl PgnWriter {
         let stats = cbvault_chess::v2::walk_v2_from(what, game, &start, &mut self.tree).map_err(as_io)?;
         write_tags_v2(&mut self.game, header, entities, &start, &board, stats.total_plies, &mut self.names)
             .map_err(as_io)?;
-        emit(&self.tree, &mut Bare, &mut self.game, &mut self.steps).map_err(as_io)?;
+        let anns = anns.filter(|a| !a.is_empty());
+        match anns {
+            None => emit(&self.tree, &mut Bare, &mut self.game, &mut self.steps).map_err(as_io)?,
+            Some(a) => {
+                if a.check_positions(stats.total_plies).is_ok() && self.prepare_v2(a).is_ok() {
+                    let mut notes = Commentary {
+                        anns: comments::AnnotationsRef::TwoCbh(a),
+                        index: &self.index,
+                        evp: &self.evp,
+                        parts: &mut self.parts,
+                        moves: stats.total_plies,
+                        last: self.tree.main_line_last(),
+                    };
+                    notes.game_comment(&mut self.game).map_err(as_io)?;
+                    emit(&self.tree, &mut notes, &mut self.game, &mut self.steps).map_err(as_io)?;
+                } else {
+                    emit(&self.tree, &mut Bare, &mut self.game, &mut self.steps).map_err(as_io)?;
+                }
+            }
+        }
         for b in result_tag(header.result()).as_bytes() {
             self.game.push(char::from(*b));
         }
         self.game.push('\n');
         self.game.push('\n');
         out.write_all(self.game.as_bytes())
+    }
+
+    /// Fills the writer's index and `[%evp …]` from a 2CBH game's annotations.
+    fn prepare_v2(&mut self, a: &cbvault_format::twocbh::Annotations<'_>) -> Result<()> {
+        self.index.clear();
+        self.evp.clear();
+        let mut ascending = true;
+        let mut prev = i32::MIN;
+        let mut evp = false;
+        for item in a.iter_items() {
+            let item = item?;
+            ascending &= item.position >= prev;
+            prev = item.position;
+            self.index.push((item.position, item.offset));
+            if let Annotation::Other { code: 0x26, data } = item.annotation
+                && !evp
+                && item.position == GAME_POSITION
+                && let Some(entries) = timing::evaluations(data, false)
+            {
+                comments::write_evp(&mut self.evp, &entries);
+                evp = !self.evp.is_empty();
+            }
+        }
+        if !ascending {
+            self.index.sort_by_key(|&(p, _)| p);
+        }
+        Ok(())
     }
 
     /// Fills the writer's index and `[%evp …]` from a game's annotations:
