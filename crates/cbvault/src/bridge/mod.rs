@@ -168,6 +168,17 @@ fn stem_of(path: &Path) -> PathBuf {
 /// rather than reading a [`Error::MissingFile`] for a `.cbh` that will never be
 /// there.
 pub fn generation_of(path: impl AsRef<Path>) -> Generation {
+    // An explicitly selected member chooses its generation even when the
+    // same stem has both classic and 2CBH files. Never silently export the
+    // classic set when the caller passed an actual .2cbh file.
+    if let Some(ext) = path.as_ref().extension().and_then(|e| e.to_str()) {
+        if TWOCBH_MEMBERS.iter().any(|candidate| candidate[1..].eq_ignore_ascii_case(ext)) {
+            return Generation::TwoCbh;
+        }
+        if CLASSIC_MEMBERS.iter().any(|candidate| candidate[1..].eq_ignore_ascii_case(ext)) {
+            return Generation::Classic;
+        }
+    }
     let stem = stem_of(path.as_ref());
     if [".cbh", ".cbg"].iter().any(|e| sibling(&stem, e).symlink_metadata().is_ok()) {
         return Generation::Classic;
