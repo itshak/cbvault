@@ -173,7 +173,10 @@ pub fn write_set(tag: &str, games: &[Game], annotations: bool) -> PathBuf {
         let mo = next_move;
         next_move += m.len() as u64;
         let ao = if annotations {
-            let a = record(198, &[0u8; 24]);
+            // Empty v2 annotation record: position sentinel only, with
+            // the mandatory 0x2000 2CBA frame tag.
+            let mut a = record(198, &0x7fff_ffffi32.to_le_bytes());
+            a[0x18..0x1a].copy_from_slice(&0x2000u16.to_le_bytes());
             let at = next_note;
             next_note += a.len() as u64;
             notes.push(a);
