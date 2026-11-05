@@ -49,41 +49,37 @@ impl<'a> Annotations<'a> {
         self.record.content()
     }
 
-    /// The annotation text this record carries, as one string per run of
-    /// printable bytes, in stored order.
-    ///
-    /// This is a **text extraction, not an item parse**: it reports the strings
-    /// the record holds without claiming which ply any of them belongs to,
-    /// because that mapping is unknown (spec §5.4). Empty when the record holds
-    /// no text, which is the common case — a game with no commentary.
-    pub fn texts(&self) -> Vec<String> {
-        let mut out = Vec::new();
+    /// Inspect printable byte runs without allocating or attributing them to
+    /// a ply. This is a diagnostic view ONLY, never a PGN annotation decoder:
+    /// structure bytes may coincidentally be printable and Unicode content
+    /// needs its own typed decoding.
+    pub fn visit_printable_runs(&self, mut visitor: impl FnMut(&[u8])) {
         let bytes = self.content();
         let mut start = 0;
         while start < bytes.len() {
             let rel = bytes[start..].iter().position(|&b| !(0x20..0x7f).contains(&b));
             match rel {
-                // A run of printable bytes: the annotation text.
-                Some(rel) => {
-                    if rel >= MIN_TEXT {
-                        out.push(text(&bytes[start..start + rel]));
+                Some(n) => {
+                    if n >= MIN_TEXT {
+                        visitor(&bytes[start..start + n]);
                     }
-                    // Step over the separator that ended the run. A NUL ends a
-                    // string and is consumed with it; any other non-printable
-                    // byte is structure and is stepped over on its own. Either
-                    // way `start` moves, so a record that is all structure
-                    // terminates.
-                    start += rel + 1;
+                    start += n + 1;
                 }
-                // The rest of the content is printable.
                 None => {
                     if bytes.len() - start >= MIN_TEXT {
-                        out.push(text(&bytes[start..]));
+                        visitor(&bytes[start..]);
                     }
                     break;
                 }
             }
         }
+    }
+
+    /// Allocating convenience wrapper around visit_printable_runs, for
+    /// diagnostics only; do not use these unlocated strings in PGN output.
+    pub fn texts(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        self.visit_printable_runs(|run| out.push(text(run)));
         out
     }
 }

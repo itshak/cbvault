@@ -1,40 +1,30 @@
-//! One `.2cbg`/`.2cba` record: its magic, its two parameters, its content and
-//! its self-delimiting length trailer.
+// Adapted from oschess-cb-bridge v1.0.3 (MIT), commit bffebfc498d52b4e4631aed32b2f8e8194d125ff.
+// Copyright (c) 2026 the oschess-cb-bridge contributors.
+// Modifications copyright (c) 2026 the cbvault contributors.
+// SPDX-License-Identifier: MIT
+//! One `.2cbg`/`.2cba` frame. The MIT v1.0.3 specification gives a
+//! big-endian checksum at 0x10, a two-byte tag at 0x18, and content at 0x1a.
+//! All content is borrowed; only error paths format strings.
 //!
-//! The framing is the part of 2CBH that is fully established (spec §5), and it
-//! is what makes this format readable without decoding its payload: every
-//! record ends with its own total length, so a reader steps from record to
-//! record and validates each one. The four invariants
+//! The checksum is verified on every record; no damaged payload is silently
+//! handed to a consumer. The 0xffff move terminator is part of the content,
+//! not an additional two bytes between the content and spare capacity.
+//! Provenance: corrected using the pinned MIT v1.0.3 v2/frame.rs baseline.
 //!
-//! * the record starts with [`RECORD_MAGIC`],
-//! * the 8-byte trailer at its end is the record's own total length,
-//! * that length is [`FIXED_OVERHEAD`] + `a` + `b`,
-//! * the content is exactly `a` bytes, after a 24-byte head and before a
-//!   two-byte `ff ff` terminator and `b` zero bytes,
-//!
-//! were checked on 220,418 records across every 2CBH set on the development
-//! machine with no violations (spec §2).
-//!
-//! The content itself is **opaque**. For `.2cba` it is clear text (spec §5.4);
-//! for `.2cbg` it is the move codec, which is not decoded (spec §6). This
-//! module therefore never interprets the content — it hands it back as bytes.
-
 use crate::error::{Error, Result};
 
 use super::bytes::{CONTENT_OFFSET, FIXED_OVERHEAD, MAX_RECORD, RECORD_MAGIC};
 
 /// Offset of the record's total-length trailer, counted back from its end.
 pub const TRAILER: usize = 8;
-/// The two bytes that end every content observed.
-pub const CONTENT_TERMINATOR: [u8; 2] = [0xff, 0xff];
-
 /// One record of a `.2cbg` or `.2cba`, split into its parts. The content is
 /// borrowed; nothing is copied and nothing is interpreted.
 #[derive(Clone, Copy, Debug)]
 pub struct Record<'a> {
     a: u32,
     b: u32,
-    tag: &'a [u8; 8],
+    tag: u16,
+    stored_checksum: u64,
     content: &'a [u8],
 }
 
@@ -63,23 +53,32 @@ impl<'a> Record<'a> {
         if expect != total {
             return Err(bad(format!("length field {total}, but 34 + {a} + {b} = {expect}")));
         }
-        let start = CONTENT_OFFSET;
-        let end = start + a as usize;
-        let content = raw.get(start..end).ok_or_else(|| bad(format!("content runs past the {total}-byte record")))?;
-        let tag: &[u8; 8] = raw[16..24].try_into().expect("8 bytes at a fixed offset");
-        Ok(Record { a, b, tag, content })
+        let end = CONTENT_OFFSET + a as usize;
+        let content =
+            raw.get(CONTENT_OFFSET..end).ok_or_else(|| bad(format!("content runs past the {total}-byte record")))?;
+        let stored_checksum = u64::from_be_bytes(raw[16..24].try_into().expect("8 checksum bytes"));
+        if stored_checksum != checksum(content) {
+            return Err(bad("checksum mismatch".to_owned()));
+        }
+        let tag = u16::from_le_bytes([raw[0x18], raw[0x19]]);
+        Ok(Record { a, b, tag, stored_checksum, content })
     }
 
     /// Splits bytes already accepted by [`Record::parse`]. Cheap enough to call
     /// per access, and it lets a reader that owns or holds the bytes hand out a
     /// [`Record`] without re-validating or re-reading.
     #[inline]
-    pub fn parse_unchecked(raw: &[u8]) -> Record<'_> {
+    pub(crate) fn parse_unchecked(raw: &[u8]) -> Record<'_> {
         let a = u32::from_le_bytes(raw[8..12].try_into().expect("a validated record"));
         let b = u32::from_le_bytes(raw[12..16].try_into().expect("a validated record"));
-        let start = CONTENT_OFFSET;
-        let end = start + a as usize;
-        Record { a, b, tag: raw[16..24].try_into().expect("a validated record"), content: &raw[start..end] }
+        let end = CONTENT_OFFSET + a as usize;
+        Record {
+            a,
+            b,
+            tag: u16::from_le_bytes([raw[0x18], raw[0x19]]),
+            stored_checksum: u64::from_be_bytes(raw[16..24].try_into().expect("a validated record")),
+            content: &raw[CONTENT_OFFSET..end],
+        }
     }
 
     /// The record's `A` parameter: the content length less
@@ -89,23 +88,26 @@ impl<'a> Record<'a> {
         self.a
     }
 
-    /// The record's `B` parameter. **Unknown**: it is a codec parameter rather
-    /// than a size — it stays 98–104 in `.2cbg` and 194–199 in `.2cba` across
-    /// records of very different lengths (spec §5.3).
+    /// Spare capacity B following the A content bytes.
     #[inline]
     pub fn parameter_b(&self) -> u32 {
         self.b
     }
 
-    /// The eight bytes between the parameters and the content, distinct in
-    /// 1,990 of 2,000 sampled records. **Unknown** (spec §5.2).
+    /// Two-byte little-endian content/variant tag.
     #[inline]
-    pub fn tag(&self) -> &'a [u8; 8] {
+    pub fn tag(&self) -> u16 {
         self.tag
     }
 
-    /// The record's content: the opaque bytes, ending `ff ff`. Never
-    /// interpreted by this module.
+    /// Stored big-endian checksum, verified when parsed.
+    #[inline]
+    pub fn stored_checksum(&self) -> u64 {
+        self.stored_checksum
+    }
+
+    /// Exactly A content bytes; a move-stream end marker, if present,
+    /// belongs inside this slice.
     #[inline]
     pub fn content(&self) -> &'a [u8] {
         self.content
@@ -116,6 +118,26 @@ impl<'a> Record<'a> {
     pub fn total(&self) -> usize {
         FIXED_OVERHEAD + self.a as usize + self.b as usize
     }
+}
+
+/// Allocation-free checksum from the pinned MIT v1.0.3 frame specification.
+/// For content shorter than 8 bytes, zero-pad into a little-endian u64.
+/// Otherwise sum each of eight equal contiguous runs modulo 256; ignore
+/// trailing bytes after the eighth run.
+#[inline]
+pub fn checksum(content: &[u8]) -> u64 {
+    let width = content.len() / 8;
+    if width == 0 {
+        let mut padded = [0u8; 8];
+        padded[..content.len()].copy_from_slice(content);
+        return u64::from_le_bytes(padded);
+    }
+    let mut sum = [0u8; 8];
+    for (i, slot) in sum.iter_mut().enumerate() {
+        let begin = i * width;
+        *slot = content[begin..begin + width].iter().fold(0u8, |acc, &byte| acc.wrapping_add(byte));
+    }
+    u64::from_le_bytes(sum)
 }
 
 #[cfg(test)]
@@ -134,7 +156,7 @@ mod tests {
         let r = Record::parse(p(), 12, &raw).unwrap();
         assert_eq!(r.parameter_a(), 28);
         assert_eq!(r.parameter_b(), 102);
-        assert_eq!(r.tag(), &[0xa5u8; 8], "the 8-byte per-record word the builder writes");
+        assert_eq!(r.tag(), 1, "the two-byte v2 tag");
         assert_eq!(r.content(), &[7u8; 28], "the content is exactly A bytes");
         assert_eq!(r.total(), 164);
         assert_eq!(raw.len(), r.total());
@@ -147,7 +169,7 @@ mod tests {
         body[27] = 0xff;
         let raw = record(102, &body);
         let r = Record::parse(p(), 12, &raw).unwrap();
-        assert_eq!(&r.content()[26..], &CONTENT_TERMINATOR);
+        assert_eq!(&r.content()[26..], &[0xff, 0xff]);
     }
 
     #[test]
@@ -196,6 +218,22 @@ mod tests {
         let r = Record::parse(p(), 12, &raw).unwrap();
         assert!(r.content().is_empty(), "a record may carry no content at all");
         assert_eq!(r.total(), 132);
+    }
+
+    #[test]
+    fn corrupt_content_is_rejected_by_checksum() {
+        let mut raw = record(7, &[1u8; 16]);
+        raw[CONTENT_OFFSET + 3] ^= 1;
+        let e = Record::parse(p(), 12, &raw).unwrap_err().to_string();
+        assert!(e.contains("checksum mismatch"), "{e}");
+    }
+
+    #[test]
+    fn checksum_covers_eight_runs_and_ignores_remainder() {
+        assert_eq!(checksum(&[1, 2, 3]), 0x030201);
+        let content: Vec<u8> = (0..17).collect();
+        let expected: u64 = (0..8).map(|i| ((4 * i + 1) as u64) << (8 * i)).sum();
+        assert_eq!(checksum(&content), expected);
     }
 
     #[test]

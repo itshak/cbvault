@@ -11,7 +11,8 @@
 
 use std::path::{Path, PathBuf};
 
-use super::bytes::{CONTENT_OFFSET, FILE_HEADER_SIZE, FIXED_OVERHEAD, RECORD_MAGIC, RECORD_SIZE, TERMINATOR_SIZE};
+use super::bytes::{CONTENT_OFFSET, FILE_HEADER_SIZE, FIXED_OVERHEAD, RECORD_MAGIC, RECORD_SIZE};
+use super::record::checksum;
 
 /// A 12-byte `.2cbg`/`.2cba` file header for a file of `size` bytes, with the
 /// first record at [`FILE_HEADER_SIZE`].
@@ -22,10 +23,9 @@ pub fn file_header(size: u64) -> [u8; FILE_HEADER_SIZE] {
     h
 }
 
-/// A whole record: the magic, `a` and `b`, the 8-byte tag, `content`, the
-/// `ff ff` terminator, zero padding and the length trailer. Every arithmetic
-/// rule of spec §5 is applied here, so a fixture that round-trips through
-/// [`crate::twocbh::Record::parse`] is a fixture the format allows.
+/// A whole record: magic, A/B lengths, big-endian checksum, two-byte tag,
+/// A content bytes, B spare bytes, and an eight-byte length trailer.
+/// Generated entirely from synthetic content, without ChessBase source data.
 ///
 /// `a` is taken from the content length, so a caller passes the bytes it wants
 /// and the frame is built around them.
@@ -36,18 +36,16 @@ pub fn record(b: u32, content: &[u8]) -> Vec<u8> {
 /// The same as [`record`], with `a` stated explicitly — for a test that
 /// corrupts a length field and needs the stated value not to be recomputed.
 pub fn record_with(a: u32, b: u32, content: &[u8]) -> Vec<u8> {
-    assert_eq!(
-        CONTENT_OFFSET + a as usize + TERMINATOR_SIZE + b as usize + 8,
-        FIXED_OVERHEAD + a as usize + b as usize
-    );
+    assert_eq!(a as usize, content.len());
+    assert_eq!(CONTENT_OFFSET + a as usize + b as usize + 8, FIXED_OVERHEAD + a as usize + b as usize);
     let total = FIXED_OVERHEAD + a as usize + b as usize;
     let mut r = Vec::with_capacity(total);
     r.extend_from_slice(&RECORD_MAGIC);
     r.extend_from_slice(&a.to_le_bytes());
     r.extend_from_slice(&b.to_le_bytes());
-    r.extend_from_slice(&[0xa5; 8]); // the per-record word: distinct in the wild
+    r.extend_from_slice(&checksum(content).to_be_bytes());
+    r.extend_from_slice(&1u16.to_le_bytes()); // standard-chess game tag
     r.extend_from_slice(content);
-    r.extend_from_slice(&[0xff, 0xff]);
     r.resize(total, 0);
     let n = r.len();
     r[n - 8..].copy_from_slice(&(n as u64).to_le_bytes());
@@ -66,21 +64,19 @@ pub fn segment(records: &[Vec<u8>]) -> Vec<u8> {
     out
 }
 
-/// A 192-byte `.2cbh` record. `moves` and `annotations` are the two offsets
-/// the format's whole reader rests on; `kind` is the kind byte.
-pub fn header_record(kind: u8, moves: u64, annotations: u64, names: (&[u8], &[u8])) -> [u8; RECORD_SIZE] {
+/// A 192-byte v2 header with raw entity IDs. Player names live in .2lid,
+/// not at 0x68/0x78 (those are rating-related metadata).
+pub fn header_record(flags: u8, moves: u64, annotations: u64, players: (i64, i64)) -> [u8; RECORD_SIZE] {
     let mut b = [0u8; RECORD_SIZE];
-    b[0] = kind;
+    b[0] = flags;
     b[0x01] = 0x00;
     b[0x02] = 0x01;
     b[0x03] = 0x01;
     b[0x08..0x10].copy_from_slice(&moves.to_le_bytes());
     b[0x10..0x18].copy_from_slice(&annotations.to_le_bytes());
     b[0x40..0x50].fill(0xff);
-    let n1 = names.0.len().min(16);
-    b[0x68..0x68 + n1].copy_from_slice(&names.0[..n1]);
-    let n2 = names.1.len().min(16);
-    b[0x78..0x78 + n2].copy_from_slice(&names.1[..n2]);
+    b[0x18..0x20].copy_from_slice(&players.0.to_le_bytes());
+    b[0x20..0x28].copy_from_slice(&players.1.to_le_bytes());
     b[0xb8..0xbc].copy_from_slice(&1u32.to_le_bytes());
     b
 }
@@ -102,21 +98,21 @@ pub fn headers(games: &[[u8; RECORD_SIZE]], generation: u8) -> Vec<u8> {
     out
 }
 
-/// One synthetic game: its kind byte, its per-game key, and its two names.
+/// One synthetic game: its flags, per-game key, and two entity IDs.
 #[derive(Clone, Copy)]
 pub struct Game {
-    /// The record's kind byte (`0x01` for a game).
+    /// Record flags; bit 0x80 marks a deleted record.
     pub kind: u8,
     /// The value stored at `0x98`, distinct per game as in the real sets.
     pub key: u64,
-    /// The two inline name fields.
-    pub names: (&'static [u8], &'static [u8]),
+    /// The two player entity IDs in the .2lid registry.
+    pub players: (i64, i64),
 }
 
 impl Game {
-    /// A game with the given key and two names.
-    pub fn new(key: u64, one: &'static [u8], two: &'static [u8]) -> Game {
-        Game { kind: 1, key, names: (one, two) }
+    /// A game with the given key and two player entity IDs.
+    pub fn new(key: u64, white: i64, black: i64) -> Game {
+        Game { kind: 1, key, players: (white, black) }
     }
 }
 
@@ -135,18 +131,23 @@ pub fn write_set(tag: &str, games: &[Game], annotations: bool) -> PathBuf {
     let mut heads: Vec<[u8; RECORD_SIZE]> = Vec::new();
     let mut moves: Vec<Vec<u8>> = Vec::new();
     let mut notes: Vec<Vec<u8>> = Vec::new();
+    let mut next_move = FILE_HEADER_SIZE as u64;
+    let mut next_note = FILE_HEADER_SIZE as u64;
     for g in games {
-        let m = record(102, &[0x5a; 28]);
-        let mo = (FILE_HEADER_SIZE + moves.iter().map(|r| r.len()).sum::<usize>()) as u64;
+        // FFFC starts a legal-format empty tree, FFFF ends its main line.
+        let m = record(102, &[0xfc, 0xff, 0xff, 0xff]);
+        let mo = next_move;
+        next_move += m.len() as u64;
         let ao = if annotations {
             let a = record(198, &[0u8; 24]);
-            let at = (FILE_HEADER_SIZE + notes.iter().map(|r| r.len()).sum::<usize>()) as u64;
+            let at = next_note;
+            next_note += a.len() as u64;
             notes.push(a);
             at
         } else {
             0
         };
-        let mut h = header_record(g.kind, mo, ao, g.names);
+        let mut h = header_record(g.kind, mo, ao, g.players);
         h[0x98..0xa0].copy_from_slice(&g.key.to_le_bytes());
         heads.push(h);
         moves.push(m);
@@ -172,7 +173,7 @@ mod tests {
 
     #[test]
     fn a_written_set_has_the_count_its_header_states() {
-        let games = [Game::new(1, b"a", b"b"), Game::new(2, b"c", b"d")];
+        let games = [Game::new(1, 1, 2), Game::new(2, 3, 4)];
         let stem = write_set("count", &games, true);
         let bytes = std::fs::read(format!("{}.2cbh", stem.display())).unwrap();
         assert_eq!(bytes.len() / RECORD_SIZE, 3, "the file's own record plus two games");

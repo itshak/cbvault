@@ -1,30 +1,11 @@
-//! Reader for the second-generation ChessBase database format (the 2CBH
-//! `.2cbh` family), the sibling of [`crate::cbh`].
+//! Read-only preliminary support for second-generation ChessBase databases.
 //!
-//! 2CBH is what ChessBase 17 and later write, and it is what a user's own
-//! working database is: `AutoSave`, the personality books, a converted history
-//! set. It is read through the **same shapes** as the classic format — a
-//! [`Headers`] of fixed records, a [`GameHeader`] per game implementing
-//! [`crate::game::Head`], a [`GameMoves`] and an [`Annotations`] — so a
-//! consumer above this crate does not learn which generation it was fed.
+//! Frame content, record kinds, and header metadata follow the pinned MIT
+//! oschess-cb-bridge v1.0.3 layout. Player names require .2lid decoding,
+//! and the compact 16-bit move-word format still requires a gigachess replay
+//! bridge. This module does NOT yet produce PGN or validate legal moves.
+//! No later AGPL code is used. See the active native-2cbh-readonly OpenSpec.
 //!
-//! **What is established, and what is not.** The container is fully
-//! reverse-engineered and proven: `.2cbh` is fixed 192-byte records, and every
-//! `.2cbg`/`.2cba` record starts with a magic and ends with its own length.
-//! Four invariants were checked on 220,418 records across every 2CBH set on
-//! the development machine with no violations. The **`.2cbg` move codec is not
-//! decoded**: [`GameMoves::is_decoded`] is `false` and
-//! [`GameMoves::stream`] is `None`, because emitting a plausible-looking word
-//! per byte of a compressed payload would be a wrong answer that no test
-//! downstream would catch.
-//!
-//! `docs/format-spec-2cbh.md` is the source of truth: it carries the evidence
-//! for every field here, the hypotheses that were tested and ruled out, and —
-//! in §10 — what would close each remaining unknown.
-//!
-//! **Provenance**: clean-room from those verified facts, no ported code. All
-//! 2CBH integers are little-endian, against the classic format's big-endian.
-
 use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
@@ -55,8 +36,8 @@ pub use bytes::{FILE_HEADER_SIZE, RECORD_MAGIC, RECORD_SIZE};
 /// settings file beside them.
 pub const EXTENSIONS: [&str; 7] = [".2cbh", ".2cbg", ".2cba", ".2lid", ".2lcd", ".2lgd", ".ini"];
 
-/// The files the reader opens, the header file first.
-pub const READ: [&str; 3] = [".2cbh", ".2cbg", ".2cba"];
+/// Mandatory files. Annotation frames (.2cba) may be absent.
+pub const READ: [&str; 2] = [".2cbh", ".2cbg"];
 
 /// Which generation of the ChessBase format a set is.
 ///
@@ -137,19 +118,18 @@ pub fn probe_all(stem: &Path) -> (Generation, PathBuf) {
     const MEMBERS_CLASSIC: [&str; 11] = ["cbh", "cbg", "cba", "cbe", "cbc", "cbl", "cbm", "cbo", "cbp", "cbs", "cbt"];
     // A stem that already names a member keeps its own name; otherwise the
     // extension, if it is one we know, is dropped.
-    let base = match stem.extension().and_then(|e| e.to_str()) {
-        Some(ext) if MEMBERS_2CBH.contains(&ext) || MEMBERS_CLASSIC.contains(&ext) => stem.with_extension(""),
-        _ => stem.to_path_buf(),
-    };
-    for name in MEMBERS_2CBH {
-        if sibling(&base, &format!(".{name}")).exists() {
-            return (Generation::TwoCbh, base);
-        }
+    let member = stem.extension().and_then(|ext| ext.to_str()).is_some_and(|ext| {
+        MEMBERS_2CBH.iter().chain(MEMBERS_CLASSIC.iter()).any(|candidate| candidate.eq_ignore_ascii_case(ext))
+    });
+    let base = if member { stem.with_extension("") } else { stem.to_path_buf() };
+    // Only a valid header-member presence classifies a usable set.
+    // Sidecars on their own are not a database, and the header is the
+    // authoritative generation when both generations share one stem.
+    if sibling(&base, ".2cbh").is_file() {
+        return (Generation::TwoCbh, base);
     }
-    for name in MEMBERS_CLASSIC {
-        if sibling(&base, &format!(".{name}")).exists() {
-            return (Generation::Classic, base);
-        }
+    if sibling(&base, ".cbh").is_file() {
+        return (Generation::Classic, base);
     }
     (Generation::Unknown, base)
 }
@@ -226,8 +206,8 @@ impl Headers {
         self.records
     }
 
-    /// The number of games, which is [`Headers::records`] less the file's own
-    /// header record. The classic reader counts the same way.
+    /// Number of non-header record slots (includes guiding texts, analyses
+    /// and deletion placeholders, not only playable games).
     pub fn games(&self) -> u32 {
         self.records.saturating_sub(1)
     }

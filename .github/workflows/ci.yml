@@ -83,6 +83,12 @@ jobs:
       - name: Cargo test (all features)
         run: cargo test --all-features
 
+      # The normal suite uses memory-mapped files where available. This
+      # second run explicitly verifies the reusable-buffer (pread) fallback:
+      # neither framing path may allocate after its buffer is warmed.
+      - name: 2CBH zero-allocation frames without mmap
+        run: CBVAULT_NO_MMAP=1 cargo test -p cbvault-format --all-features --test twocbh_zero_alloc
+
       - name: Cargo fmt
         run: cargo fmt --all --check
 

@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use crate::error::{Error, Result};
 use crate::file::DbFile;
 
-use super::bytes::{FILE_HEADER_SIZE, FIXED_OVERHEAD, MAX_RECORD, RECORD_MAGIC};
+use super::bytes::{CONTENT_OFFSET, FILE_HEADER_SIZE, FIXED_OVERHEAD, MAX_RECORD, RECORD_MAGIC};
 use super::record::Record;
 
 /// One `.2cbg`/`.2cba` file, read at the offsets the `.2cbh` records name.
@@ -81,7 +81,9 @@ impl Segment {
         let mut n = 0;
         while at < self.len {
             let total = self.total_at(at)?;
-            at += total;
+            at = at
+                .checked_add(total)
+                .ok_or_else(|| Error::corrupt(&self.path, at, "2CBH segment: record offset overflow"))?;
             n += 1;
         }
         if at != self.len {
@@ -102,11 +104,18 @@ impl Segment {
     /// 8-byte trailer by [`Record::parse`] — the trailer cannot be the source,
     /// because finding it is what the length is for.
     pub fn total_at(&self, offset: u64) -> Result<u64> {
-        if offset < self.first || offset + 16 > self.len {
+        if offset < self.first || offset.checked_add(CONTENT_OFFSET as u64).is_none_or(|end| end > self.len) {
             return Err(Error::corrupt(&self.path, offset, "2CBH segment: no record head here"));
         }
-        let mut head = [0u8; 16];
-        self.file.read_into(offset, &mut head)?;
+        // The mapped fast path borrows the head directly, without pread or
+        // copying; the unmapped fallback uses one stack buffer.
+        let mut stack = [0u8; CONTENT_OFFSET];
+        let head = if let Some(mapped) = self.file.slice_at(offset, CONTENT_OFFSET) {
+            mapped
+        } else {
+            self.file.read_into(offset, &mut stack)?;
+            &stack
+        };
         if head[..8] != RECORD_MAGIC {
             return Err(Error::corrupt(&self.path, offset, "2CBH segment: no record magic here"));
         }
@@ -133,19 +142,31 @@ impl Segment {
     /// nothing for the mapped one.
     pub fn record_at(&self, offset: u64) -> Result<SegmentRecord<'_>> {
         let total = self.total_at(offset)? as usize;
-        if offset + total as u64 > self.len {
+        if offset.checked_add(total as u64).is_none_or(|end| end > self.len) {
             return Err(Error::corrupt(
                 &self.path,
                 offset,
                 format!("2CBH segment: a {total}-byte record does not fit in {}", self.len),
             ));
         }
-        let path = self.path.clone();
         if let Some(slice) = self.file.slice_at(offset, total) {
-            return SegmentRecord::parse(&path, offset, slice);
+            return SegmentRecord::parse(&self.path, offset, slice);
         }
         let bytes = self.file.read(offset, total)?;
-        SegmentRecord::parse(&path, offset, bytes)
+        SegmentRecord::parse(&self.path, offset, bytes)
+    }
+    /// Read into a caller-owned reusable buffer. Once its capacity is large
+    /// enough, the unmapped pread path has zero per-record allocations.
+    /// Use record_at for zero-copy mapped access; this is the low-memory path.
+    pub fn record_into<'a>(&self, offset: u64, buf: &'a mut Vec<u8>) -> Result<Record<'a>> {
+        let total = self.total_at(offset)? as usize;
+        if offset.checked_add(total as u64).is_none_or(|end| end > self.len) {
+            return Err(Error::corrupt(&self.path, offset, "2CBH segment: truncated record"));
+        }
+        buf.clear();
+        buf.resize(total, 0);
+        self.file.read_into(offset, buf)?;
+        Record::parse(&self.path, offset, buf)
     }
 }
 

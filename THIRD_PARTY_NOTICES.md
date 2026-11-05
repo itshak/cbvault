@@ -10,6 +10,17 @@
 - License: MIT — "Copyright (c) 2026 the oschess-cb-bridge contributors"
 - Usage: the on-disk format readers, codepage handling, database items, view/replay structure and PGN output are **ported and modified**: the `chesscore` chess layer is replaced by `gigachess`. Ported files retain the upstream MIT notice and are listed in `docs/provenance.md`. The workspace conventions (`rustfmt.toml`, lints, release profile) follow the ancestor's; no code is copied for them, and the test-only fixture builder is a port of the ancestor's `fixture`/`fixture_cbh` modules.
 
+### oschess-cb-bridge v1.0.3 — second-generation reader
+
+- Source revision: [bffebfc498d52b4e4631aed32b2f8e8194d125ff](https://github.com/asavis/oschess-cb-bridge/tree/bffebfc498d52b4e4631aed32b2f8e8194d125ff).
+- License at that pinned revision: MIT, copyright (c) 2026 the oschess-cb-bridge contributors.
+- The 2CBH frame checksum, two-byte tag/content split, metadata offsets,
+  record classification and structural move-word parsing are adapted from
+  its MIT `cbformat/src/v2` modules. The project remains MIT; later AGPL
+  upstream versions are not copied or linked. See `docs/provenance.md`.
+- These corrections do not imply that the .2lid reader, legal replay, PGN
+  export or real-database equivalence gates have passed.
+
 ## Dependencies
 
 ### gigachess

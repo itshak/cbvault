@@ -17,13 +17,9 @@ use cbvault_format::twocbh::{self, Annotations, GameMoves, Generation, Headers, 
 /// The games of a synthetic set: distinct keys and names, the third carrying
 /// the `0x80` kind bit so that path is exercised too.
 fn games() -> Vec<twocbh::testdata::Game> {
-    let mut flagged = twocvh::game(7, b"s", b"a");
+    let mut flagged = twocvh::game(7, 5, 6);
     flagged.kind = 0x81;
-    vec![
-        twocvh::game(0x1111_2222_3333_4444, b"source-one", b"annotator"),
-        twocvh::game(0xaaaa_bbbb_cccc_dddd, b"FIDE", b"FIDE"),
-        flagged,
-    ]
+    vec![twocvh::game(0x1111_2222_3333_4444, 1, 2), twocvh::game(0xaaaa_bbbb_cccc_dddd, 3, 4), flagged]
 }
 
 /// Runs `f` over a synthetic set of `count` games, then removes the set.
@@ -46,50 +42,38 @@ fn a_twocbh_fixture_set_decodes() {
         for id in 1..=3 {
             let h = headers.record(id).expect("the record");
             assert_eq!(h.id(), id);
-            assert_eq!(h.kind_byte(), if id == 3 { 0x81 } else { 0x01 });
-            assert_eq!(h.kind(), if id == 3 { RecordKind::Unknown(0x81) } else { RecordKind::Game });
+            assert_eq!(h.flags_byte(), if id == 3 { 0x81 } else { 0x01 });
+            assert_eq!(h.kind_byte(), 1);
+            assert_eq!(h.kind(), RecordKind::Game);
             assert_eq!(h.is_deleted(), id == 3);
 
             let mo = h.moves_offset();
             let ao = h.annotations_offset();
             assert!(mo >= 12, "the first record follows the 12-byte file header");
             assert!(ao >= 12);
-            assert!(moves.record_at(mo).is_ok(), "game {id}: .2cbg offset {mo}");
-            assert!(notes.record_at(ao).is_ok(), "game {id}: .2cba offset {ao}");
+            assert!(moves.record_at(mo.try_into().unwrap()).is_ok(), "game {id}: .2cbg offset {mo}");
+            assert!(notes.record_at(ao.try_into().unwrap()).is_ok(), "game {id}: .2cba offset {ao}");
         }
     });
 }
 
 #[test]
-fn game_records_carry_their_offsets_names_and_key() {
+fn game_records_carry_entity_ids_and_key() {
     with_set("fields", 3, true, |stem| {
         let headers = Headers::open(stem).unwrap();
         let h = headers.record(2).unwrap();
-        assert_eq!(h.name1(), b"FIDE\0\0\0\0\0\0\0\0\0\0\0\0");
-        assert_eq!(h.name2(), b"FIDE\0\0\0\0\0\0\0\0\0\0\0\0");
+        assert_eq!(h.white(), 3, "player IDs must point to the .2lid registry");
+        assert_eq!(h.black(), 4);
+        assert_eq!(h.rating_white_bytes(), &[0u8; 16], "not an inline player name");
+        assert_eq!(h.rating_black_bytes(), &[0u8; 16], "not an inline player name");
         assert_eq!(h.key(), 0xaaaa_bbbb_cccc_dddd);
         assert_eq!(h.bytes().len(), 192);
 
-        // The names decode through the classic no-allocation path, so both
-        // generations produce text the same way.
-        let mut a = cbvault_format::cbh::bytes::NameBuf::new();
-        let mut b = cbvault_format::cbh::bytes::NameBuf::new();
-        assert_eq!(h.name1_into(&mut a), "FIDE");
-        assert_eq!(h.name2_into(&mut b), "FIDE");
-        // Reuse leaves nothing of the previous text.
-        assert_eq!(h.name1_into(&mut a), "FIDE");
-
-        // The count and size live in the file's own header record. A game
-        // record does not repeat them, and its bytes at `0x0a` are inside its
-        // `.2cbg` offset — so `stated_record_size` is only meaningful on record
-        // 0, which is what the reader validates on open.
-        let file_header = headers.file_header().expect("the file header record");
+        let file_header = headers.file_header().unwrap();
         assert_eq!(file_header.stated_record_size(), 192);
-        assert_eq!(file_header.stated_records(), 4, "the file's own record plus three games");
+        assert_eq!(file_header.stated_records(), 4);
         assert_eq!(file_header.id(), 0);
-        // A game record does not repeat them, which is why the reader
-        // validates them on record 0 only.
-        assert_ne!(h.stated_record_size(), 192, "a game record does not state the record size");
+        assert_ne!(h.stated_record_size(), 192);
     });
 }
 
@@ -99,16 +83,16 @@ fn a_move_record_is_framed_but_reports_itself_undecoded() {
         let headers = Headers::open(stem).unwrap();
         let seg = Segment::open(twocbh::sibling(stem, ".2cbg")).unwrap();
         let h = headers.record(1).unwrap();
-        let got = seg.record_at(h.moves_offset()).expect("the move record");
+        let got = seg.record_at(h.moves_offset().try_into().unwrap()).expect("the move record");
 
         let gm = GameMoves::parse(seg.path(), got.bytes()).expect("the move record parses");
         assert!(!gm.is_decoded(), "the 2CBH move codec is not decoded (spec §6)");
         assert!(gm.stream().is_none(), "no moves2 may be invented for a 2CBH game");
-        assert_eq!(gm.content().len(), 28, "the content is exactly A bytes");
+        assert_eq!(gm.content(), &[0xfc, 0xff, 0xff, 0xff], "MOVES then END_OF_LINE");
         assert_eq!(gm.parameter_b(), 102);
-        assert_eq!(gm.record().total(), 34 + 28 + 102, "24 + a + 2 + b + 8");
-        let raw = seg.record_at(h.moves_offset()).unwrap();
-        assert_eq!(&raw.bytes()[24 + 28..24 + 28 + 2], &[0xff, 0xff], "ff ff follows the content");
+        assert_eq!(gm.record().total(), 34 + 4 + 102, "26 + A + B + 8");
+        let raw = seg.record_at(h.moves_offset().try_into().unwrap()).unwrap();
+        assert_eq!(&raw.bytes()[0x1a..0x1e], &[0xfc, 0xff, 0xff, 0xff]);
     });
 }
 
@@ -138,9 +122,9 @@ fn both_generations_answer_the_shared_head_trait() {
         assert!(!deleted);
         assert_eq!(id, 1);
         assert_eq!(len, 192);
-        // The undecoded tag fields report the shape's own "absent"/"unknown"
-        // rather than a guess (spec §4.3).
-        assert_eq!(h.white(), -1);
+        // The two player identifiers reference .2lid. Name resolution is a
+        // separate (not yet implemented) stage.
+        assert_eq!(h.white(), 1);
         assert_eq!(h.played_date().pgn(), "????.??.??");
     });
 }
@@ -203,12 +187,60 @@ fn a_game_id_past_the_end_is_no_such_game() {
 
 #[test]
 fn the_read_list_names_the_mandatory_members() {
-    assert_eq!(twocbh::READ, [".2cbh", ".2cbg", ".2cba"]);
+    assert_eq!(twocbh::READ, [".2cbh", ".2cbg"]);
     for e in twocbh::EXTENSIONS {
         assert!(e.starts_with("."), "{e}");
     }
     assert_eq!(twocbh::RECORD_SIZE, 192);
     assert_eq!(twocvh::file_header(12)[8], 12, "the first record follows the header");
+}
+
+/// The mmap path borrows records. The pread path writes into a caller-owned
+/// buffer and does not grow it once sufficient capacity has been reserved.
+#[test]
+fn a_reused_frame_buffer_keeps_its_capacity() {
+    with_set("reuse", 2, true, |stem| {
+        let headers = Headers::open(stem).unwrap();
+        let seg = Segment::open(twocbh::sibling(stem, ".2cbg")).unwrap();
+        let mut buf = Vec::with_capacity(4096);
+        let capacity = buf.capacity();
+        for _ in 0..16 {
+            for id in 1..=2 {
+                let h = headers.record(id).unwrap();
+                let frame = seg.record_into(h.moves_offset().try_into().unwrap(), &mut buf).unwrap();
+                assert_eq!(frame.content(), &[0xfc, 0xff, 0xff, 0xff]);
+            }
+        }
+        assert_eq!(buf.capacity(), capacity);
+    });
+}
+
+#[test]
+fn checksum_corruption_is_rejected_at_the_segment_boundary() {
+    with_set("checksum", 1, true, |stem| {
+        let p = twocbh::sibling(stem, ".2cbg");
+        let headers = Headers::open(stem).unwrap();
+        let offset = headers.record(1).unwrap().moves_offset() as usize;
+        let mut bytes = std::fs::read(&p).unwrap();
+        bytes[offset + twocbh::bytes::CONTENT_OFFSET] ^= 0x1;
+        std::fs::write(&p, &bytes).unwrap();
+        let seg = Segment::open(p).unwrap();
+        let error = seg.record_at(offset as u64).err().expect("the checksum must be checked");
+        assert!(error.to_string().contains("checksum mismatch"), "{error}");
+    });
+}
+
+#[test]
+fn orphan_sidecars_are_not_recognised_as_database_sets() {
+    let dir = std::env::temp_dir().join(format!("cbvault-twocbh-orphan-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let stem = dir.join("orphan");
+    std::fs::write(twocbh::sibling(&stem, ".2cbg"), []).unwrap();
+    assert_eq!(twocbh::probe(&stem), Generation::Unknown);
+    std::fs::write(twocbh::sibling(&stem, ".2cbh"), []).unwrap();
+    assert_eq!(twocbh::probe(&stem), Generation::TwoCbh);
+    assert_eq!(twocbh::probe(&dir.join("orphan.2CBH")), Generation::TwoCbh);
+    std::fs::remove_dir_all(dir).ok();
 }
 
 /// The real-file check, env-gated. It states its own skip out loud, so a
@@ -230,7 +262,7 @@ fn a_real_twocbh_set_reads_under_the_env_gate() {
     println!("real .2cbg: {} records", seg.records().expect("count the real records"));
     for id in 1..=headers.games().min(500) {
         let h = headers.record(id).expect("a real record");
-        let r = seg.record_at(h.moves_offset()).expect("the real move record parses");
+        let r = seg.record_at(h.moves_offset().try_into().unwrap()).expect("the real move record parses");
         assert!(!GameMoves::parse(seg.path(), r.bytes()).unwrap().is_decoded());
     }
 }
@@ -247,7 +279,7 @@ fn a_set_without_a_cba_reads_its_headers_and_moves_all_the_same() {
         for id in 1..=2 {
             let h = headers.record(id).unwrap();
             assert_eq!(h.annotations_offset(), 0, "a game with no annotations");
-            assert!(seg.record_at(h.moves_offset()).is_ok());
+            assert!(seg.record_at(h.moves_offset().try_into().unwrap()).is_ok());
         }
     });
 }
@@ -262,8 +294,8 @@ fn with_set<F: FnOnce(&Path)>(tag: &str, count: usize, annotations: bool, f: F) 
 /// Short alias for the fixture builder, so the calls below stay readable.
 mod twocvh {
     pub use cbvault_format::twocbh::testdata::{file_header, record};
-    pub fn game(key: u64, one: &'static [u8], two: &'static [u8]) -> cbvault_format::twocbh::testdata::Game {
-        cbvault_format::twocbh::testdata::Game::new(key, one, two)
+    pub fn game(key: u64, white: i64, black: i64) -> cbvault_format::twocbh::testdata::Game {
+        cbvault_format::twocbh::testdata::Game::new(key, white, black)
     }
 }
 
