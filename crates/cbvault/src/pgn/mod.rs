@@ -49,8 +49,8 @@ use cbvault_format::cbh::bytes::NameBuf;
 use cbvault_format::cbh::{Entities, GameMoves};
 use cbvault_format::error::{Error, Result};
 use cbvault_format::game::annotations::{Annotation, GAME_POSITION, timing};
-use cbvault_format::twocbh::{self, annotation_items as v2_annotations};
 use cbvault_format::game::{GameResult, Head, ROUND_TEXT_BYTES, RecordKind, round_text};
+use cbvault_format::twocbh::{self, annotation_items as v2_annotations};
 use comments::{At, Bare, Commentary, Notes};
 use gigachess::san::{San, check_mate_suffix, move_to_san_body};
 use gigachess::{Board, Color, Move};
@@ -479,9 +479,12 @@ struct V2Names {
 impl V2Names {
     fn capacity(&self) -> usize {
         self.scratch.capacity()
-            + self.white_last.capacity() + self.white_first.capacity()
-            + self.black_last.capacity() + self.black_first.capacity()
-            + self.title.capacity() + self.place.capacity()
+            + self.white_last.capacity()
+            + self.white_first.capacity()
+            + self.black_last.capacity()
+            + self.black_first.capacity()
+            + self.title.capacity()
+            + self.place.capacity()
     }
 }
 
@@ -496,29 +499,34 @@ fn write_tags_v2(
     total_plies: u32,
     names: &mut V2Names,
 ) -> Result<()> {
-    let event_found = entities.tournament_into(
-        header.tournament(), &mut names.scratch, &mut names.title, &mut names.place,
-    )?;
+    let event_found =
+        entities.tournament_into(header.tournament(), &mut names.scratch, &mut names.title, &mut names.place)?;
     let event = if event_found && !names.title.is_empty() { &names.title } else { "?" };
     let place = if event_found && !names.place.is_empty() { &names.place } else { "?" };
     push_escaped_tag(out, "[Event \"", event);
     push_escaped_tag(out, "[Site \"", place);
     push_tag(out, "[Date \"", str_from_bytes(&header.played_date().text()));
     push_round(out, header.round(), &mut names.round);
-    let white = entities.player_into(
-        header.white(), &mut names.scratch, &mut names.white_last, &mut names.white_first,
-    )?;
+    let white =
+        entities.player_into(header.white(), &mut names.scratch, &mut names.white_last, &mut names.white_first)?;
     push_escaped_player(out, "[White \"", white.then_some((&names.white_last, &names.white_first)));
-    let black = entities.player_into(
-        header.black(), &mut names.scratch, &mut names.black_last, &mut names.black_first,
-    )?;
+    let black =
+        entities.player_into(header.black(), &mut names.scratch, &mut names.black_last, &mut names.black_first)?;
     push_escaped_player(out, "[Black \"", black.then_some((&names.black_last, &names.black_first)));
     push_tag(out, "[Result \"", result_tag(header.result()));
-    if let Some(eco) = header.eco().code_text() { push_ascii_tag(out, "[ECO \"", &eco); }
+    if let Some(eco) = header.eco().code_text() {
+        push_ascii_tag(out, "[ECO \"", &eco);
+    }
     let (welo, belo) = header.elo();
-    if welo > 0 { push_number_tag(out, "[WhiteElo \"", welo as u32); }
-    if belo > 0 { push_number_tag(out, "[BlackElo \"", belo as u32); }
-    if total_plies == 0 { push_tag(out, "[PlyCount \"", "0"); }
+    if welo > 0 {
+        push_number_tag(out, "[WhiteElo \"", welo as u32);
+    }
+    if belo > 0 {
+        push_number_tag(out, "[BlackElo \"", belo as u32);
+    }
+    if total_plies == 0 {
+        push_tag(out, "[PlyCount \"", "0");
+    }
     if *start != Start::Standard {
         if matches!(start, Start::Chess960(_)) || matches!(start, Start::Setup(s) if s.chess960) {
             push_tag(out, "[Variant \"", "Chess960");
@@ -825,7 +833,8 @@ impl PgnWriter {
     ) -> io::Result<()> {
         if header.kind() != RecordKind::Game || header.is_deleted() {
             return Err(io::Error::new(
-                io::ErrorKind::InvalidData, format!("2CBH record {} is not an active game", header.id()),
+                io::ErrorKind::InvalidData,
+                format!("2CBH record {} is not an active game", header.id()),
             ));
         }
         let what = GameRef::new(header.id());
@@ -833,13 +842,10 @@ impl PgnWriter {
         let board = start_board_cached(&start, &mut self.starts).map_err(as_io)?;
         self.tree.clear();
         self.game.clear();
-        let stats = v2_replay::walk_from(
-            what, game, &start, &mut self.tree, &mut self.v2_stack, &mut self.starts,
-        ).map_err(as_io)?;
-        write_tags_v2(
-            &mut self.game, header, entities, &start, &board, stats.total_plies,
-            &mut self.v2_names,
-        ).map_err(as_io)?;
+        let stats = v2_replay::walk_from(what, game, &start, &mut self.tree, &mut self.v2_stack, &mut self.starts)
+            .map_err(as_io)?;
+        write_tags_v2(&mut self.game, header, entities, &start, &board, stats.total_plies, &mut self.v2_names)
+            .map_err(as_io)?;
         match anns.filter(|a| !a.is_empty()) {
             None => emit(&self.tree, &mut Bare, &mut self.game, &mut self.steps).map_err(as_io)?,
             Some(a) => {
@@ -878,17 +884,19 @@ impl PgnWriter {
             prev = item.position;
             self.index.push((item.position, item.offset));
             if let Annotation::Other { code: 0x26, data } = item.annotation
-                && !wrote_evp && item.position == GAME_POSITION
+                && !wrote_evp
+                && item.position == GAME_POSITION
             {
                 // 2CBH's 0x26 evaluation list has little-endian entries.
-                let entries = timing::evaluations(data, false).ok_or_else(|| {
-                    Error::corrupt("<.2cba>", item.offset as u64, "invalid 2CBH evaluation profile")
-                })?;
+                let entries = timing::evaluations(data, false)
+                    .ok_or_else(|| Error::corrupt("<.2cba>", item.offset as u64, "invalid 2CBH evaluation profile"))?;
                 comments::write_evp(&mut self.evp, &entries);
                 wrote_evp = !self.evp.is_empty();
             }
         }
-        if !ordered { self.index.sort_by_key(|&(position, _)| position); }
+        if !ordered {
+            self.index.sort_by_key(|&(position, _)| position);
+        }
         Ok(())
     }
 
