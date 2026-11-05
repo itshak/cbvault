@@ -64,7 +64,7 @@ impl<'a> GameMoves<'a> {
 
     /// Raw setup words after FFFB and before FFFC, if any.
     pub fn start_words(&self) -> impl Iterator<Item = u16> + '_ {
-        let begin = if self.tree_start > 2 { 2 } else { self.tree_start };
+        let begin = if self.tree_start > 2 { 2 } else { 0 };
         self.content()[begin..self.tree_start.saturating_sub(2)]
             .chunks_exact(2)
             .map(|b| u16::from_le_bytes([b[0], b[1]]))
