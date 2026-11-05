@@ -165,7 +165,7 @@ mod tests {
         assert!(pgn.contains("[White \"Test1, Example\"]"), "{pgn}");
         assert!(pgn.contains("[Black \"Test2, Example\"]"), "{pgn}");
         assert!(pgn.contains("[PlyCount \"0\"]"), "{pgn}");
-        assert!(pgn.ends_with("*\n\n"), "{pgn}");
+        assert!(pgn.ends_with("0-1\n\n"), "{pgn}");
         remove_set(&stem);
     }
 }
