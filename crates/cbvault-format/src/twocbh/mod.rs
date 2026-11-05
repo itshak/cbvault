@@ -13,6 +13,7 @@ use crate::file::DbFile;
 
 pub mod annotations;
 pub mod entities;
+pub mod database;
 pub mod word;
 pub mod bytes;
 pub mod header;
@@ -27,6 +28,7 @@ pub mod testdata;
 
 pub use annotations::Annotations;
 pub use entities::Entities;
+pub use database::Database;
 pub use header::GameHeader;
 pub use moves::GameMoves;
 pub use record::Record;
