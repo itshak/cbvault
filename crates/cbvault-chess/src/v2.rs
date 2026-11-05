@@ -189,6 +189,8 @@ pub fn walk_from(
     stack.clear();
     let mut saved = None;
     let mut stats = TreeStats { lines: 1, ..TreeStats::default() };
+    // A line is main only at depth zero. An alternative temporarily
+    // leaves the main line and must restore that status on resume.
     let mut main = true;
     let mut ended = false;
     let mut tokens = game.tokens().peekable();
@@ -229,14 +231,15 @@ pub fn walk_from(
                     return Err(error(what, stats.total_plies, "variation nesting beyond 1024"));
                 }
                 stack.push(before);
+                main = false;
                 sink.branch();
             }
             Token::EndOfLine => {
-                main = false;
                 saved = None;
                 match stack.pop() {
                     Some(before) => {
                         board = before;
+                        main = stack.is_empty();
                         stats.lines += 1;
                         sink.resume();
                     }
@@ -296,6 +299,75 @@ mod tests {
         let parsed = GameMoves::parse(Path::new("test.2cbg"), &frame).unwrap();
         let mut scratch = V2Scratch::default();
         assert!(verify(GameRef::new(1), &parsed, &mut scratch).is_err());
+    }
+
+    fn framed_words(words: &[u16]) -> Vec<u8> {
+        let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+        record(0, &bytes)
+    }
+
+    fn move_word(color: word::Color, piece: WPiece, from: u8, to: u8, captured: Captured) -> u16 {
+        word::encode(MoveWord::Normal { color, piece, from, to, captured, promotion: None })
+            .expect("legal geometry is represented by a 2CBH word")
+    }
+
+    #[test]
+    fn standard_opening_replays_and_counts_both_colours() {
+        use word::Color::{Black, White};
+        let words = [
+            word::MOVES,
+            move_word(White, WPiece::Pawn, 12, 28, Captured::Nothing), // 1. e4
+            move_word(Black, WPiece::Pawn, 52, 36, Captured::Nothing), // ... e5
+            move_word(White, WPiece::Knight, 6, 21, Captured::Nothing), // 2. Nf3
+            move_word(Black, WPiece::Knight, 57, 42, Captured::Nothing), // ... Nc6
+            word::END_OF_LINE,
+        ];
+        let frame = framed_words(&words);
+        let moves = GameMoves::parse(Path::new("opening.2cbg"), &frame).unwrap();
+        let stats = verify(GameRef::new(1), &moves, &mut V2Scratch::default()).unwrap();
+        assert_eq!(stats.total_plies, 4);
+        assert_eq!(stats.main_line_plies, 4);
+        assert_eq!(stats.lines, 1);
+    }
+
+    #[test]
+    fn variation_ends_and_restores_the_main_line() {
+        use word::Color::{Black, White};
+        let words = [
+            word::MOVES,
+            move_word(White, WPiece::Pawn, 12, 28, Captured::Nothing), // main 1. e4
+            word::ALTERNATIVE,
+            move_word(White, WPiece::Pawn, 11, 27, Captured::Nothing), // (1. d4)
+            word::END_OF_LINE,
+            move_word(Black, WPiece::Pawn, 52, 36, Captured::Nothing), // main ... e5
+            word::END_OF_LINE,
+        ];
+        let frame = framed_words(&words);
+        let moves = GameMoves::parse(Path::new("variation.2cbg"), &frame).unwrap();
+        let stats = verify(GameRef::new(2), &moves, &mut V2Scratch::default()).unwrap();
+        assert_eq!(stats.total_plies, 3);
+        assert_eq!(stats.main_line_plies, 2, "mainline resumed after a completed alternative");
+        assert_eq!(stats.lines, 2);
+    }
+
+    #[test]
+    fn impossible_capture_and_missing_final_end_are_rejected() {
+        let bad_capture = framed_words(&[
+            word::MOVES,
+            move_word(word::Color::White, WPiece::Pawn, 12, 28, Captured::Nothing),
+            move_word(word::Color::Black, WPiece::Pawn, 52, 36, Captured::Nothing),
+            move_word(word::Color::White, WPiece::Knight, 6, 21, Captured::Pawn),
+            word::END_OF_LINE,
+        ]);
+        let a = GameMoves::parse(Path::new("bad-capture.2cbg"), &bad_capture).unwrap();
+        assert!(verify(GameRef::new(3), &a, &mut V2Scratch::default()).is_err());
+
+        let incomplete = framed_words(&[
+            word::MOVES,
+            move_word(word::Color::White, WPiece::Pawn, 12, 28, Captured::Nothing),
+        ]);
+        let b = GameMoves::parse(Path::new("missing-end.2cbg"), &incomplete).unwrap();
+        assert!(verify(GameRef::new(4), &b, &mut V2Scratch::default()).is_err());
     }
 
     #[test]
