@@ -7,10 +7,10 @@
 //! explicit errors rather than silently discarded or attached to wrong plies.
 //! The game comment position is -1; other positions count moves in stored order.
 
-use std::path::Path;
+use super::record::Record;
 use crate::error::{Error, Result};
 use crate::game::annotations::{Annotation, GAME_POSITION};
-use super::record::Record;
+use std::path::Path;
 
 const END: i32 = 0x7fff_ffff;
 const ANNOTATION_TAG: u16 = 0x2000;
@@ -42,22 +42,38 @@ struct Reader<'a> {
 }
 
 impl<'a> Reader<'a> {
-    fn new(path: &'a Path, data: &'a [u8]) -> Self { Self { data, at: 0, path } }
-    fn bad(&self, reason: impl Into<String>) -> Error { Error::corrupt(self.path, self.at as u64, reason) }
-    fn left(&self) -> usize { self.data.len() - self.at }
+    fn new(path: &'a Path, data: &'a [u8]) -> Self {
+        Self { data, at: 0, path }
+    }
+    fn bad(&self, reason: impl Into<String>) -> Error {
+        Error::corrupt(self.path, self.at as u64, reason)
+    }
+    fn left(&self) -> usize {
+        self.data.len() - self.at
+    }
     fn take(&mut self, n: usize) -> Result<&'a [u8]> {
         let end = self.at.checked_add(n).ok_or_else(|| self.bad("2CBA: length overflow"))?;
         let slice = self.data.get(self.at..end).ok_or_else(|| self.bad("2CBA: truncated annotation item"))?;
         self.at = end;
         Ok(slice)
     }
-    fn skip(&mut self, n: usize) -> Result<()> { self.take(n).map(|_| ()) }
-    fn u8(&mut self) -> Result<u8> { Ok(self.take(1)?[0]) }
-    fn u16(&mut self) -> Result<u16> { Ok(u16::from_le_bytes(self.take(2)?.try_into().expect("two bytes"))) }
-    fn i32(&mut self) -> Result<i32> { Ok(i32::from_le_bytes(self.take(4)?.try_into().expect("four bytes"))) }
+    fn skip(&mut self, n: usize) -> Result<()> {
+        self.take(n).map(|_| ())
+    }
+    fn u8(&mut self) -> Result<u8> {
+        Ok(self.take(1)?[0])
+    }
+    fn u16(&mut self) -> Result<u16> {
+        Ok(u16::from_le_bytes(self.take(2)?.try_into().expect("two bytes")))
+    }
+    fn i32(&mut self) -> Result<i32> {
+        Ok(i32::from_le_bytes(self.take(4)?.try_into().expect("four bytes")))
+    }
     fn len(&mut self) -> Result<usize> {
         let n = self.i32()?;
-        usize::try_from(n).ok().filter(|&n| n <= self.left())
+        usize::try_from(n)
+            .ok()
+            .filter(|&n| n <= self.left())
             .ok_or_else(|| self.bad("2CBA: invalid length-prefixed item"))
     }
     fn expect_one(&mut self) -> Result<()> {
@@ -83,7 +99,9 @@ impl<'a> Reader<'a> {
             return Err(self.bad(format!("2CBA: unsupported training variant {variant}")));
         }
         self.skip(6)?;
-        for _ in 0..4 { self.training_list()?; }
+        for _ in 0..4 {
+            self.training_list()?;
+        }
         let count = self.u8()?;
         for _ in 0..count {
             if variant == 1 {
@@ -144,22 +162,38 @@ impl<'a> Reader<'a> {
             }
             0x05 => {
                 let items = self.text_record()?;
-                if items.len() % 3 != 0 ||
-                    items.as_chunks::<3>().0.iter().any(|p| !(1..=64).contains(&p[1]) || !(1..=64).contains(&p[2]))
+                if items.len() % 3 != 0
+                    || items.as_chunks::<3>().0.iter().any(|p| !(1..=64).contains(&p[1]) || !(1..=64).contains(&p[2]))
                 {
                     return Err(self.bad("2CBA: invalid arrow array"));
                 }
                 Annotation::Arrows(items)
             }
-            0x15 => { let n = self.len()?; self.skip(n)?; Annotation::Other { code: kind, data: &self.data[begin..self.at] } }
+            0x15 => {
+                let n = self.len()?;
+                self.skip(n)?;
+                Annotation::Other { code: kind, data: &self.data[begin..self.at] }
+            }
             0x07 | 0x08 | 0x16 | 0x17 | 0x22 | 0x23 | 0x25 => {
                 self.skip(4)?;
                 Annotation::Other { code: kind, data: &self.data[begin..self.at] }
             }
-            0x27 => { self.skip(2)?; Annotation::Other { code: kind, data: &self.data[begin..self.at] } }
-            0x14 | 0x18 => { self.skip(1)?; Annotation::Other { code: kind, data: &self.data[begin..self.at] } }
-            0x21 => { self.skip(6)?; Annotation::Other { code: kind, data: &self.data[begin..self.at] } }
-            0x24 => { self.skip(38)?; Annotation::Other { code: kind, data: &self.data[begin..self.at] } }
+            0x27 => {
+                self.skip(2)?;
+                Annotation::Other { code: kind, data: &self.data[begin..self.at] }
+            }
+            0x14 | 0x18 => {
+                self.skip(1)?;
+                Annotation::Other { code: kind, data: &self.data[begin..self.at] }
+            }
+            0x21 => {
+                self.skip(6)?;
+                Annotation::Other { code: kind, data: &self.data[begin..self.at] }
+            }
+            0x24 => {
+                self.skip(38)?;
+                Annotation::Other { code: kind, data: &self.data[begin..self.at] }
+            }
             0x26 => {
                 self.expect_one()?;
                 let n = self.len()?;
@@ -224,8 +258,7 @@ impl<'a> GameAnnotations<'a> {
             if count < 0 || count as usize > reader.left() / 2 {
                 return Err(reader.bad("2CBA: annotation count exceeds available bytes"));
             }
-            total = total.checked_add(count as u32)
-                .ok_or_else(|| reader.bad("2CBA: annotation count overflow"))?;
+            total = total.checked_add(count as u32).ok_or_else(|| reader.bad("2CBA: annotation count overflow"))?;
             for _ in 0..count {
                 let typ = reader.u16()?;
                 reader.annotation(typ)?;
@@ -235,11 +268,17 @@ impl<'a> GameAnnotations<'a> {
     }
 
     /// Number of annotation items.
-    pub fn count(&self) -> u32 { self.count }
+    pub fn count(&self) -> u32 {
+        self.count
+    }
     /// Whether this game has no annotations.
-    pub fn is_empty(&self) -> bool { self.count == 0 }
+    pub fn is_empty(&self) -> bool {
+        self.count == 0
+    }
     /// Iterate borrowed annotation items in on-disk order.
-    pub fn iter(&self) -> Items<'a> { Items { reader: Reader::new(self.path, self.content), position: -1, left: 0, complete: false } }
+    pub fn iter(&self) -> Items<'a> {
+        Items { reader: Reader::new(self.path, self.content), position: -1, left: 0, complete: false }
+    }
     /// Parse the item at the byte offset emitted by `iter()`.
     pub fn annotation_at(&self, offset: u32) -> Result<Annotation<'a>> {
         let mut reader = Reader::new(self.path, self.content);
@@ -253,9 +292,15 @@ impl<'a> GameAnnotations<'a> {
         for item in self.iter() {
             let item = item?;
             if item.position >= 0 && plies == 0 {
-                return Err(Error::corrupt(self.path, item.offset as u64, "2CBA: move-specific comment in move-less game"));
+                return Err(Error::corrupt(
+                    self.path,
+                    item.offset as u64,
+                    "2CBA: move-specific comment in move-less game",
+                ));
             }
-            if item.position >= plies as i32 { out_of_range += 1; }
+            if item.position >= plies as i32 {
+                out_of_range += 1;
+            }
         }
         Ok(out_of_range)
     }
@@ -273,17 +318,28 @@ pub struct Items<'a> {
 impl<'a> Iterator for Items<'a> {
     type Item = Result<Item<'a>>;
     fn next(&mut self) -> Option<Self::Item> {
-        if self.complete { return None; }
+        if self.complete {
+            return None;
+        }
         if self.left == 0 {
             loop {
                 let position = match self.reader.i32() {
                     Ok(p) => p,
-                    Err(e) => { self.complete = true; return Some(Err(e)); }
+                    Err(e) => {
+                        self.complete = true;
+                        return Some(Err(e));
+                    }
                 };
-                if position == END { self.complete = true; return None; }
+                if position == END {
+                    self.complete = true;
+                    return None;
+                }
                 let count = match self.reader.i32() {
                     Ok(c) => c,
-                    Err(e) => { self.complete = true; return Some(Err(e)); }
+                    Err(e) => {
+                        self.complete = true;
+                        return Some(Err(e));
+                    }
                 };
                 if count < 0 {
                     self.complete = true;
@@ -291,15 +347,21 @@ impl<'a> Iterator for Items<'a> {
                 }
                 self.position = position;
                 self.left = count as u32;
-                if self.left > 0 { break; }
+                if self.left > 0 {
+                    break;
+                }
             }
         }
         let offset = self.reader.at as u32;
-        let result = self.reader.u16().and_then(|code| self.reader.annotation(code)).map(|annotation| {
-            Item { position: self.position, offset, annotation }
+        let result = self.reader.u16().and_then(|code| self.reader.annotation(code)).map(|annotation| Item {
+            position: self.position,
+            offset,
+            annotation,
         });
         self.left -= 1;
-        if result.is_err() { self.complete = true; }
+        if result.is_err() {
+            self.complete = true;
+        }
         Some(result)
     }
 }
