@@ -1,3 +1,7 @@
+// Adapted from oschess-cb-bridge v1.0.3 (MIT), commit bffebfc498d52b4e4631aed32b2f8e8194d125ff.
+// Copyright (c) 2026 the oschess-cb-bridge contributors.
+// Modifications copyright (c) 2026 the cbvault contributors.
+// SPDX-License-Identifier: MIT
 //! The magic every 2CBH `.2cbg`/`.2cba` record starts with, and the field
 //! widths around it.
 //!
