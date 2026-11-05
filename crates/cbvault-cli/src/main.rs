@@ -87,6 +87,9 @@ fn run_info(mut args: impl Iterator<Item = String>) -> Result<bool, Box<dyn std:
 
     let db_path = db_path.ok_or(USAGE)?;
     let base = Path::new(&db_path);
+    if cbvault::bridge::generation_of(base) == cbvault::bridge::Generation::TwoCbh {
+        return run_info_v2(base, json);
+    }
     let headers = Headers::open(base)?;
     let total = headers.records();
 
@@ -145,6 +148,9 @@ fn run_verify(mut args: impl Iterator<Item = String>) -> Result<bool, Box<dyn st
     let db_path = db_path.ok_or(USAGE)?;
     let base = PathBuf::from(&db_path);
 
+    if cbvault::bridge::generation_of(&base) == cbvault::bridge::Generation::TwoCbh {
+        return run_verify_v2(&base, json, failure_limit);
+    }
     let t0 = Instant::now();
     let (stats, failures) = verify_parallel(&base, threads, batch_size, failure_limit)?;
     let secs = t0.elapsed().as_secs_f64();
@@ -502,6 +508,9 @@ fn run_pgn(mut args: impl Iterator<Item = String>) -> Result<bool, Box<dyn std::
     if last != 0 && last < first {
         return Err("--to must not be below --from".into());
     }
+    if cbvault::bridge::generation_of(&base) == cbvault::bridge::Generation::TwoCbh {
+        return run_pgn_v2(&base, out_path.as_deref(), first, last, json);
+    }
 
     let t0 = Instant::now();
     let (stats, failures) = match &out_path {
@@ -571,3 +580,106 @@ fn run_pgn(mut args: impl Iterator<Item = String>) -> Result<bool, Box<dyn std::
 
     Ok(stats.failures == 0)
 }
+
+/// Native 2CBH database information. Player/tournament counts are supplied
+/// by .2lid; non-game record slots are intentionally not called games.
+fn run_info_v2(path: &Path, json: bool) -> Result<bool, Box<dyn std::error::Error>> {
+    let db = cbvault::twocbh::Database::open(path)?;
+    let entities = db.inner().entities();
+    let records = db.records();
+    let players = entities.count(cbvault_format::twocbh::entities::PLAYER);
+    let tournaments = entities.count(cbvault_format::twocbh::entities::TOURNAMENT);
+    if json {
+        println!(
+            "{{\"format\":\"2CBH\",\"records\":{records},\"players\":{players},\"tournaments\":{tournaments}}}"
+        );
+    } else {
+        println!("format          2CBH");
+        println!("records         {records}");
+        println!("players         {players}");
+        println!("tournaments     {tournaments}");
+    }
+    Ok(true)
+}
+
+/// Full per-record 2CBH structural/legality verification; every error is
+/// counted, and its record ID is stable. Currently sequential by design.
+fn run_verify_v2(path: &Path, json: bool, limit: usize) -> Result<bool, Box<dyn std::error::Error>> {
+    let db = cbvault::twocbh::Database::open(path)?;
+    let started = Instant::now();
+    let mut errors = Vec::new();
+    let stats = db.verify(|id, error| {
+        if errors.len() < limit { errors.push(format!("record {id}: {error}")); }
+    })?;
+    let seconds = started.elapsed().as_secs_f64();
+    if json {
+        let list = errors.iter().map(|s| json_str(s)).collect::<Vec<_>>().join(",");
+        println!(
+            "{{\"format\":\"2CBH\",\"records\":{},\"games\":{},\"deleted\":{},\"guiding_texts\":{},\"analyses\":{},\"verified\":{},\"failures\":{},\"seconds\":{seconds:.2},\"threads\":1,\"failure_items\":[{list}]}}",
+            stats.records, stats.games, stats.deleted, stats.texts, stats.analyses,
+            stats.verified, stats.failures,
+        );
+    } else {
+        println!("2CBH verification: {} records, {} live games", stats.records, stats.games);
+        println!("verified         {}", stats.verified);
+        println!("guiding texts    {}", stats.texts);
+        println!("analyses         {}", stats.analyses);
+        println!("deleted          {}", stats.deleted);
+        println!("failed           {}", stats.failures);
+        println!("elapsed          {seconds:.2} seconds (sequential)");
+        for error in &errors { println!("  {error}"); }
+    }
+    Ok(stats.failures == 0)
+}
+
+/// Stream native v2 PGN, including variations and optional parsed annotations
+/// through exactly the same chess/PGN writer as classic CBH.
+fn run_pgn_v2(
+    path: &Path,
+    out_path: Option<&str>,
+    first: u32,
+    last: u32,
+    json: bool,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let db = cbvault::twocbh::Database::open(path)?;
+    let end = if last == 0 { db.records() } else { last.min(db.records()) };
+    let mut output: Box<dyn Write> = match out_path {
+        Some(name) => Box::new(std::io::BufWriter::with_capacity(1 << 20, std::fs::File::create(name)?)),
+        None => Box::new(std::io::BufWriter::with_capacity(1 << 20, std::io::stdout())),
+    };
+    let now = Instant::now();
+    let mut writer = cbvault::pgn::PgnWriter::new();
+    let mut exported = 0u64;
+    let mut skipped = 0u64;
+    for id in first.max(1)..=end {
+        let header = db.record(id)?;
+        if header.is_deleted() { skipped += 1; continue; }
+        match header.kind() {
+            cbvault_format::game::RecordKind::Game => {
+                db.write_game(id, &mut writer, &mut output)?;
+                exported += 1;
+            }
+            cbvault_format::game::RecordKind::Text | cbvault_format::game::RecordKind::Analysis => {
+                skipped += 1;
+            }
+            cbvault_format::game::RecordKind::Unknown(kind) => {
+                return Err(format!("unknown 2CBH record kind {kind} at id {id}").into());
+            }
+        }
+    }
+    output.flush()?;
+    let seconds = now.elapsed().as_secs_f64();
+    if json {
+        eprintln!(
+            "{{\"format\":\"2CBH\",\"games\":{exported},\"skipped_non_games\":{skipped},\"seconds\":{seconds:.2},\"threads\":1,\"peak_writer_bytes\":{}}}",
+            writer.capacity(),
+        );
+    } else {
+        eprintln!(
+            "2CBH: exported {exported} games, skipped {skipped} non-games in {seconds:.2} s (sequential); writer capacity {} bytes",
+            writer.capacity(),
+        );
+    }
+    Ok(true)
+}
+
