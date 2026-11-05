@@ -1009,7 +1009,7 @@ mod tests {
             let _ = writeln!(want, r#"[Round "{}"]"#, if text.is_empty() { "?" } else { &text });
             let mut names = Names::default();
             let mut got = String::new();
-            push_round(&mut got, (round, sub), &mut names);
+            push_round(&mut got, (round, sub), &mut names.round);
             assert_eq!(got, want, "round {round}.{sub}");
         }
     }
