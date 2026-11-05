@@ -115,10 +115,11 @@ pub fn to_move(board: &Board, word_value: u16, start: &Start) -> std::result::Re
         | MoveWord::Castle960 { color: c, side, .. } => {
             let c = color(c);
             if board.turn() != c { return Err("castling by wrong side"); }
-            if let MoveWord::Castle960 { position, .. } = word {
-                if let Start::Chess960(start_position) = start {
-                    if position != *start_position { return Err("Chess960 castle word has wrong start index"); }
-                }
+            if let MoveWord::Castle960 { position, .. } = word
+                && let Start::Chess960(start_position) = start
+                && position != *start_position
+            {
+                return Err("Chess960 castle word has wrong start index");
             }
             let kingside = matches!(side, CastleSide::Short);
             let bit = gigachess::types::castle_right_bit(c, kingside);
