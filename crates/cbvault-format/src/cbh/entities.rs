@@ -220,6 +220,7 @@ impl Entities {
             title: title.to_owned(),
             place: place.to_owned(),
             start,
+            event_type: 0,
         }))
     }
 

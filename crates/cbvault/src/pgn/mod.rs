@@ -459,7 +459,15 @@ fn write_tags_v2(
     total_plies: u32,
     names: &mut Names,
 ) -> Result<()> {
-    let (event, place) = if header.tournament() >= 0 {
+    let (event, place) = if header.kind() == RecordKind::Analysis {
+        let title = if header.analysis_title() >= 0 {
+            entities.title(header.analysis_title())?.unwrap_or_default()
+        } else {
+            String::new()
+        };
+        names.title.set(title.as_bytes());
+        (if names.title.as_str().is_empty() { "?" } else { names.title.as_str() }, "?")
+    } else if header.tournament() >= 0 {
         if let Some(t) = entities.tournament(header.tournament())? {
             names.title.set(t.title.as_bytes());
             names.place.set(t.place.as_bytes());
@@ -767,8 +775,11 @@ impl PgnWriter {
         game: &GameMoves<'_>,
         anns: Option<&GameAnnotations<'_>>,
     ) -> io::Result<()> {
-        if header.kind() != RecordKind::Game {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, format!("record {} is not a game", header.id())));
+        if header.kind() != RecordKind::Game && header.kind() != RecordKind::Analysis {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("record {} is not a game or analysis", header.id()),
+            ));
         }
         let what = GameRef::new(header.id());
         let start = start_as_played(what, game).map_err(as_io)?;
@@ -826,8 +837,11 @@ impl PgnWriter {
         game: &cbvault_format::twocbh::moves::GameMoves<'_>,
         _anns: Option<&cbvault_format::twocbh::Annotations<'_>>,
     ) -> io::Result<()> {
-        if header.kind() != RecordKind::Game {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, format!("record {} is not a game", header.id())));
+        if header.kind() != RecordKind::Game && header.kind() != RecordKind::Analysis {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("record {} is not a game or analysis", header.id()),
+            ));
         }
         let what = GameRef::new(header.id());
         let start = cbvault_chess::v2::decode_v2_start(game).map_err(as_io)?;

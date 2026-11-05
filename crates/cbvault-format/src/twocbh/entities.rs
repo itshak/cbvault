@@ -6,7 +6,7 @@
 use std::ops::Range;
 use std::path::Path;
 
-use super::bytes::{be_i32, be_i64, le_i32};
+use super::bytes::{be_i32, be_i64, le_i32, le_i64};
 use crate::error::{Error, Result};
 use crate::file::DbFile;
 use crate::game::{Date, Player, Tournament};
@@ -22,12 +22,14 @@ const MAX_RUN_BLOCK: usize = 64 << 10;
 pub const PLAYER: usize = 0;
 /// Entity type index for tournaments.
 pub const TOURNAMENT: usize = 1;
-/// Entity type index for sources.
-pub const SOURCE: usize = 2;
+/// Entity type index for game tags (titles).
+pub const GAME_TAG: usize = 2;
+/// Entity type index for annotators and sources.
+pub const ANNOTATOR_SOURCE: usize = 3;
+/// Synonym for sources.
+pub const SOURCE: usize = 3;
 /// Entity type index for teams.
 pub const TEAM: usize = 4;
-/// Entity type index for game tags (titles).
-pub const GAME_TAG: usize = 5;
 
 /// The `.2lid` entity file reader.
 #[derive(Debug)]
@@ -56,7 +58,12 @@ impl Entities {
         }
         let bad = |what: String| Error::corrupt(file.path(), 0, format!(".2lid header: {what}"));
         let head = file.read(0, 8)?;
-        let (header_size, ntypes) = (be_i32(&head, 0), be_i32(&head, 4));
+        let header_size_be = be_i32(&head, 0);
+        let header_size_le = le_i32(&head, 0);
+        let is_le = !(64..=MAX_ENTITY_HEADER as i32).contains(&header_size_be)
+            && (64..=MAX_ENTITY_HEADER as i32).contains(&header_size_le);
+        let (header_size, ntypes) =
+            if is_le { (header_size_le, le_i32(&head, 4)) } else { (header_size_be, be_i32(&head, 4)) };
         if !(1..=32).contains(&ntypes) {
             return Err(bad(format!("{ntypes} entity types")));
         }
@@ -71,15 +78,18 @@ impl Entities {
         let mut block_size = 0usize;
         for i in 0..ntypes {
             let o = 8 + 20 * i;
-            let size = be_i32(&d, o);
+            let (size, count, first_del) = if is_le {
+                (le_i32(&d, o), le_i64(&d, o + 4), le_i64(&d, o + 12))
+            } else {
+                (be_i32(&d, o), be_i64(&d, o + 4), be_i64(&d, o + 12))
+            };
             if !(0..=MAX_CONTAINER).contains(&size) {
                 return Err(bad(format!("type {i} container size {size}")));
             }
-            let count = be_i64(&d, o + 4);
             if count < 0 {
                 return Err(bad(format!("type {i} count {count}")));
             }
-            types.push((size as usize, count, be_i64(&d, o + 12)));
+            types.push((size as usize, count, first_del));
             container_offset.push(block_size);
             block_size += size as usize;
         }
@@ -240,7 +250,11 @@ impl Entities {
 
     /// Decodes the first non-empty title of game tag `id` within `limit` bytes.
     pub fn title_within(&self, id: i64, limit: usize) -> Result<Option<String>> {
-        Ok(self.raw_within(GAME_TAG, id, limit)?.and_then(|r| {
+        let raw = match self.raw_within(GAME_TAG, id, limit)? {
+            Some(r) => Some(r),
+            None => self.raw_within(5, id, limit)?,
+        };
+        Ok(raw.and_then(|r| {
             let mut c = Cursor(&r, 0);
             let count = c.i32()?;
             for _ in 0..count.max(0) {
@@ -251,6 +265,23 @@ impl Entities {
                 }
             }
             None
+        }))
+    }
+
+    /// Decodes annotator or source entity `id`.
+    pub fn source(&self, id: i64) -> Result<Option<String>> {
+        self.source_within(id, usize::MAX)
+    }
+
+    /// Decodes annotator or source entity `id` within `limit` bytes.
+    pub fn source_within(&self, id: i64, limit: usize) -> Result<Option<String>> {
+        let raw = match self.raw_within(ANNOTATOR_SOURCE, id, limit)? {
+            Some(r) => Some(r),
+            None => self.raw_within(2, id, limit)?,
+        };
+        Ok(raw.and_then(|r| {
+            let mut c = Cursor(&r, 0);
+            c.string()
         }))
     }
 }
@@ -265,7 +296,8 @@ fn tournament_of(r: &[u8]) -> Option<Tournament> {
     let place = c.string()?;
     let title = c.string()?;
     let start = Date(c.i32()?);
-    Some(Tournament { title, place, start })
+    let event_type = c.take(1).map_or(0, |b| b[0]);
+    Some(Tournament { title, place, start, event_type })
 }
 
 struct Cursor<'a>(&'a [u8], usize);

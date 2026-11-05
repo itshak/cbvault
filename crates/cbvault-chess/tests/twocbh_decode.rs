@@ -150,3 +150,56 @@ fn test_v2_variations() {
     assert_eq!(stats.main_line_plies, 3);
     assert_eq!(buf.is_main(), &[true, true, true, false]);
 }
+
+#[test]
+fn test_v2_setup_castling_rights_recipe_6_2() {
+    use cbvault_chess::movetable::{self, CastleSide, Color as MColor, MoveWord, Piece as MPiece};
+
+    let mut content = Vec::new();
+    // Start position marker
+    content.extend(0xfffbu16.to_le_bytes());
+    // Word 0: Move 1
+    content.extend(1u16.to_le_bytes());
+    // Word 1: White to move, rights: White O-O and White O-O-O (bits 0 and 1 -> 0x03 in high byte)
+    let w1 = 0x03u16 << 8;
+    content.extend(w1.to_le_bytes());
+    // Word 2: Reserved (0)
+    content.extend(0u16.to_le_bytes());
+
+    // Piece placement:
+    // White King on e1 (sq 4), White Rook on h1 (sq 7), Black King on e8 (sq 60)
+    let pw_wk = movetable::encode_piece_word(MColor::White, MPiece::King, 4).unwrap();
+    let pw_wr = movetable::encode_piece_word(MColor::White, MPiece::Rook, 7).unwrap();
+    let pw_bk = movetable::encode_piece_word(MColor::Black, MPiece::King, 60).unwrap();
+    content.extend(pw_wk.to_le_bytes());
+    content.extend(pw_wr.to_le_bytes());
+    content.extend(pw_bk.to_le_bytes());
+
+    // Moves section
+    content.extend(0xfffcu16.to_le_bytes());
+    // Castling short for White
+    let castle_word = movetable::encode(MoveWord::Castle { color: MColor::White, side: CastleSide::Short }).unwrap();
+    content.extend(castle_word.to_le_bytes());
+    content.extend(0xffffu16.to_le_bytes());
+
+    let raw = framed(1, &content);
+    let game = GameMoves::parse(Path::new("setup_castle.2cbg"), &raw).expect("parse game");
+    let start = decode_v2_start(&game).expect("decode start");
+
+    match start {
+        Start::Setup(ref setup) => {
+            assert_eq!(setup.move_number, 1);
+            assert_eq!(setup.side_to_move, gigachess::Color::White);
+            assert_eq!(setup.castling, 0x03);
+        }
+        _ => panic!("expected setup start"),
+    }
+
+    let mut sink = CollectMoves(Vec::new());
+    let stats = walk_v2(GameRef::new(1), &game, &mut sink).expect("replay setup castling");
+    assert_eq!(stats.total_plies, 1);
+    let mv = Move::from_word(sink.0[0]);
+    // Castling e1 to h1 (king to rook)
+    assert_eq!(mv.from(), Square(4));
+    assert_eq!(mv.to(), Square(7));
+}

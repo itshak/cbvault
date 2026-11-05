@@ -85,9 +85,9 @@ impl GameHeader {
         self.b[0]
     }
 
-    /// Whether bit `0x80` of the kind byte is set (deleted record).
+    /// Whether bit `0x80` of the kind byte is set or kind byte is 0 (deleted record).
     pub fn is_deleted(&self) -> bool {
-        self.b[0] & 0x80 != 0
+        self.b[2] == 0 || self.b[0] & 0x80 != 0
     }
 
     /// Classification: Game, Text, Analysis, or Unknown.
@@ -96,6 +96,7 @@ impl GameHeader {
             1 if self.b[0] & 2 != 0 => RecordKind::Text,
             1 => RecordKind::Game,
             2 => RecordKind::Analysis,
+            3 => RecordKind::Text,
             k => RecordKind::Unknown(k),
         }
     }
@@ -157,7 +158,7 @@ impl GameHeader {
 
     /// Guiding text title game tag entity ID in `.2lid`.
     pub fn text_title(&self) -> i64 {
-        le_i64(&self.b, 0x28)
+        le_i64(&self.b, 0x18)
     }
 
     /// Analysis title game tag entity ID in `.2lid`.
@@ -170,9 +171,19 @@ impl GameHeader {
         le_i64(&self.b, 0x28)
     }
 
-    /// Result of the game.
+    /// Result of the game (0=*, 1=1/2, 2=1-0, 3=0-1).
     pub fn result(&self) -> GameResult {
-        GameResult::from_field(self.b[0x58])
+        match self.b[0x58] {
+            0 => GameResult::Line,
+            1 => GameResult::Draw,
+            2 => GameResult::WhiteWins,
+            3 => GameResult::BlackWins,
+            4 => GameResult::BlackWinsForfeit,
+            5 => GameResult::DrawForfeit,
+            6 => GameResult::WhiteWinsForfeit,
+            7 => GameResult::BothLost,
+            r => GameResult::Unknown(r),
+        }
     }
 
     /// Round number.
@@ -210,14 +221,14 @@ impl GameHeader {
         le_u32(&self.b, 0x84)
     }
 
-    /// Move count of the main line.
+    /// Move count of the main line. For Analysis (kind 2), stored at 0x50; for Games, at 0x8a.
     pub fn move_count(&self) -> i16 {
-        le_i16(&self.b, 0x8a)
+        if self.b[2] == 2 { le_i16(&self.b, 0x50) } else { le_i16(&self.b, 0x8a) }
     }
 
-    /// Date played.
+    /// Date played. For Analysis (kind 2), stored at 0x4c; for Games, at 0xbc.
     pub fn played_date(&self) -> Date {
-        Date(le_i32(&self.b, 0xbc))
+        if self.b[2] == 2 { Date(le_i32(&self.b, 0x4c)) } else { Date(le_i32(&self.b, 0xbc)) }
     }
 
     /// The 16 source bytes of the first inline text field.

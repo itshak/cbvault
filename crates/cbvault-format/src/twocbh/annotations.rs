@@ -272,7 +272,11 @@ fn parse_annotation<'a>(content: &'a [u8], offset: &mut usize, t: u16) -> Result
             Ok(Some(Annotation::Arrows(items)))
         }
         // Other known fixed/variable payloads
-        0x07 | 0x08 | 0x16 | 0x17 | 0x22 | 0x23 | 0x25 => {
+        0x07 => {
+            let data = r.take(7)?;
+            Ok(Some(Annotation::Other { code: t, data }))
+        }
+        0x08 | 0x16 | 0x17 | 0x22 | 0x23 | 0x25 => {
             let data = r.take(4)?;
             Ok(Some(Annotation::Other { code: t, data }))
         }
@@ -291,6 +295,30 @@ fn parse_annotation<'a>(content: &'a [u8], offset: &mut usize, t: u16) -> Result
         0x24 => {
             let data = r.take(38)?;
             Ok(Some(Annotation::Other { code: t, data }))
+        }
+        0x26 => {
+            let start = r.offset;
+            let _marker = r.take(1)?;
+            let len = r.i32_val()? as usize;
+            let _ = r.take(len)?;
+            let total = r.offset - start;
+            Ok(Some(Annotation::Other { code: t, data: &content[start..start + total] }))
+        }
+        0x13 => {
+            let start = r.offset;
+            for _ in 0..6 {
+                let len = r.i32_val()? as usize;
+                let _ = r.take(len)?;
+            }
+            let _ = r.take(35)?;
+            for _ in 0..2 {
+                let len = r.i32_val()? as usize;
+                let _ = r.take(len)?;
+            }
+            let _ = r.take(29)?;
+            let _ = r.take(5)?;
+            let total = r.offset - start;
+            Ok(Some(Annotation::Other { code: t, data: &content[start..start + total] }))
         }
         0x15 => {
             let n = r.i32_val()? as usize;
@@ -363,5 +391,48 @@ mod tests {
         }
 
         assert_eq!(ann.texts(), vec!["A strong novelty!".to_string()]);
+    }
+
+    #[test]
+    fn parse_complex_annotations() {
+        let mut body = Vec::new();
+        // Position -1, 3 annotations
+        body.extend((-1i32).to_le_bytes());
+        body.extend(3i32.to_le_bytes());
+
+        // 1. Time spent: 0x07 (4 bytes reserved + sec=10, min=2, hr=1)
+        body.extend(0x07u16.to_le_bytes());
+        body.extend([0, 0, 0, 0, 10, 2, 1]);
+
+        // 2. Evaluation curve: 0x26 (0x01, length=8, 2 evaluations)
+        body.extend(0x26u16.to_le_bytes());
+        body.push(0x01);
+        body.extend(8i32.to_le_bytes());
+        body.extend([0x10, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00]);
+
+        // 3. Quotation: 0x13
+        // 6 length-prefixed strings, 35 bytes binary, 2 strings, 29 bytes, 5 bytes
+        body.extend(0x13u16.to_le_bytes());
+        for s in &["White", "Black", "Tournament", "Place", "Annotator", "Source"] {
+            body.extend((s.len() as i32).to_le_bytes());
+            body.extend_from_slice(s.as_bytes());
+        }
+        body.extend([0u8; 35]);
+        for r in &["2800", "2750"] {
+            body.extend((r.len() as i32).to_le_bytes());
+            body.extend_from_slice(r.as_bytes());
+        }
+        body.extend([0u8; 29]);
+        body.extend([0u8; 5]);
+
+        body.extend(END_MARKER.to_le_bytes());
+
+        let raw = record_with_tag(ANNOTATION_TAG, body.len() as u32, 0, &body);
+        let ann = Annotations::parse(Path::new("test_complex.2cba"), &raw).expect("parse annotations");
+        let items: Vec<_> = ann.iter_items().collect::<Result<_>>().unwrap();
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[0].annotation.kind(), crate::game::annotations::Kind::TimeSpent);
+        assert_eq!(items[1].annotation.kind(), crate::game::annotations::Kind::Evaluations);
+        assert_eq!(items[2].annotation.kind(), crate::game::annotations::Kind::Quotation);
     }
 }

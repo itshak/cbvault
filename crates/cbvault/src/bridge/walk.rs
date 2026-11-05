@@ -627,7 +627,26 @@ pub fn resolve_names_v2(
         }
     }
 
-    if header.tournament() >= 0
+    let h_v2 = header.as_twocbh();
+    if header.kind() == cbvault_format::game::RecordKind::Analysis {
+        if let Some(h) = h_v2 {
+            if h.analysis_title() >= 0
+                && let Some(title) = entities.title(h.analysis_title())?
+            {
+                buf.event.push_str(&title);
+            }
+            if h.analysis_author() >= 0
+                && let Some(p) = entities.player(h.analysis_author())?
+                && buf.white.is_empty()
+            {
+                buf.white.push_str(&p.last);
+                if !p.first.is_empty() {
+                    buf.white.push_str(", ");
+                    buf.white.push_str(&p.first);
+                }
+            }
+        }
+    } else if header.tournament() >= 0
         && let Some(t) = entities.tournament(header.tournament())?
     {
         buf.event.push_str(&t.title);
@@ -641,9 +660,9 @@ pub fn resolve_names_v2(
     }
 
     if header.source() >= 0
-        && let Some(raw) = entities.raw(cbvault_format::twocbh::entities::SOURCE, header.source())?
+        && let Some(source) = entities.source(header.source())?
     {
-        buf.source.push_str(&String::from_utf8_lossy(&raw));
+        buf.source.push_str(&source);
     }
 
     Ok(())

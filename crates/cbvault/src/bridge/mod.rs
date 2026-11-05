@@ -1034,8 +1034,8 @@ impl Database {
     /// games cleanly (emitting `[PlyCount "0"]` and the terminal result).
     pub fn game_pgn_with(&self, id: u32, buf: &mut GameBuf, want_annotations: bool) -> Result<String> {
         let header = self.header_ref(id)?;
-        if !matches!(header.kind(), RecordKind::Game) {
-            return Err(Error::corrupt(self.base(), u64::from(id), format!("record {id} is not a game")));
+        if !matches!(header.kind(), RecordKind::Game | RecordKind::Analysis) {
+            return Err(Error::corrupt(self.base(), u64::from(id), format!("record {id} is not a game or analysis")));
         }
         let at = self.move_offset(&header)?;
         match &self.backend {

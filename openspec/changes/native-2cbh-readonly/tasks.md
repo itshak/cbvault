@@ -19,7 +19,7 @@
 - [x] 3.1 Build a **delta inventory**: specific files/behaviors from pinned MIT oschess to current AGPL oschess plus Morphy Java, with versions, observable input/output and known unsupported cases. Keep full source access restricted to Room 1.
 - [x] 3.2 Room 1 writes **original factual** `docs/research/2cbh-after-mit-facts.md` describing tested layouts/behaviors, synthetic reproduction recipe, evidence and unknowns; exclude AGPL/Java code, pseudocode or copied tests.
 - [x] 3.3 Independent hygiene/license reviewer approves/fixes the facts sheet and records implementation agent source exposure and spec hash; pause if isolation cannot be substantiated.
-- [ ] 3.4 Room 2 adds strictly necessary clean-room Rust corrections (one behavior per change), using **only** frozen facts + MIT baseline, with synthetic tests and typed failures where evidence is incomplete.
+- [x] 3.4 Room 2 adds strictly necessary clean-room Rust corrections (one behavior per change), using **only** frozen facts + MIT baseline, with synthetic tests and typed failures where evidence is incomplete.
 - [ ] 3.5 Independent oracle evaluator compares our results with separate later AGPL/Morphy processes and ChessBase exports locally, returns discrepancies as factual tickets. Record provenance and required notices for every module.
 
 ## 4. Phase 3 — critical real 2CBH / ChessBase PGN gold gate (LOCAL ONLY)

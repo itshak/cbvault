@@ -145,7 +145,7 @@ fn test_2cbh_malformed_frame_recovery() {
 }
 
 #[test]
-fn test_2cbh_chess960_and_variations() {
+fn test_twocbh_960_and_variations() {
     let temp = TempDb::create("twocbh_960_var_test");
     let mut builder = Builder::new();
 
@@ -206,4 +206,111 @@ fn test_2cbh_chess960_and_variations() {
     assert_eq!(g2.moves.len(), 3); // Main line: 1. e4 e5 2. Nf3
     let pgn2 = db.game_pgn(2, &mut buf).expect("export variation PGN");
     assert!(pgn2.contains("1. e4 e5 (1... c5) 2. Nf3"), "{pgn2}");
+}
+
+#[test]
+fn test_twocbh_analysis_record_recipe_6_1() {
+    let temp = TempDb::create("twocbh_analysis_test");
+    let mut builder = Builder::new();
+
+    let author_id = builder.player("Kasparov", "Garry");
+    let title_id = builder.tag("Scotch Game Analysis");
+
+    // 4 plies: 1. e4 e5 2. Nf3 Nc6
+    let mut board = Board::startpos();
+    let move_words = words(&mut board, "e2e4 e7e5 g1f3 b8c6");
+    let moves_offset = builder.moves(1, &move_words);
+
+    let packed_date = (2024u32 << 9) | (11u32 << 5) | 5u32;
+    builder.analysis_full(title_id, author_id, moves_offset, packed_date, 4);
+
+    builder.write_to(&temp);
+
+    let db = Database::open(temp.base()).expect("database opens");
+    assert_eq!(db.records(), 1);
+
+    let mut buf = GameBuf::new();
+    let game = db.game(1, &mut buf).expect("read analysis record");
+    assert_eq!(game.id, 1);
+    assert_eq!(game.event, "Scotch Game Analysis");
+    assert_eq!(game.moves.len(), 4);
+    assert_eq!(game.header.played_date().year(), 2024);
+    assert_eq!(game.header.played_date().month(), 11);
+    assert_eq!(game.header.played_date().day(), 5);
+
+    let pgn = db.game_pgn(1, &mut buf).expect("export analysis PGN");
+    assert!(pgn.contains("[Event \"Scotch Game Analysis\"]"), "{pgn}");
+    assert!(pgn.contains("[Date \"2024.11.05\"]"), "{pgn}");
+    assert!(pgn.contains("1. e4 e5 2. Nf3 Nc6"), "{pgn}");
+}
+
+#[test]
+fn test_twocbh_results_and_tournament_types() {
+    let temp = TempDb::create("twocbh_results_test");
+    let mut builder = Builder::new();
+
+    let p1 = builder.player("Carlsen", "Magnus");
+    let p2 = builder.player("Nakamura", "Hikaru");
+    let blitz_tour = builder.tournament_with_type("World Blitz", "Samarkand", 20231230, 0x20);
+
+    // Moves: 1. e4 e5
+    let mut board = Board::startpos();
+    let move_words = words(&mut board, "e2e4 e7e5");
+    let moves_offset = builder.moves(1, &move_words);
+
+    // Game 1: result 0 -> *
+    let g1 = builder.game(moves_offset);
+    set_entities(g1, p1, p2, blitz_tour);
+    g1[0x58] = 0;
+
+    // Game 2: result 1 -> 1/2-1/2
+    let g2 = builder.game(moves_offset);
+    set_entities(g2, p1, p2, blitz_tour);
+    g2[0x58] = 1;
+
+    // Game 3: result 2 -> 1-0
+    let g3 = builder.game(moves_offset);
+    set_entities(g3, p1, p2, blitz_tour);
+    g3[0x58] = 2;
+
+    // Game 4: result 3 -> 0-1
+    let g4 = builder.game(moves_offset);
+    set_entities(g4, p1, p2, blitz_tour);
+    g4[0x58] = 3;
+
+    builder.write_to(&temp);
+
+    let db = Database::open(temp.base()).expect("database opens");
+    assert_eq!(db.records(), 4);
+
+    let mut buf = GameBuf::new();
+
+    let r1 = db.game(1, &mut buf).unwrap();
+    assert_eq!(r1.header.result(), cbvault_format::game::GameResult::Line);
+    let pgn1 = db.game_pgn(1, &mut buf).unwrap();
+    assert!(pgn1.contains("[Result \"*\"]"), "{pgn1}");
+
+    let r2 = db.game(2, &mut buf).unwrap();
+    assert_eq!(r2.header.result(), cbvault_format::game::GameResult::Draw);
+    let pgn2 = db.game_pgn(2, &mut buf).unwrap();
+    assert!(pgn2.contains("[Result \"1/2-1/2\"]"), "{pgn2}");
+
+    let r3 = db.game(3, &mut buf).unwrap();
+    assert_eq!(r3.header.result(), cbvault_format::game::GameResult::WhiteWins);
+    let pgn3 = db.game_pgn(3, &mut buf).unwrap();
+    assert!(pgn3.contains("[Result \"1-0\"]"), "{pgn3}");
+
+    let r4 = db.game(4, &mut buf).unwrap();
+    assert_eq!(r4.header.result(), cbvault_format::game::GameResult::BlackWins);
+    let pgn4 = db.game_pgn(4, &mut buf).unwrap();
+    assert!(pgn4.contains("[Result \"0-1\"]"), "{pgn4}");
+
+    // Check tournament entity
+    let entities = db.twocbh_entities().unwrap();
+    let tour = entities.tournament(blitz_tour).unwrap().unwrap();
+    assert_eq!(tour.title, "World Blitz");
+    assert_eq!(tour.place, "Samarkand");
+    assert!(tour.is_blitz());
+    assert!(!tour.is_rapid());
+    assert!(!tour.is_correspondence());
 }

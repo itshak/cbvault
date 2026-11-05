@@ -304,7 +304,9 @@ pub struct Builder {
     cba: Option<Vec<u8>>,
     lid: Option<Vec<u8>>,
     players: Vec<(String, String)>,
-    tournaments: Vec<(String, String, i32)>,
+    tournaments: Vec<(String, String, i32, u8)>,
+    tags: Vec<String>,
+    sources: Vec<String>,
 }
 
 /// Sets the entity IDs on a 192-byte 2CBH header record.
@@ -329,6 +331,8 @@ impl Default for Builder {
             lid: None,
             players: Vec::new(),
             tournaments: Vec::new(),
+            tags: Vec::new(),
+            sources: Vec::new(),
         }
     }
 }
@@ -348,8 +352,27 @@ impl Builder {
 
     /// Adds a tournament entity and returns its 0-based id.
     pub fn tournament(&mut self, title: &str, place: &str, date: i32) -> i64 {
+        self.tournament_with_type(title, place, date, 0)
+    }
+
+    /// Adds a tournament entity with style/time control byte.
+    pub fn tournament_with_type(&mut self, title: &str, place: &str, date: i32, event_type: u8) -> i64 {
         let id = self.tournaments.len() as i64;
-        self.tournaments.push((title.to_string(), place.to_string(), date));
+        self.tournaments.push((title.to_string(), place.to_string(), date, event_type));
+        id
+    }
+
+    /// Adds a game tag (title) entity and returns its 0-based id.
+    pub fn tag(&mut self, title: &str) -> i64 {
+        let id = self.tags.len() as i64;
+        self.tags.push(title.to_string());
+        id
+    }
+
+    /// Adds an annotator or source entity and returns its 0-based id.
+    pub fn source(&mut self, name: &str) -> i64 {
+        let id = self.sources.len() as i64;
+        self.sources.push(name.to_string());
         id
     }
 
@@ -413,22 +436,38 @@ impl Builder {
     pub fn text(&mut self, title_tag: i64, author_player: i64, body_offset: i64) -> &mut [u8; 192] {
         let mut rec = [0u8; 192];
         rec[0] = 2; // text bit
-        rec[2] = 1;
+        rec[2] = 3; // guiding text kind
+        rec[3] = 1;
         rec[0x08..0x10].copy_from_slice(&body_offset.to_le_bytes());
+        rec[0x18..0x20].copy_from_slice(&title_tag.to_le_bytes());
         rec[0x20..0x28].copy_from_slice(&author_player.to_le_bytes());
-        rec[0x28..0x30].copy_from_slice(&title_tag.to_le_bytes());
         self.records.push(rec);
         self.records.last_mut().unwrap()
     }
 
     /// Appends an analysis record.
     pub fn analysis(&mut self, title_tag: i64, author_player: i64, moves_offset: i64) -> &mut [u8; 192] {
+        self.analysis_full(title_tag, author_player, moves_offset, 0, 0)
+    }
+
+    /// Appends an analysis record with date and move count (Recipe 6.1).
+    pub fn analysis_full(
+        &mut self,
+        title_tag: i64,
+        author_player: i64,
+        moves_offset: i64,
+        packed_date: u32,
+        move_count: u16,
+    ) -> &mut [u8; 192] {
         let mut rec = [0u8; 192];
         rec[0] = 1;
         rec[2] = 2; // analysis kind
+        rec[3] = 1;
         rec[0x08..0x10].copy_from_slice(&moves_offset.to_le_bytes());
         rec[0x18..0x20].copy_from_slice(&title_tag.to_le_bytes());
         rec[0x28..0x30].copy_from_slice(&author_player.to_le_bytes());
+        rec[0x4c..0x50].copy_from_slice(&packed_date.to_le_bytes());
+        rec[0x50..0x52].copy_from_slice(&move_count.to_le_bytes());
         self.records.push(rec);
         self.records.last_mut().unwrap()
     }
@@ -486,12 +525,14 @@ impl Builder {
         let lid_data = if let Some(ref lid) = self.lid {
             lid.clone()
         } else {
-            let ntypes = 2usize;
+            let ntypes = if self.tags.is_empty() && self.sources.is_empty() { 2usize } else { 4usize };
             let header_size = 184usize;
             let container_size = 256usize;
             let n_players = self.players.len();
             let n_tournaments = self.tournaments.len();
-            let n_blocks = n_players.max(n_tournaments);
+            let n_tags = self.tags.len();
+            let n_sources = self.sources.len();
+            let n_blocks = n_players.max(n_tournaments).max(n_tags).max(n_sources);
 
             let mut d = Vec::new();
             d.extend((header_size as i32).to_be_bytes());
@@ -504,6 +545,16 @@ impl Builder {
             d.extend((container_size as i32).to_be_bytes());
             d.extend((n_tournaments as i64).to_be_bytes());
             d.extend((-1i64).to_be_bytes());
+            if ntypes >= 4 {
+                // Type 2: Game Tag
+                d.extend((container_size as i32).to_be_bytes());
+                d.extend((n_tags as i64).to_be_bytes());
+                d.extend((-1i64).to_be_bytes());
+                // Type 3: Annotator / Source
+                d.extend((container_size as i32).to_be_bytes());
+                d.extend((n_sources as i64).to_be_bytes());
+                d.extend((-1i64).to_be_bytes());
+            }
             d.resize(header_size, 0);
 
             let encode_str = |s: &str| -> Vec<u8> {
@@ -527,14 +578,39 @@ impl Builder {
                 // Type 1 container
                 let mut t_block = vec![0u8; container_size];
                 if i < n_tournaments {
-                    let (ref title, ref place, date) = self.tournaments[i];
+                    let (ref title, ref place, date, event_type) = self.tournaments[i];
                     let mut payload = encode_str(place);
                     payload.extend(encode_str(title));
                     payload.extend(date.to_le_bytes());
+                    payload.push(event_type);
                     t_block[..4].copy_from_slice(&(payload.len() as i32).to_le_bytes());
                     t_block[4..4 + payload.len()].copy_from_slice(&payload);
                 }
                 d.extend(t_block);
+
+                if ntypes >= 4 {
+                    // Type 2 container: Game Tag
+                    let mut tag_block = vec![0u8; container_size];
+                    if i < n_tags {
+                        let title = &self.tags[i];
+                        let mut payload = 1i32.to_le_bytes().to_vec(); // count = 1
+                        payload.extend(0i32.to_le_bytes()); // language = 0
+                        payload.extend(encode_str(title));
+                        tag_block[..4].copy_from_slice(&(payload.len() as i32).to_le_bytes());
+                        tag_block[4..4 + payload.len()].copy_from_slice(&payload);
+                    }
+                    d.extend(tag_block);
+
+                    // Type 3 container: Annotator / Source
+                    let mut src_block = vec![0u8; container_size];
+                    if i < n_sources {
+                        let name = &self.sources[i];
+                        let payload = encode_str(name);
+                        src_block[..4].copy_from_slice(&(payload.len() as i32).to_le_bytes());
+                        src_block[4..4 + payload.len()].copy_from_slice(&payload);
+                    }
+                    d.extend(src_block);
+                }
             }
             d
         };

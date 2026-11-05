@@ -61,6 +61,72 @@ impl CodePage {
     }
 }
 
+/// Translates a Unicode Private Use Area (PUA) character from ChessBase proprietary
+/// fonts into its standard Unicode equivalent (§5.2).
+pub fn translate_pua_char(c: char) -> Option<&'static str> {
+    match c {
+        '\u{e000}' => Some("\u{2bf9}"),              // ⯹ With compensation
+        '\u{e001}' => Some("\u{2bba}"),              // ⮺ Pair of bishops
+        '\u{e002}' => Some("\u{2bbb}"),              // ⮻ Bishops of opposite colors
+        '\u{e004}' | '\u{e02e}' => Some("\u{2a71}"), // ⩱ White has slight advantage
+        '\u{e005}' => Some(""),                      // Diagram marker (omitted in text)
+        '\u{e007}' | '\u{e02f}' => Some("\u{2a72}"), // ⩲ Black has slight advantage
+        '\u{e008}' => Some("\u{2bfd}"),              // ⯽ Passed pawn
+        '\u{e009}' => Some("\u{221e}"),              // ∞ Unclear position
+        '\u{e00a}' => Some("\u{00b1}"),              // ± White has clear advantage
+        '\u{e00c}' => Some("\u{25e4}"),              // ⌓ Better is
+        '\u{e00d}' => Some("\u{25b3}"),              // △ With the idea
+        '\u{e00e}' => Some("\u{27fa}"),              // ⟪ Queenside
+        '\u{e00f}' => Some("\u{27fb}"),              // ⟫ Kingside
+        '\u{e010}' => Some("\u{00d7}"),              // × Weak point
+        '\u{e012}' => Some("\u{2191}"),              // ↑ Initiative
+        '\u{e013}' => Some("\u{2192}"),              // → Attack
+        '\u{e017}' => Some("\u{21c4}"),              // ⇆ Counterplay
+        '\u{e018}' => Some("\u{21d4}"),              // ⇔ File
+        '\u{e019}' => Some("\u{21d7}"),              // ⇗ Diagonal
+        '\u{e01a}' => Some("\u{2213}"),              // ∓ Black has clear advantage
+        '\u{e01d}' => Some("\u{2a00}"),              // ⨀ Zugzwang
+        '\u{e01e}' => Some("\u{229e}"),              // ⊞ Center
+        '\u{e01f}' => Some("\u{22a5}"),              // ⊥ Endgame
+        '\u{e021}' => Some("\u{25a1}"),              // □ Only move
+        '\u{e023}' => Some("\u{25cb}"),              // ○ Space
+        '\u{e024}' => Some("\u{2654}"),              // ♔ White King figurine
+        '\u{e025}' => Some("\u{2655}"),              // ♕ White Queen figurine
+        '\u{e026}' => Some("\u{2656}"),              // ♖ White Rook figurine
+        '\u{e027}' => Some("\u{2657}"),              // ♗ White Bishop figurine
+        '\u{e028}' => Some("\u{2658}"),              // ♘ White Knight figurine
+        '\u{e029}' => Some("\u{2659}"),              // ♙ White Pawn figurine
+        _ => None,
+    }
+}
+
+/// Translates any characters in the Private Use Area range `U+E000..U+E02F` to standard Unicode.
+pub fn translate_pua(text: &str) -> String {
+    if !text.chars().any(|c| ('\u{e000}'..='\u{e02f}').contains(&c)) {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        if let Some(replacement) = translate_pua_char(c) {
+            out.push_str(replacement);
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Decodes bytes guessing whether they are UTF-8, Windows-1251 (Cyrillic), or Windows-1252.
+pub fn decode_auto(bytes: &[u8]) -> String {
+    if let Ok(s) = std::str::from_utf8(bytes) {
+        return translate_pua(s);
+    }
+    let cyrillic_count = bytes.iter().filter(|&&b| b >= 0xc0).count();
+    let page =
+        if cyrillic_count >= 2 && cyrillic_count * 3 >= bytes.len() { CodePage(1251) } else { CodePage::WESTERN };
+    translate_pua(&page.decode(bytes))
+}
+
 // The bytes 0x80-0xFF of each page, from the Unicode mapping tables of the
 // Windows code pages; U+FFFD where a page leaves a byte undefined.
 const CP1250: [u16; 128] = [
@@ -194,5 +260,36 @@ mod tests {
     fn utf8_wins_when_valid() {
         assert_eq!(CodePage::new(1251).utf8_or("Спасский".as_bytes()), "Спасский");
         assert_eq!(CodePage::new(1251).utf8_or(&[0xD2, 0xE0, 0xEB, 0xFC]), "Таль");
+    }
+
+    #[test]
+    fn test_translate_pua_symbols_and_figurines() {
+        assert_eq!(translate_pua("\u{e000}"), "\u{2bf9}"); // With compensation
+        assert_eq!(translate_pua("\u{e001}"), "\u{2bba}"); // Pair of bishops
+        assert_eq!(translate_pua("\u{e002}"), "\u{2bbb}"); // Bishops of opposite colors
+        assert_eq!(translate_pua("\u{e004}"), "\u{2a71}"); // White slight advantage
+        assert_eq!(translate_pua("\u{e02e}"), "\u{2a71}"); // White slight advantage
+        assert_eq!(translate_pua("\u{e005}"), ""); // Diagram marker omitted
+        assert_eq!(translate_pua("\u{e007}"), "\u{2a72}"); // Black slight advantage
+        assert_eq!(translate_pua("\u{e008}"), "\u{2bfd}"); // Passed pawn
+        assert_eq!(translate_pua("\u{e009}"), "∞");
+        assert_eq!(translate_pua("\u{e00a}"), "±");
+        assert_eq!(translate_pua("\u{e013}"), "→");
+        assert_eq!(translate_pua("\u{e01a}"), "∓");
+        assert_eq!(translate_pua("\u{e021}"), "□");
+        assert_eq!(translate_pua("\u{e024}"), "♔");
+        assert_eq!(translate_pua("\u{e025}"), "♕");
+        assert_eq!(translate_pua("\u{e026}"), "♖");
+        assert_eq!(translate_pua("\u{e027}"), "♗");
+        assert_eq!(translate_pua("\u{e028}"), "♘");
+        assert_eq!(translate_pua("\u{e029}"), "♙");
+        assert_eq!(translate_pua("Normal text with \u{e028} and \u{e00a}."), "Normal text with ♘ and ±.");
+    }
+
+    #[test]
+    fn test_decode_auto_cyrillic() {
+        let cyrillic_bytes = [0xD1, 0xEF, 0xE0, 0xF1, 0xF1, 0xEA, 0xE8, 0xE9];
+        assert_eq!(decode_auto(&cyrillic_bytes), "Спасский");
+        assert_eq!(decode_auto("Magnus Carlsen".as_bytes()), "Magnus Carlsen");
     }
 }

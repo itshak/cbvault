@@ -96,13 +96,13 @@ State: `planned` until the porting task lands; then `ported`/`ported (chess swap
 
 | Ours | Upstream | Regime | State |
 |---|---|---|---|
-| `cbvault-format` — `file`, `codepage` | `file.rs`, `codepage.rs` | port | **ported** (2.1, 2.4); `file` extended with original zero-copy `mmap` reads (`memmap2`, default-on feature) in `maximum-single-thread-decode` |
+| `cbvault-format` — `file`, `codepage` | `file.rs`, `codepage.rs` | port | **ported** (2.1, 2.4); `file` extended with original zero-copy `mmap` reads (`memmap2`, default-on feature) in `maximum-single-thread-decode`; `codepage` extended with Windows-1251 Cyrillic auto-detection and ChessBase PUA symbol/figurine translation (`translate_pua` Table 5.2 from `2cbh-after-mit-facts.md`) |
 | `cbvault-format` — `tables` (move-mode byte tables) | `cbh/tables.rs` | port (raw format data; MIT `asdfjkl/cbh2pgn` credit kept) | **ported** (0.6) |
 | `cbvault-format` — `cbh::{bytes, record, entities, wide}` | `cbh/{bytes,record,entities,wide}.rs` | port | **ported** (2.1–2.3); `record` extended with original zero-copy `GameHeaderRef` in `maximum-single-thread-decode` |
 | `cbvault-format` — `cbh::batch` | `cbh/mod.rs` (batching concepts) | port | **ported** (`fast-decode-and-parallel-replay`); extended with original zero-copy header borrowing and mmap span reads in `maximum-single-thread-decode` |
 | `cbvault-format` — `cbh::{annotations, text, window}` | `cbh/{annotations,text,window}.rs` | port | **ported** (3.4–3.5, 4.1). `text.rs` and `window.rs` were later reorganised into the original `cbh/textblocks.rs` and `cbh/batch.rs`, which carry their own notices |
 | `cbvault-format` — `cbh::moves` (record split, start decode) | `cbh/moves.rs` | port + chess swap (start board via `gigachess`) | **ported** (3.1, 3.3) |
-| `cbvault-format` — `twocbh::{bytes, record, frame, entities, moves, header, segment, annotations}` | `v2/**` | port (MIT @ `bffebfc4`) | **ported** (`native-2cbh-readonly` tasks 2.1–2.4). Checksum, framing, 192-byte headers, `.2lid` containers, move record parsing, and `.2cba` annotations. |
+| `cbvault-format` — `twocbh::{bytes, record, frame, entities, moves, header, segment, annotations}` | `v2/**` | port (MIT @ `bffebfc4`) | **ported & clean-room corrections** (`native-2cbh-readonly` tasks 2.1–2.4, 3.4). Checksum, framing, 192-byte headers (with Analysis and Guiding Text variants, result byte mapping), dynamic-endian `.2lid` containers with tournament `event_type` and source namebase, move record parsing, setup castling rights, and `.2cba` annotations (including TimeSpent layout, evaluation curves, game quotations), implemented strictly from facts in `docs/research/2cbh-after-mit-facts.md`. |
 | `cbvault-format` — `game::{head, fields, entities}` | `game/{head,fields,entities}.rs` | port | **ported** (2.1–2.3) |
 | `cbvault-format` — `game::{start, annotations}` | `game/{start,annotations}.rs` | port | planned (3.3, 4.1–4.2) |
 | `cbvault-chess` — `movetable`, `v2` | `movetable/**`, `v2/**` | port + chess swap (`gigachess`, 16-bit `moves2`, king→rook castling `e1h1`/`e1a1`, `Board::play_fast`) | **ported** (`native-2cbh-readonly` task 2.2). The move-word table decodes 2CBH tokens into `moves2` currency directly without intermediate data structures. |
@@ -118,6 +118,7 @@ State: `planned` until the porting task lands; then `ported`/`ported (chess swap
 |---|---|---|
 | Classic `.cbh` records, `.cbg` framing, `.cba`, namebases, move modes | Morphy `format/v1` (unlicensed; facts only) + ancestor `docs/format-notes.md` (MIT facts) + our own file inspection | `SPEC.md` (0.5) |
 | 2CBH `.2cbh` family, `.2lid`, `.2cba`, move words | Morphy `format/v2` (facts only) + ancestor `docs/format-notes.md` + our own file inspection | `SPEC.md` (0.5) |
+| 2CBH post-MIT layout diffs, PUA glyphs, setup castling, annotation wire layouts | Room 1 reverse-engineering facts report | `docs/research/2cbh-after-mit-facts.md` (3.2) |
 | `.cbv`/`.cbz` container layout, DES-CBZ scheme | File inspection of the local archive + `uncbv` outputs | `docs/research/00-cbv-facts.md` (0.3) |
 | Real-database behaviours (holes, `.ini`, dual-format pairs) | Our own measurements on local assets | `docs/research/01-real-database-report.md` (0.4, 0.8) |
 | Byte-order/codepage behaviours of old databases | Public discussions, our measurements | `SPEC.md` (2.4) |
