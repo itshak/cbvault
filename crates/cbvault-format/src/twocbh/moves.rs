@@ -17,11 +17,14 @@ const END_OF_LINE: u16 = 0xffff;
 pub enum Token {
     /// The encoded move number, including 0xfffa (null).
     MoveWord(u16),
+    /// Variation marker: subsequent words start an alternative line.
     Alternative,
+    /// Marker terminating the current variation or main line.
     EndOfLine,
 }
 
 #[derive(Clone, Copy, Debug)]
+/// Borrowed move frame and its parsed structural word boundaries.
 pub struct GameMoves<'a> {
     record: Record<'a>,
     /// The index of the first move word (past the FFFC marker), in bytes.
@@ -30,6 +33,7 @@ pub struct GameMoves<'a> {
 
 impl<'a> GameMoves<'a> {
     #[inline]
+    /// Parse and validate move-frame boundaries without translating moves to chess-core moves.
     pub fn parse(path: &std::path::Path, raw: &'a [u8]) -> Result<Self> {
         let record = Record::parse(path, 0, raw)?;
         let content = record.content();
@@ -53,10 +57,13 @@ impl<'a> GameMoves<'a> {
     }
 
     #[inline]
+    /// Borrow the validated underlying frame.
     pub fn record(&self) -> &Record<'a> { &self.record }
     #[inline]
+    /// Return B, the spare-capacity byte count.
     pub fn parameter_b(&self) -> u32 { self.record.parameter_b() }
     #[inline]
+    /// Return the original encoded word bytes.
     pub fn content(&self) -> &'a [u8] { self.record.content() }
     /// Variant 2 is Chess960 in the low tag byte.
     #[inline]
