@@ -43,11 +43,13 @@ use std::io::{self, Write};
 
 use cbvault_chess::decode::{GameRef, MoveSink, start_as_played, walk_from};
 use cbvault_chess::start::{Start, StartCache, start_board_cached};
+use cbvault_chess::v2 as v2_replay;
 use cbvault_format::cbh::GameAnnotations;
 use cbvault_format::cbh::bytes::NameBuf;
 use cbvault_format::cbh::{Entities, GameMoves};
 use cbvault_format::error::{Error, Result};
 use cbvault_format::game::annotations::{Annotation, GAME_POSITION, timing};
+use cbvault_format::twocbh::{self, annotation_items as v2_annotations};
 use cbvault_format::game::{GameResult, Head, ROUND_TEXT_BYTES, RecordKind, round_text};
 use comments::{At, Bare, Commentary, Notes};
 use gigachess::san::{San, check_mate_suffix, move_to_san_body};
@@ -462,6 +464,73 @@ struct Names {
     round: [u8; ROUND_TEXT_BYTES],
 }
 
+/// Reusable buffers for .2lid metadata, retained from game to game.
+#[derive(Debug, Default)]
+struct V2Names {
+    scratch: Vec<u8>,
+    white_last: String,
+    white_first: String,
+    black_last: String,
+    black_first: String,
+    title: String,
+    place: String,
+}
+impl V2Names {
+    fn capacity(&self) -> usize {
+        self.scratch.capacity()
+            + self.white_last.capacity() + self.white_first.capacity()
+            + self.black_last.capacity() + self.black_first.capacity()
+            + self.title.capacity() + self.place.capacity()
+    }
+}
+
+/// Write v2 tags through the same PGN formatting primitives as classic.
+/// Every name is borrowed or decoded into buffers owned by this writer.
+fn write_tags_v2(
+    out: &mut String,
+    header: &twocbh::GameHeader,
+    entities: &twocbh::Entities,
+    start: &Start,
+    board: &Board,
+    total_plies: u32,
+    round_names: &mut Names,
+    names: &mut V2Names,
+) -> Result<()> {
+    let event_found = entities.tournament_into(
+        header.tournament(), &mut names.scratch, &mut names.title, &mut names.place,
+    )?;
+    let event = if event_found && !names.title.is_empty() { &names.title } else { "?" };
+    let place = if event_found && !names.place.is_empty() { &names.place } else { "?" };
+    push_escaped_tag(out, "[Event \"", event);
+    push_escaped_tag(out, "[Site \"", place);
+    push_tag(out, "[Date \"", str_from_bytes(&header.played_date().text()));
+    push_round(out, header.round(), round_names);
+    let white = entities.player_into(
+        header.white(), &mut names.scratch, &mut names.white_last, &mut names.white_first,
+    )?;
+    push_escaped_player(out, "[White \"", white.then_some((&names.white_last, &names.white_first)));
+    let black = entities.player_into(
+        header.black(), &mut names.scratch, &mut names.black_last, &mut names.black_first,
+    )?;
+    push_escaped_player(out, "[Black \"", black.then_some((&names.black_last, &names.black_first)));
+    push_tag(out, "[Result \"", result_tag(header.result()));
+    if let Some(eco) = header.eco().code_text() { push_ascii_tag(out, "[ECO \"", &eco); }
+    let (welo, belo) = header.elo();
+    if welo > 0 { push_number_tag(out, "[WhiteElo \"", welo as u32); }
+    if belo > 0 { push_number_tag(out, "[BlackElo \"", belo as u32); }
+    if total_plies == 0 { push_tag(out, "[PlyCount \"", "0"); }
+    if *start != Start::Standard {
+        if matches!(start, Start::Chess960(_)) || matches!(start, Start::Setup(s) if s.chess960) {
+            push_tag(out, "[Variant \"", "Chess960");
+        }
+        push_tag(out, "[SetUp \"", "1");
+        let fen = fen_tag(board, start);
+        push_tag(out, "[FEN \"", &fen);
+    }
+    out.push('\n');
+    Ok(())
+}
+
 /// `[<name> "<value>"]` and its newline, the value as it stands.
 #[inline]
 fn push_tag(out: &mut String, head: &str, value: &str) {
@@ -653,6 +722,10 @@ pub struct PgnWriter {
     starts: StartCache,
     /// The movetext traversal's step stack, reused game to game.
     steps: Vec<EmitStep>,
+    /// Reusable v2 entity name strings and positional read buffer.
+    v2_names: V2Names,
+    /// Open 2CBH variation boards retained across games.
+    v2_stack: Vec<Board>,
 }
 
 impl PgnWriter {
@@ -671,6 +744,8 @@ impl PgnWriter {
             + self.parts.capacity()
             + std::mem::size_of::<Names>()
             + self.starts.len() * std::mem::size_of::<(Start, Board)>()
+            + self.v2_names.capacity()
+            + self.v2_stack.capacity() * size_of::<Board>()
     }
 
     /// Writes game `game` of `header` as PGN: the tags, the movetext with its
@@ -714,6 +789,7 @@ impl PgnWriter {
                 self.prepare(a).map_err(as_io)?;
                 let mut notes = Commentary {
                     anns: a,
+                    classic: true,
                     index: &self.index,
                     evp: &self.evp,
                     parts: &mut self.parts,
@@ -734,6 +810,86 @@ impl PgnWriter {
         self.game.push('\n');
         self.game.push('\n');
         out.write_all(self.game.as_bytes())
+    }
+
+    /// Render a 2CBH game with the same SAN, tags, variation tree and
+    /// commentary machinery used by the classic reader. The source words
+    /// are checked against gigachess before any output is committed.
+    pub fn write_game_v2(
+        &mut self,
+        out: &mut impl Write,
+        header: &twocbh::GameHeader,
+        entities: &twocbh::Entities,
+        game: &twocbh::moves::GameMoves<'_>,
+        anns: Option<&v2_annotations::GameAnnotations<'_>>,
+    ) -> io::Result<()> {
+        if header.kind() != RecordKind::Game || header.is_deleted() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData, format!("2CBH record {} is not an active game", header.id()),
+            ));
+        }
+        let what = GameRef::new(header.id());
+        let start = v2_replay::start_of(game).map_err(as_io)?;
+        let board = start_board_cached(&start, &mut self.starts).map_err(as_io)?;
+        self.tree.clear();
+        self.game.clear();
+        let stats = v2_replay::walk_from(
+            what, game, &start, &mut self.tree, &mut self.v2_stack, &mut self.starts,
+        ).map_err(as_io)?;
+        write_tags_v2(
+            &mut self.game, header, entities, &start, &board, stats.total_plies,
+            &mut self.names, &mut self.v2_names,
+        ).map_err(as_io)?;
+        match anns.filter(|a| !a.is_empty()) {
+            None => emit(&self.tree, &mut Bare, &mut self.game, &mut self.steps).map_err(as_io)?,
+            Some(a) => {
+                a.check_positions(stats.total_plies).map_err(as_io)?;
+                self.prepare_v2(a).map_err(as_io)?;
+                let mut notes = Commentary {
+                    anns: a,
+                    classic: false,
+                    index: &self.index,
+                    evp: &self.evp,
+                    parts: &mut self.parts,
+                    moves: stats.total_plies,
+                    last: self.tree.main_line_last(),
+                };
+                notes.game_comment(&mut self.game).map_err(as_io)?;
+                emit(&self.tree, &mut notes, &mut self.game, &mut self.steps).map_err(as_io)?;
+            }
+        }
+        self.game.push_str(result_tag(header.result()));
+        self.game.push('\n');
+        self.game.push('\n');
+        out.write_all(self.game.as_bytes())
+    }
+
+    /// Build the same stored-order annotation index from 2CBA's validated,
+    /// borrowed items. Unknown layouts have already been refused at parse.
+    fn prepare_v2(&mut self, anns: &v2_annotations::GameAnnotations<'_>) -> Result<()> {
+        self.index.clear();
+        self.evp.clear();
+        let mut ordered = true;
+        let mut prev = i32::MIN;
+        let mut wrote_evp = false;
+        for item in anns.iter() {
+            let item = item?;
+            ordered &= item.position >= prev;
+            prev = item.position;
+            self.index.push((item.position, item.offset));
+            if let Annotation::Other { code: 0x26, data } = item.annotation
+                && !wrote_evp && item.position == GAME_POSITION
+            {
+                // 2CBH's 0x26 evaluation list has little-endian entries.
+                let entries = timing::evaluations(data, false).ok_or_else(|| {
+                    Error::corrupt("<.2cba>", item.offset as u64, "invalid 2CBH evaluation profile")
+                })?;
+                comments::write_evp(&mut self.evp, &entries);
+                wrote_evp = !self.evp.is_empty();
+            }
+        }
+        if !ordered { self.index.sort_by_key(|&(position, _)| position); }
+        Ok(())
     }
 
     /// Fills the writer's index and `[%evp …]` from a game's annotations:
