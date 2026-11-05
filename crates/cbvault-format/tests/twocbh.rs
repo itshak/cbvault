@@ -199,6 +199,54 @@ fn the_read_list_names_the_mandatory_members() {
     assert_eq!(twocvh::file_header(12)[8], 12, "the first record follows the header");
 }
 
+/// The mmap path borrows records. The pread path writes into a caller-owned
+/// buffer and does not grow it once sufficient capacity has been reserved.
+#[test]
+fn a_reused_frame_buffer_keeps_its_capacity() {
+    with_set("reuse", 2, true, |stem| {
+        let headers = Headers::open(stem).unwrap();
+        let seg = Segment::open(twocbh::sibling(stem, ".2cbg")).unwrap();
+        let mut buf = Vec::with_capacity(4096);
+        let capacity = buf.capacity();
+        for _ in 0..16 {
+            for id in 1..=2 {
+                let h = headers.record(id).unwrap();
+                let frame = seg.record_into(h.moves_offset().try_into().unwrap(), &mut buf).unwrap();
+                assert_eq!(frame.content(), &[0xfc, 0xff, 0xff, 0xff]);
+            }
+        }
+        assert_eq!(buf.capacity(), capacity);
+    });
+}
+
+#[test]
+fn checksum_corruption_is_rejected_at_the_segment_boundary() {
+    with_set("checksum", 1, true, |stem| {
+        let p = twocbh::sibling(stem, ".2cbg");
+        let headers = Headers::open(stem).unwrap();
+        let offset = headers.record(1).unwrap().moves_offset() as usize;
+        let mut bytes = std::fs::read(&p).unwrap();
+        bytes[offset + twocbh::bytes::CONTENT_OFFSET] ^= 0x1;
+        std::fs::write(&p, &bytes).unwrap();
+        let seg = Segment::open(p).unwrap();
+        let error = seg.record_at(offset as u64).err().expect("the checksum must be checked");
+        assert!(error.to_string().contains("checksum mismatch"), "{error}");
+    });
+}
+
+#[test]
+fn orphan_sidecars_are_not_recognised_as_database_sets() {
+    let dir = std::env::temp_dir().join(format!("cbvault-twocbh-orphan-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let stem = dir.join("orphan");
+    std::fs::write(twocbh::sibling(&stem, ".2cbg"), []).unwrap();
+    assert_eq!(twocbh::probe(&stem), Generation::Unknown);
+    std::fs::write(twocbh::sibling(&stem, ".2cbh"), []).unwrap();
+    assert_eq!(twocbh::probe(&stem), Generation::TwoCbh);
+    assert_eq!(twocbh::probe(&dir.join("orphan.2CBH")), Generation::TwoCbh);
+    std::fs::remove_dir_all(dir).ok();
+}
+
 /// The real-file check, env-gated. It states its own skip out loud, so a
 /// skipped run is never mistaken for a pass.
 #[test]
