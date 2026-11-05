@@ -217,7 +217,7 @@ impl Notes for Commentary<'_> {
         evaluations(self.parts, anns, items)?;
         times(self.parts, anns, items, self.classic)?;
         graphics(self.parts, anns, items)?;
-        medals(self.parts, anns, items)?;
+        medals(self.parts, anns, items, self.classic)?;
         // The texts and the quotations share one pass: ChessBase's export
         // writes a quoted game where its record stands among the texts.
         texts(self.parts, anns, items, false, self.classic)?;
