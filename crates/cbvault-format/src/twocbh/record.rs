@@ -63,7 +63,7 @@ impl<'a> Record<'a> {
     /// per access, and it lets a reader that owns or holds the bytes hand out a
     /// [`Record`] without re-validating or re-reading.
     #[inline]
-    pub fn parse_unchecked(raw: &[u8]) -> Record<'_> {
+    pub(crate) fn parse_unchecked(raw: &[u8]) -> Record<'_> {
         let a = u32::from_le_bytes(raw[8..12].try_into().expect("a validated record"));
         let b = u32::from_le_bytes(raw[12..16].try_into().expect("a validated record"));
         let end = CONTENT_OFFSET + a as usize;
