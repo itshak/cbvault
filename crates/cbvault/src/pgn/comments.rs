@@ -477,6 +477,10 @@ fn texts(parts: &mut Parts, anns: &dyn AnnotationView, items: [&[(i32, u32)]; 2]
                     // no allocation either.
                     let part = parts.push(Sep::Semicolon);
                     q.chessbase_text_into(&mut part.text);
+                } else if !classic {
+                    return Err(cbvault_format::error::Error::corrupt(
+                        "<.2cba>", 0, "2CBH quoted-game layout or embedded moves are not supported yet",
+                    ));
                 }
             }
             _ => {}
