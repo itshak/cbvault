@@ -251,7 +251,9 @@ fn parse_game(raw: String) -> Result<Game, String> {
     let mut tags = Vec::new();
     let mut body = String::new();
     let mut in_tags = true;
-    for line in raw.lines() {
+    // Keep original physical line endings in movetext: CRLF inside a brace
+    // comment is literal content, even though CRLF between tokens is formatting.
+    for line in raw.split_inclusive('\n') {
         let trimmed = line.trim();
         if in_tags && trimmed.starts_with('[') && trimmed.ends_with(']') {
             tags.push(parse_tag(trimmed)?);
@@ -261,7 +263,6 @@ fn parse_game(raw: String) -> Result<Game, String> {
             }
             if !in_tags {
                 body.push_str(line);
-                body.push('\n');
             }
         }
     }
@@ -680,6 +681,21 @@ mod tests {
         assert!(!compare_game(&a, &b).unwrap().equal);
         let c = parse_game("[Event \"E\"]\n[White \"W\"]\n\n1. e4 {Good} *\n".into()).unwrap();
         assert!(compare_game(&a, &c).unwrap().equal);
+    }
+
+    #[test]
+    fn literal_multiline_comment_crlf_must_not_be_normalized() {
+        let lf = parse_game("[Event \"E\"]\n\n1. e4 {first\nsecond} *\n".into()).unwrap();
+        let outer_crlf = parse_game("[Event \"E\"]\r\n\r\n1. e4 {first\nsecond} *\r\n".into()).unwrap();
+        assert!(
+            compare_game(&lf, &outer_crlf).unwrap().equal,
+            "line endings between tokens are a presentation-only difference"
+        );
+        let inside_crlf = parse_game("[Event \"E\"]\r\n\r\n1. e4 {first\r\nsecond} *\r\n".into()).unwrap();
+        assert!(
+            !compare_game(&lf, &inside_crlf).unwrap().equal,
+            "literal comment bytes, including CRLF, must be preserved"
+        );
     }
 
     #[test]
