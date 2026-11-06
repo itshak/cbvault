@@ -77,7 +77,7 @@ fn multiworker_v2_conversion_matches_sequential_annotated_and_keyed_stream() {
     assert_eq!(a.games, 10);
     assert_eq!(a.failures, 2);
     assert_eq!(serial.failed, vec![6, 9]);
-    assert_eq!(serial.games.iter().filter(|g| g.annotations.is_some()).count(), 2);
+    assert_eq!(serial.games.iter().filter(|g| g.annotations.as_ref().is_some_and(|bytes| !bytes.is_empty())).count(), 2);
 
     for threads in [2, 4] {
         let mut parallel = Collector::default();
