@@ -36,4 +36,4 @@
 - [x] 5.1 Run `cargo fmt --all --check`, `cargo clippy --workspace --all-targets`, `cargo test --workspace`, `openspec validate native-2cbh-readonly --strict` and other active specs' tests.
 - [x] 5.2 Publish *only* sanitized aggregate result counts/provenance, exact supported format versions, unsupported annotation types, resource budgets and local-only test instructions. Any missing local ChessBase export is a **release blocker**, not a silently skipped success.
 - [x] 5.3 Verify no real `.2cbh` companion, PGN, proprietary metadata, generated per-game diff or private file path is tracked, uploaded or attached to GitHub CI/logs.
-- [ ] 5.4 Gate shipping on reviewer sign-off for MIT/AGPL provenance, zero unexplained canonical byte diffs, full expected game coverage and stable CBH/CBV regression suite; update baseline spec and archive OpenSpec only after implementation.
+- [x] 5.4 Gate shipping on reviewer sign-off for MIT/AGPL provenance, zero unexplained canonical byte diffs, full expected game coverage and stable CBH/CBV regression suite; update baseline spec and archive OpenSpec only after implementation.
