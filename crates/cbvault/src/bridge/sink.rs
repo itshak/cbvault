@@ -366,6 +366,9 @@ pub struct GameRef<'a> {
     /// asked for them; `None` otherwise, and an empty record for a game that
     /// has none.
     pub annotations: Option<GameAnnotations<'a>>,
+    /// Validated native 2CBH annotation frame when the sink requests annotations.
+    /// Unlike classic CBA this retains v2 types, positions and raw payload bytes.
+    pub twocbh_annotations: Option<cbvault_format::twocbh::Annotations<'a>>,
 }
 
 /// The consumer's side of the conversion: one call per game, in game-number
