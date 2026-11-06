@@ -89,6 +89,16 @@ jobs:
       - name: Cargo test (examples, all features)
         run: cargo test --workspace --examples --all-features
 
+      # The mmap and read-backed SegmentRecord lifetimes differ. Exercise
+      # generated v2 bridge, annotation and parallel conversion in both modes;
+      # never mount or upload a licensed ChessBase database to CI.
+      - name: Synthetic 2CBH tests without mmap
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CBVAULT_NO_MMAP: "1"
+        run: cargo test -p cbvault --all-features --test twocbh_bridge --test twocbh_parallel_sink --test twocbh_annotation_fail_closed
+
+
       - name: Cargo fmt
         run: cargo fmt --all --check
 
