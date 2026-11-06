@@ -262,7 +262,7 @@ impl HeaderSource<'_> {
     pub fn records(&self) -> u32 {
         match self {
             Self::Classic(h) => h.records(),
-            Self::TwoCbh(h) => h.records(),
+            Self::TwoCbh(h) => h.games(),
         }
     }
 }
