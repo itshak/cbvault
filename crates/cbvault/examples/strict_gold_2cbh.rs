@@ -484,7 +484,7 @@ const K: [u32; 64] = [
     0xe9b5dba5,
     0x3956c25b,
     0x59f111f1,
-    0x923f82a4b,
+    0x923f82a4,
     0xab1c5ed5,
     0xd807aa98,
     0x12835b01,
