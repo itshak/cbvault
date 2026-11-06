@@ -20,7 +20,7 @@ use std::fmt::Write as _;
 
 use cbvault_format::cbh::annotations::GameAnnotations;
 use cbvault_format::codepage::CodePage;
-use cbvault_format::error::Result;
+use cbvault_format::error::{Error, Result};
 use cbvault_format::game::annotations::timing::Evaluation;
 use cbvault_format::game::annotations::{Annotation, GAME_POSITION, Quotation, arrows, language, squares, timing};
 
@@ -507,6 +507,15 @@ fn texts(parts: &mut Parts, anns: AnnotationsRef<'_>, items: [&[(i32, u32)]; 2],
                     // no allocation either.
                     let part = parts.push(Sep::Semicolon);
                     q.chessbase_text_into(&mut part.text);
+                } else if !anns.is_classic() {
+                    // A valid quoted game that our decoder cannot interpret
+                    // must never vanish from a supposedly complete v2 PGN.
+                    // Keep classic behavior unchanged until its own gold gate.
+                    return Err(Error::corrupt(
+                        "<.2cba>",
+                        u64::from(offset),
+                        "unhandled 2CBH quoted-game annotation payload",
+                    ));
                 }
             }
             _ => {}
