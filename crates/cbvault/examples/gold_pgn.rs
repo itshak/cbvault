@@ -71,9 +71,7 @@ fn main() {
     } else if force_cbh {
         false
     } else {
-        std::env::var("CBVAULT_TEST_DB_2CBH").is_ok()
-            || std::env::var("CBVAULT_2CBH_GOLD_PGN").is_ok()
-
+        std::env::var("CBVAULT_TEST_DB_2CBH").is_ok() || std::env::var("CBVAULT_2CBH_GOLD_PGN").is_ok()
     };
     let (base, gold_path) = if use_2cbh {
         let db = std::env::var("CBVAULT_TEST_DB_2CBH")

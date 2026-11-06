@@ -428,7 +428,7 @@ fn v2_unified_header_and_entity_sources_are_safe_and_typed() {
         HeaderSource::Classic(_) => panic!("2CBH must not be presented as classic headers"),
     }
     match db.entity_source() {
-        EntitySource::TwoCbh(_) => {},
+        EntitySource::TwoCbh(_) => {}
         EntitySource::Classic(_) => panic!("2CBH must not be presented as classic entities"),
     }
 }

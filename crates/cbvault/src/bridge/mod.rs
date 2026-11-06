@@ -487,7 +487,9 @@ impl Database {
     pub fn try_classic_headers(&self) -> Result<&CbhHeaders> {
         match &self.backend {
             Backend::Classic(c) => Ok(&c.headers),
-            Backend::TwoCbh(_) => Err(Error::corrupt(&self.base, 0, "classic headers are unavailable on 2CBH; use header_source()")),
+            Backend::TwoCbh(_) => {
+                Err(Error::corrupt(&self.base, 0, "classic headers are unavailable on 2CBH; use header_source()"))
+            }
         }
     }
 
@@ -495,7 +497,9 @@ impl Database {
     pub fn try_classic_entities(&self) -> Result<&Entities> {
         match &self.backend {
             Backend::Classic(c) => Ok(&c.entities),
-            Backend::TwoCbh(_) => Err(Error::corrupt(&self.base, 0, "classic entities are unavailable on 2CBH; use entity_source()")),
+            Backend::TwoCbh(_) => {
+                Err(Error::corrupt(&self.base, 0, "classic entities are unavailable on 2CBH; use entity_source()"))
+            }
         }
     }
 
