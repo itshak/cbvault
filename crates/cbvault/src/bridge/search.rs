@@ -515,7 +515,7 @@ impl SearchName<'_> {
 }
 
 /// One game a scan matched, with generation-aware header and names.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Match<'a> {
     /// Stable 1-based record ID.
     pub id: u32,
@@ -576,10 +576,27 @@ impl<'a> Scan<'a> {
     }
 }
 
+/// Name printing shared by classic borrowed and v2 decoded search fields.
+pub trait DisplaySearchName {
+    /// Whether the displayed entity name is blank.
+    fn is_empty(&self) -> bool;
+    /// Append its correct Last, First display representation.
+    fn push_text(&self, out: &mut String);
+}
+
+impl DisplaySearchName for Name<'_> {
+    fn is_empty(&self) -> bool { Name::is_empty(self) }
+    fn push_text(&self, out: &mut String) { Name::push_text(self, out); }
+}
+
+impl DisplaySearchName for SearchName<'_> {
+    fn is_empty(&self) -> bool { SearchName::is_empty(self) }
+    fn push_text(&self, out: &mut String) { SearchName::push_text(self, out); }
+}
+
 impl Match<'_> {
-    /// The player's name written into `out` as `Last, First`, decoded by the
-    /// rules the PGN tags use. `false` when the record has no such name.
-    pub fn player(name: &SearchName<'_>, out: &mut String) -> bool {
+    /// The player's name written into out as Last, First, for either format.
+    pub fn player(name: &impl DisplaySearchName, out: &mut String) -> bool {
         if name.is_empty() {
             return false;
         }
