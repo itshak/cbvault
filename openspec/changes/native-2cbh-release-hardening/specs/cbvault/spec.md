@@ -141,7 +141,7 @@ The same public Database capabilities SHALL work correctly on v2: metadata/heade
 
 ### Requirement: Real-data scope is accurately reported
 
-The project SHALL acknowledge that Mega Database 2026, with a matching ChessBase 18 PGN export, is currently the **only available real 2CBH validation corpus**. It SHALL NOT require another licensed real database in this change. A successful full-corpus match SHALL be described as validated on Mega Database 2026 only, not as universal complete 2CBH support. Native-only features absent from ChessBase PGN, rarely observed annotations, embedded game quotations and Chess960 SHALL remain clearly marked as synthetic-only, observed-and-verified, or not verified.
+Mega Database 2026 with ChessBase 18 PGN is the only available real 2CBH corpus; no second licensed database is required. A full gold pass SHALL be reported as **validated on Mega Database 2026 only**, never universal compatibility. Rare or absent features (Chess960, unusual annotations, embedded quotations, native-only content omitted from PGN) SHALL each be labeled real-verified, synthetic-only, unverified, or unsupported.
 
 #### Scenario: Mega has zero Chess960 games
 - **GIVEN** the Mega source corpus does not contain a particular rare valid 2CBH feature
