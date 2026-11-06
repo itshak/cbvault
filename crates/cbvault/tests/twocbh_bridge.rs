@@ -345,3 +345,40 @@ fn explicitly_selected_v2_member_wins_over_same_stem_classic_file() {
     );
     assert!(Database::open(temp.base()).is_err());
 }
+
+#[test]
+fn twocbh_position_search_replays_v2_words_not_classic_cbg_framing() {
+    use cbvault::bridge::{PositionQuery, for_each_position_key};
+
+    let temp = TempDb::create("v2_position_search");
+    let mut builder = Builder::new();
+    let mut board = Board::startpos();
+    let encoded = words(&mut board, "e2e4 e7e5 g1f3");
+    let at = builder.moves(1, &encoded);
+    builder.game(at);
+    builder.write_to(&temp);
+
+    let mut expected_board = Board::startpos();
+    words(&mut expected_board, "e2e4");
+    let want = expected_board.zobrist();
+
+    let db = Database::open(temp.base()).unwrap();
+    let mut hits = Vec::new();
+    let result = for_each_position_key(&db, &PositionQuery::of(want), 2, |hit| hits.push(hit)).unwrap();
+    assert_eq!(result.failures, 0);
+    assert_eq!(result.games, 1);
+    assert!(result.complete);
+    assert_eq!(hits.len(), 1);
+    assert_eq!((hits[0].game, hits[0].ply, hits[0].key), (1, 1, want));
+
+    let cancel = || true;
+    let mut cancelled_hits = Vec::new();
+    let stats = for_each_position_key(
+        &db,
+        &PositionQuery::of(want).cancel_with(&cancel),
+        2,
+        |hit| cancelled_hits.push(hit),
+    ).unwrap();
+    assert!(!stats.complete);
+    assert!(cancelled_hits.is_empty());
+}
