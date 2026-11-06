@@ -30,3 +30,4 @@ jobs:
             git commit -m "[native-2cbh-release-hardening] Format all Rust changes"
             git push origin HEAD:main
           fi
+# Trigger final formatting pass for active 2CBH hardening.
