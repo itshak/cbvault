@@ -54,9 +54,9 @@ fn explicit_generation_survives_parallel_export_and_verify_with_both_stems() {
     assert_eq!(verified.failures, 0);
     assert!(failures.is_empty());
 
-    assert!(cbvault::replay::verify_parallel(temp.base(), 1, 2, 10).is_err());
+    assert!(cbvault::replay::verify_parallel(&temp.base(), 1, 2, 10).is_err());
     assert!(
-        cbvault::pgn::parallel::export_span_report(temp.base(), &mut Vec::new(), 1, 2, 10, 1, 0).is_err()
+        cbvault::pgn::parallel::export_span_report(&temp.base(), &mut Vec::new(), 1, 2, 10, 1, 0).is_err()
     );
     assert!(cbvault::replay::verify_parallel(&classic, 1, 2, 10).is_err());
     assert!(
