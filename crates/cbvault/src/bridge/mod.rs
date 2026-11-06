@@ -248,6 +248,34 @@ impl Members {
     }
 }
 
+/// A generation-aware borrowed header index. A caller can select the proper
+/// wire layout without ever interpreting 192-byte 2CBH records as 46-byte CBH.
+pub enum HeaderSource<'a> {
+    /// Classic CBH header index.
+    Classic(&'a CbhHeaders),
+    /// Native ChessBase 2 header index.
+    TwoCbh(&'a cbvault_format::twocbh::Headers),
+}
+
+impl HeaderSource<'_> {
+    /// Total record slots, including deleted and guiding text entries.
+    pub fn records(&self) -> u32 {
+        match self {
+            Self::Classic(h) => h.records(),
+            Self::TwoCbh(h) => h.records(),
+        }
+    }
+}
+
+/// Generation-aware borrowed entity store. Use this instead of the legacy
+/// classic-only `Database::entities()` on a database of unknown generation.
+pub enum EntitySource<'a> {
+    /// Classic .cbp/.cbt/.cbc/.cbs namebases.
+    Classic(&'a Entities),
+    /// Native .2lid table.
+    TwoCbh(&'a cbvault_format::twocbh::Entities),
+}
+
 /// A read-only view of one ChessBase database.
 ///
 /// A `Database` holds no writable handle on anything and creates, modifies and
@@ -436,7 +464,43 @@ impl Database {
         }
     }
 
-    /// The `.cbh` header file, for a caller that wants its own view of it.
+    /// Header index of the actual generation; unlike `headers_file`,
+    /// this never panics when the database is 2CBH.
+    pub fn header_source(&self) -> HeaderSource<'_> {
+        match &self.backend {
+            Backend::Classic(c) => HeaderSource::Classic(&c.headers),
+            Backend::TwoCbh(t) => HeaderSource::TwoCbh(&t.headers),
+        }
+    }
+
+    /// Entity store of the actual generation; unlike `entities`, this
+    /// never interprets the interleaved .2lid table as classic namebases.
+    pub fn entity_source(&self) -> EntitySource<'_> {
+        match &self.backend {
+            Backend::Classic(c) => EntitySource::Classic(&c.entities),
+            Backend::TwoCbh(t) => EntitySource::TwoCbh(&t.entities),
+        }
+    }
+
+    /// Fallible classic-only header accessor for callers that need classic
+    /// wire bytes, instead of panicking on a v2 source.
+    pub fn try_classic_headers(&self) -> Result<&CbhHeaders> {
+        match &self.backend {
+            Backend::Classic(c) => Ok(&c.headers),
+            Backend::TwoCbh(_) => Err(Error::corrupt(&self.base, 0, "classic headers are unavailable on 2CBH; use header_source()")),
+        }
+    }
+
+    /// Fallible classic-only entity accessor for legacy consumers.
+    pub fn try_classic_entities(&self) -> Result<&Entities> {
+        match &self.backend {
+            Backend::Classic(c) => Ok(&c.entities),
+            Backend::TwoCbh(_) => Err(Error::corrupt(&self.base, 0, "classic entities are unavailable on 2CBH; use entity_source()")),
+        }
+    }
+
+    /// The `.cbh` header file, for callers certain the database is classic.
+    /// On v2, prefer the non-panicking `header_source` or `try_classic_headers`.
     pub fn headers_file(&self) -> &CbhHeaders {
         match &self.backend {
             Backend::Classic(c) => &c.headers,
@@ -444,8 +508,8 @@ impl Database {
         }
     }
 
-    /// The namebases: names by id for the conversion, and name to id for a tag
-    /// search.
+    /// Classic namebases; only call after checking generation is Classic.
+    /// For a safe v2-aware alternative, use `entity_source`.
     pub fn entities(&self) -> &Entities {
         match &self.backend {
             Backend::Classic(c) => &c.entities,
