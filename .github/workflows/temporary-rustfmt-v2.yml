@@ -1,0 +1,32 @@
+name: Temporary auto-rustfmt for native 2CBH hardening
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/temporary-rustfmt-v2.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Apply standard workspace formatting
+        run: cargo fmt --all
+      - name: Commit only rustfmt output
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet; then
+            git add -u -- '*.rs'
+            git commit -m "[native-2cbh-release-hardening] Format all Rust changes"
+            git push origin HEAD:main
+          fi
