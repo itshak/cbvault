@@ -83,6 +83,12 @@ jobs:
       - name: Cargo test (all features)
         run: cargo test --all-features
 
+      # Cargo's default test selection does not execute #[test] functions in
+      # example binaries; the strict local gold oracle has adversarial
+      # generated parser and SHA-256 tests that must execute on every OS.
+      - name: Cargo test (examples, all features)
+        run: cargo test --workspace --examples --all-features
+
       - name: Cargo fmt
         run: cargo fmt --all --check
 
