@@ -282,6 +282,225 @@ fn for_each_record(
 /// the replay, export and list paths all read at.
 pub const DEFAULT_BATCH: u32 = 8192;
 
+// V2 keeps its own bounded per-worker arenas. Classic chunks store 46-byte
+// headers; applying those offsets to 192-byte 2CBH headers would corrupt data.
+#[derive(Default)]
+struct V2Chunk {
+    first: u32,
+    entries: Vec<V2Entry>,
+    text: String,
+    moves: Vec<u16>,
+    keys: Vec<u64>,
+    buf: GameBuf,
+}
+
+struct V2Row {
+    header: cbvault_format::twocbh::GameHeader,
+    names: [(usize, usize); 7],
+    moves: (usize, usize),
+    keys: (usize, usize),
+    annotated: bool,
+}
+
+enum V2Entry {
+    Skipped,
+    Failed(Error),
+    Game(V2Row),
+}
+
+fn v2_push_text(text: &mut String, value: &str) -> (usize, usize) {
+    let at = text.len();
+    text.push_str(value);
+    (at, value.len())
+}
+
+fn v2_span<T>(source: &[T], (at, len): (usize, usize)) -> &[T] {
+    &source[at..at + len]
+}
+
+fn v2_span_text(source: &str, (at, len): (usize, usize)) -> &str {
+    &source[at..at + len]
+}
+
+impl V2Chunk {
+    fn decode(&mut self, db: &Database, first: u32, last: u32, want_keys: bool) {
+        self.first = first;
+        self.entries.clear();
+        self.text.clear();
+        self.moves.clear();
+        self.keys.clear();
+        self.buf.set_wants(want_keys, false);
+        for id in first..=last {
+            let header = match db.header_ref(id) {
+                Ok(header) => header,
+                Err(e) => {
+                    self.entries.push(V2Entry::Failed(e));
+                    continue;
+                }
+            };
+            if !matches!(header.kind(), RecordKind::Game) || header.is_deleted() {
+                self.entries.push(V2Entry::Skipped);
+                continue;
+            }
+            let game = match db.game_with(id, &mut self.buf, false) {
+                Ok(game) => game,
+                Err(e) => {
+                    self.entries.push(V2Entry::Failed(e));
+                    continue;
+                }
+            };
+            let native_header = match game.header.as_twocbh().copied() {
+                Some(header) => header,
+                None => {
+                    self.entries.push(V2Entry::Failed(Error::corrupt(db.base(), u64::from(id), "not a v2 game header")));
+                    continue;
+                }
+            };
+            let names = [
+                game.white,
+                game.black,
+                game.event,
+                game.site,
+                game.annotator,
+                game.source,
+                game.start_fen.unwrap_or(""),
+            ]
+            .map(|value| v2_push_text(&mut self.text, value));
+            let moves = (self.moves.len(), game.moves.len());
+            self.moves.extend_from_slice(game.moves);
+            let keys = (self.keys.len(), game.keys.len());
+            self.keys.extend_from_slice(game.keys);
+            self.entries.push(V2Entry::Game(V2Row {
+                header: native_header,
+                names,
+                moves,
+                keys,
+                annotated: native_header.annotations_offset() != 0,
+            }));
+        }
+    }
+}
+
+fn v2_deliver(
+    db: &Database,
+    sink: &mut impl GameSink,
+    chunk: &V2Chunk,
+    scratch: &mut Vec<u8>,
+    want_annotations: bool,
+    stats: &mut ConvertStats,
+) {
+    for (index, entry) in chunk.entries.iter().enumerate() {
+        let id = chunk.first + index as u32;
+        stats.records += 1;
+        match entry {
+            V2Entry::Skipped => {
+                stats.skipped += 1;
+            }
+            V2Entry::Failed(e) => {
+                sink.failed(id, e);
+                stats.failures += 1;
+            }
+            V2Entry::Game(row) => {
+                let native = if row.annotated && want_annotations {
+                    // A no-mmap SegmentRecord may own its read bytes; borrow
+                    // from our reusable scratch until the synchronous callback.
+                    let result = (|| -> Result<cbvault_format::twocbh::Annotations<'_>> {
+                        let seg = db.annotations_segment()?.ok_or_else(|| {
+                            Error::corrupt(&db.members().annotations, row.header.annotations_offset(), "referenced 2CBA missing")
+                        })?;
+                        let frame = seg.record_at(row.header.annotations_offset())?;
+                        scratch.clear();
+                        scratch.extend_from_slice(frame.bytes());
+                        let anns = cbvault_format::twocbh::Annotations::parse(&db.members().annotations, scratch)?;
+                        for item in anns.iter_items() {
+                            item?;
+                        }
+                        Ok(anns)
+                    })();
+                    match result {
+                        Ok(anns) => Some(anns),
+                        Err(e) => {
+                            sink.failed(id, &e);
+                            stats.failures += 1;
+                            continue;
+                        }
+                    }
+                } else {
+                    None
+                };
+                let t = &chunk.text;
+                let names = walk::Names {
+                    white: v2_span_text(t, row.names[0]),
+                    black: v2_span_text(t, row.names[1]),
+                    event: v2_span_text(t, row.names[2]),
+                    site: v2_span_text(t, row.names[3]),
+                    annotator: v2_span_text(t, row.names[4]),
+                    source: v2_span_text(t, row.names[5]),
+                };
+                let fen = v2_span_text(t, row.names[6]);
+                let mut game = game_ref(
+                    id,
+                    GameHeaderRef::TwoCbh(row.header),
+                    names,
+                    (!fen.is_empty()).then_some(fen),
+                    v2_span(&chunk.moves, row.moves),
+                    v2_span(&chunk.keys, row.keys),
+                    None,
+                );
+                game.twocbh_annotations = native;
+                sink.game(game);
+                stats.games += 1;
+                stats.plies += row.moves.1 as u64;
+                stats.keys += row.keys.1 as u64;
+            }
+        }
+    }
+}
+
+/// True multiworker, bounded, deterministic 2CBH conversion. Workers decode
+/// the chess line into recycled arenas; only the calling thread invokes sink.
+fn convert_parallel_v2(db: &Database, sink: &mut impl GameSink, threads: usize, batch: u32) -> Result<ConvertStats> {
+    if threads <= 1 {
+        return for_each_game(db, sink);
+    }
+    use rayon::prelude::*;
+
+    let batch = if batch == 0 { DEFAULT_BATCH } else { batch };
+    let ranges = chunks(db.records(), batch);
+    let mut stats = ConvertStats { complete: true, ..ConvertStats::default() };
+    if ranges.is_empty() {
+        return Ok(stats);
+    }
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .build()
+        .map_err(|e| Error::corrupt(db.base(), 0, format!("thread pool creation failed: {e}")))?;
+    let free = std::sync::Mutex::new(Vec::<V2Chunk>::new());
+    let want_keys = sink.wants_keys();
+    let want_annotations = sink.wants_annotations();
+    let mut annotation_scratch = Vec::new();
+    let wave_size = threads.saturating_mul(2).max(2);
+
+    for wave in ranges.chunks(wave_size) {
+        if sink.cancelled() {
+            stats.complete = false;
+            break;
+        }
+        let chunks: Vec<V2Chunk> = pool.install(|| {
+            wave.par_iter().map(|&(first, last)| {
+                let mut chunk = free.lock().unwrap().pop().unwrap_or_default();
+                chunk.decode(db, first, last, want_keys);
+                chunk
+            }).collect()
+        });
+        for chunk in chunks {
+            v2_deliver(db, sink, &chunk, &mut annotation_scratch, want_annotations, &mut stats);
+            free.lock().unwrap().push(chunk);
+        }
+    }
+    Ok(stats)
+}
+
 /// The marker in [`Row::err`] for a record that was not reported as failed.
 const NO_ERROR: u32 = u32::MAX;
 
@@ -513,7 +732,10 @@ fn error_clone(error: &Error) -> Error {
 /// overlap, and the sequential path is the one whose order everything else is
 /// compared against.
 pub fn convert_parallel(db: &Database, sink: &mut impl GameSink, threads: usize, batch: u32) -> Result<ConvertStats> {
-    if threads <= 1 || db.generation() == Generation::TwoCbh {
+    if db.generation() == Generation::TwoCbh {
+        return convert_parallel_v2(db, sink, threads, batch);
+    }
+    if threads <= 1 {
         return for_each_game(db, sink);
     }
     let batch = if batch == 0 { DEFAULT_BATCH } else { batch };
