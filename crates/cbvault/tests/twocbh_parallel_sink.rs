@@ -30,11 +30,11 @@ impl GameSink for Collector {
     }
     fn game(&mut self, game: GameRef<'_>) {
         assert_eq!(game.keys.len(), game.moves.len() + 1);
-        let annotations = game.twocbh_annotations.as_ref().map(|a| {
+        let annotations = game.twocbh_annotations.as_ref().and_then(|a| {
             a.iter_items()
                 .collect::<Result<Vec<_>, _>>()
                 .expect("all requested annotations must parse without silent termination");
-            a.content().to_vec()
+            (!a.is_empty()).then(|| a.content().to_vec())
         });
         self.games.push(Seen { id: game.id, moves: game.moves.to_vec(), keys: game.keys.to_vec(), annotations });
     }
@@ -77,12 +77,7 @@ fn multiworker_v2_conversion_matches_sequential_annotated_and_keyed_stream() {
     assert_eq!(a.games, 10);
     assert_eq!(a.failures, 2);
     assert_eq!(serial.failed, vec![6, 9]);
-    let populated = serial
-        .games
-        .iter()
-        .filter(|g| g.annotations.as_ref().is_some_and(|bytes| !bytes.is_empty()))
-        .count();
-    assert_eq!(populated, 2);
+    assert_eq!(serial.games.iter().filter(|g| g.annotations.is_some()).count(), 2);
 
     for threads in [2, 4] {
         let mut parallel = Collector::default();
