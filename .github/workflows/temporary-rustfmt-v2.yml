@@ -30,4 +30,4 @@ jobs:
             git commit -m "[native-2cbh-release-hardening] Format all Rust changes"
             git push origin HEAD:main
           fi
-# Trigger final formatting pass after strict golden comment-preservation tests.
+# Trigger final formatting pass after parallel annotation parity regressions.
