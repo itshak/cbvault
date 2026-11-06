@@ -724,6 +724,20 @@ mod tests {
     }
 
     #[test]
+    fn strict_result_fake_null_and_illegal_san_mutations_fail() {
+        let base = parse_game("[Event \"E\"]\n\n1. e4 *\n".into()).unwrap();
+        let changed_result = parse_game("[Event \"E\"]\n\n1. e4 1-0\n".into()).unwrap();
+        assert!(!compare_game(&base, &changed_result).unwrap().equal);
+
+        let null_gold = parse_game("[Event \"E\"]\n\n1. e4 Z0 *\n".into()).unwrap();
+        let invented_null = parse_game("[Event \"E\"]\n\n1. e4 e5 *\n".into()).unwrap();
+        assert!(!compare_game(&null_gold, &invented_null).unwrap().equal);
+
+        let illegal = parse_game("[Event \"E\"]\n\n1. Nf5 *\n".into()).unwrap();
+        assert!(compare_game(&illegal, &illegal).is_err());
+    }
+
+    #[test]
     fn strict_null_exception_requires_an_actual_played_null_move() {
         let gold = parse_game("[Event \"E\"]\n\n1.e4 Z0 *\n".into()).unwrap();
         let ours = parse_game("[Event \"E\"]\n\n1. e4 -- *\n".into()).unwrap();
