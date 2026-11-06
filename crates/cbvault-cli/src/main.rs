@@ -86,9 +86,16 @@ fn run_info(mut args: impl Iterator<Item = String>) -> Result<bool, Box<dyn std:
     }
 
     let db_path = db_path.ok_or(USAGE)?;
+    let generation = cbvault::bridge::generation_of(Path::new(&db_path));
     let base = cbvault::stem_of(Path::new(&db_path));
+    if generation == cbvault::bridge::Generation::Unknown
+        && cbvault_format::twocbh::sibling(&base, ".cbh").exists()
+        && cbvault_format::twocbh::sibling(&base, ".2cbh").exists()
+    {
+        return Err("both classic and 2CBH exist: pass an explicit .cbh or .2cbh path".into());
+    }
 
-    if cbvault_format::twocbh::sibling(&base, ".2cbh").exists() {
+    if generation == cbvault::bridge::Generation::TwoCbh {
         let headers = cbvault_format::twocbh::Headers::open(&base)?;
         let total = headers.records();
         let lid_path = cbvault_format::twocbh::sibling(&base, ".2lid");
@@ -168,10 +175,10 @@ fn run_verify(mut args: impl Iterator<Item = String>) -> Result<bool, Box<dyn st
 
     apply_mem_flags(no_mmap, no_wide);
     let db_path = db_path.ok_or(USAGE)?;
-    let base = cbvault::stem_of(Path::new(&db_path));
+    let base = Path::new(&db_path);
 
     let t0 = Instant::now();
-    let (stats, failures) = verify_parallel(&base, threads, batch_size, failure_limit)?;
+    let (stats, failures) = verify_parallel(base, threads, batch_size, failure_limit)?;
     let secs = t0.elapsed().as_secs_f64();
 
     let total = stats.games + stats.texts + stats.unknowns;
@@ -523,7 +530,7 @@ fn run_pgn(mut args: impl Iterator<Item = String>) -> Result<bool, Box<dyn std::
 
     apply_mem_flags(no_mmap, no_wide);
     let db_path = db_path.ok_or(USAGE)?;
-    let base = cbvault::stem_of(Path::new(&db_path));
+    let base = Path::new(&db_path);
     if last != 0 && last < first {
         return Err("--to must not be below --from".into());
     }
@@ -534,7 +541,7 @@ fn run_pgn(mut args: impl Iterator<Item = String>) -> Result<bool, Box<dyn std::
             let file = std::fs::File::create(path)?;
             let mut w = std::io::BufWriter::with_capacity(1 << 20, file);
             let s = cbvault::pgn::parallel::export_span_report(
-                &base,
+                base,
                 &mut w,
                 threads,
                 batch_size,
@@ -549,7 +556,7 @@ fn run_pgn(mut args: impl Iterator<Item = String>) -> Result<bool, Box<dyn std::
             let stdout = std::io::stdout();
             let mut w = std::io::BufWriter::with_capacity(1 << 20, stdout.lock());
             let s = cbvault::pgn::parallel::export_span_report(
-                &base,
+                base,
                 &mut w,
                 threads,
                 batch_size,

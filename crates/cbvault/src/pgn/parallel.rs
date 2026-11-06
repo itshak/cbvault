@@ -122,7 +122,22 @@ pub fn export_span_report(
     first: u32,
     last: u32,
 ) -> Result<(ExportStats, Vec<String>)> {
-    if cbvault_format::twocbh::sibling(base, ".2cbh").exists() {
+    // Keep the original explicit member extension while choosing a generation.
+    // A bare stem shared by classic and v2 is ambiguous, not implicitly v2.
+    let generation = crate::bridge::generation_of(base);
+    let stem = crate::bridge::stem_of(base);
+    let base = stem.as_path();
+    if generation == crate::bridge::Generation::Unknown
+        && cbvault_format::twocbh::sibling(base, ".cbh").exists()
+        && cbvault_format::twocbh::sibling(base, ".2cbh").exists()
+    {
+        return Err(cbvault_format::error::Error::corrupt(
+            base,
+            0,
+            "both classic and 2CBH exist: pass an explicit .cbh or .2cbh path",
+        ));
+    }
+    if generation == crate::bridge::Generation::TwoCbh {
         return export_span_report_v2(base, out, threads, batch_size, failure_limit, first, last);
     }
     let headers = Headers::open(base)?;

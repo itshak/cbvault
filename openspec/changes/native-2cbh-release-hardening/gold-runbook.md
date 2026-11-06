@@ -21,6 +21,33 @@ cargo run -p cbvault --release --example strict_gold_2cbh
 
 The default denominator is exactly **3,410,497**; a partial export must fail. An explicit variable may be used for generated fixtures or legitimately different local corpus sizes, but every production acceptance report must keep the 3,410,497 Mega denominator. Raw SHA-256 equality and canonical token-byte equality are independently reported; raw differences are not silently normalized.
 
+## Additional serial/parallel/no-mmap byte replay (PRIVATE local machine)
+
+The strict comparator above does not accept a worker-count flag. Independently
+verify that the public CLI emits exactly the same full PGN bytes with 1, 2 and 4
+workers and with memory mapping disabled. The explicit `.2cbh` extension is
+intentional: it prevents a same-stem legacy `.cbh` from changing the selected
+generation. Choose an untracked **private** output directory; these commands
+must never run on GitHub Actions or commit/upload PGN.
+
+```sh
+export PRIVATE_OUT="/private/local/gold-check-output"
+mkdir -p "$PRIVATE_OUT"
+cargo run --release -p cbvault-cli -- pgn "$CBVAULT_TEST_DB_2CBH.2cbh" "$PRIVATE_OUT/v2-1.pgn" --threads 1 --json
+cargo run --release -p cbvault-cli -- pgn "$CBVAULT_TEST_DB_2CBH.2cbh" "$PRIVATE_OUT/v2-2.pgn" --threads 2 --json
+cargo run --release -p cbvault-cli -- pgn "$CBVAULT_TEST_DB_2CBH.2cbh" "$PRIVATE_OUT/v2-4.pgn" --threads 4 --json
+cargo run --release -p cbvault-cli -- pgn "$CBVAULT_TEST_DB_2CBH.2cbh" "$PRIVATE_OUT/v2-no-mmap.pgn" --threads 2 --no-mmap --json
+cmp "$PRIVATE_OUT/v2-1.pgn" "$PRIVATE_OUT/v2-2.pgn"
+cmp "$PRIVATE_OUT/v2-1.pgn" "$PRIVATE_OUT/v2-4.pgn"
+cmp "$PRIVATE_OUT/v2-1.pgn" "$PRIVATE_OUT/v2-no-mmap.pgn"
+shasum -a 256 "$PRIVATE_OUT"/v2-*.pgn
+```
+
+A nonzero CLI exit, nonzero comparison or unexpected error counter blocks release.
+The CLI's PGN stream is separate from the strict comparator's ChessBase
+canonical comparison; passing these `cmp` commands alone is never proof of
+ChessBase gold parity.
+
 ## 2. Run exact strict comparison
 Set CBVAULT_TEST_DB_2CBH and CBVAULT_2CBH_GOLD_PGN to local paths and follow the **new strict executable's documented CLI**, not the old non-failing gold_pgn diagnostic. Run all eligible source slots, mapping IDs to PGN and asserting full 3,410,497 matching games, no unknown valid annotation, no missing/extra/reordered/duplicate games, no malformed Unicode, no untallied record errors and full EOF. Keep two distinct verdicts: raw PGN byte length/SHA-256/first differing offset, and strict byte equality after only approved, proof-backed transforms. Verify each SAN over-disambiguation at the actual legal board using gigachess; verify each null token at its actual position. All other deviations, including Unicode/diagram/GUI clock/encoding, must be *contextually* transformed with per-byte occurrence accounting and exact test.
 

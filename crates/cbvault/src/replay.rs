@@ -115,7 +115,22 @@ pub fn verify_parallel(
     batch_size: u32,
     failure_limit: usize,
 ) -> cbvault_format::error::Result<(ReplayStats, Vec<String>)> {
-    if cbvault_format::twocbh::sibling(base, ".2cbh").exists() {
+    // Explicit .cbh/.2cbh choices must survive into the verifier, even if
+    // the same stem has both generations of source files.
+    let generation = crate::bridge::generation_of(base);
+    let stem = crate::bridge::stem_of(base);
+    let base = stem.as_path();
+    if generation == crate::bridge::Generation::Unknown
+        && cbvault_format::twocbh::sibling(base, ".cbh").exists()
+        && cbvault_format::twocbh::sibling(base, ".2cbh").exists()
+    {
+        return Err(cbvault_format::error::Error::corrupt(
+            base,
+            0,
+            "both classic and 2CBH exist: pass an explicit .cbh or .2cbh path",
+        ));
+    }
+    if generation == crate::bridge::Generation::TwoCbh {
         return verify_parallel_v2(base, threads, batch_size, failure_limit);
     }
     let headers = Headers::open(base)?;

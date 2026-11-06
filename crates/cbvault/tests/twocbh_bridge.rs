@@ -27,6 +27,44 @@ impl GameSink for Collector {
 }
 
 #[test]
+fn explicit_generation_survives_parallel_export_and_verify_with_both_stems() {
+    let temp = TempDb::create("v2_explicit_parallel_generation_selection");
+    let mut builder = Builder::new();
+    let mut board = Board::startpos();
+    let offset = builder.moves(1, &words(&mut board, "e2e4 e7e5"));
+    builder.game(offset);
+    builder.write_to(&temp);
+
+    // An incomplete classic sibling is enough to expose accidental
+    // extension stripping: explicit v2 must still work, and bare is ambiguous.
+    let classic = temp.base().with_extension("cbh");
+    std::fs::write(&classic, b"classic sibling").unwrap();
+    let v2 = temp.base().with_extension("2cbh");
+
+    let mut output = Vec::new();
+    let (exported, failures) =
+        cbvault::pgn::parallel::export_span_report(&v2, &mut output, 1, 2, 10, 1, 0).unwrap();
+    assert_eq!(exported.games, 1);
+    assert_eq!(exported.failures, 0);
+    assert!(failures.is_empty());
+    assert!(String::from_utf8(output).unwrap().contains("1. e4 e5"));
+
+    let (verified, failures) = cbvault::replay::verify_parallel(&v2, 1, 2, 10).unwrap();
+    assert_eq!(verified.games, 1);
+    assert_eq!(verified.failures, 0);
+    assert!(failures.is_empty());
+
+    assert!(cbvault::replay::verify_parallel(temp.base(), 1, 2, 10).is_err());
+    assert!(
+        cbvault::pgn::parallel::export_span_report(temp.base(), &mut Vec::new(), 1, 2, 10, 1, 0).is_err()
+    );
+    assert!(cbvault::replay::verify_parallel(&classic, 1, 2, 10).is_err());
+    assert!(
+        cbvault::pgn::parallel::export_span_report(&classic, &mut Vec::new(), 1, 2, 10, 1, 0).is_err()
+    );
+}
+
+#[test]
 fn test_2cbh_bridge_read_and_pgn() {
     let temp = TempDb::create("twocbh_bridge_test");
     let mut builder = Builder::new();
