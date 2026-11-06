@@ -382,3 +382,35 @@ fn twocbh_position_search_replays_v2_words_not_classic_cbg_framing() {
     assert!(!stats.complete);
     assert!(cancelled_hits.is_empty());
 }
+
+#[test]
+fn twocbh_tag_scan_and_owned_names_use_v2_headers_and_lid() {
+    use cbvault::bridge::{Filter, scan};
+    use cbvault_format::game::GameResult;
+
+    let temp = TempDb::create("v2_tag_scan");
+    let mut builder = Builder::new();
+    let white = builder.player("Carlsen", "Magnus");
+    let black = builder.player("Nakamura", "Hikaru");
+    let event = builder.tournament("World Blitz", "Samarkand", 20231230);
+    let mut b = Board::startpos();
+    let encoded = words(&mut b, "d2d4 d7d5");
+    let offset = builder.moves(1, &encoded);
+    let g = builder.game(offset);
+    set_entities(g, white, black, event);
+    set_elos(g, 2800, 2700);
+    builder.write_to(&temp);
+
+    let db = Database::open(temp.base()).unwrap();
+    let named = scan(&db, &Filter::player(u32::try_from(white).unwrap()), 2).unwrap();
+    assert_eq!(named.ids(), vec![1]);
+    assert_eq!(named.matches()[0].header.white(), white);
+    assert_eq!(named.matches()[0].white.last(), b"Carlsen");
+    let mut name = String::new();
+    named.matches()[0].white.push_text(&mut name);
+    assert_eq!(name, "Carlsen, Magnus");
+
+    assert_eq!(scan(&db, &Filter::WhiteEloAtLeast(2799), 1).unwrap().ids(), vec![1]);
+    assert_eq!(scan(&db, &Filter::BlackEloAtLeast(2799), 1).unwrap().len(), 0);
+    assert_eq!(scan(&db, &Filter::Result(GameResult::WhiteWins), 1).unwrap().ids(), vec![1]);
+}
