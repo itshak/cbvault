@@ -82,3 +82,40 @@ fn multiworker_v2_conversion_matches_sequential_annotated_and_keyed_stream() {
         assert!(b.complete);
     }
 }
+
+#[derive(Default)]
+struct StopAfterFirst {
+    seen: Vec<u32>,
+}
+
+impl GameSink for StopAfterFirst {
+    fn game(&mut self, game: GameRef<'_>) {
+        self.seen.push(game.id);
+    }
+
+    fn cancelled(&self) -> bool {
+        !self.seen.is_empty()
+    }
+}
+
+#[test]
+fn multiworker_v2_cancel_is_an_ordered_prefix_not_an_entire_prefetched_wave() {
+    let temp = TempDb::create("v2_parallel_cancel_prefix");
+    let mut builder = Builder::new();
+    for _ in 0..8 {
+        let mut board = Board::startpos();
+        let at = builder.moves(1, &words(&mut board, "e2e4 e7e5"));
+        builder.game(at);
+    }
+    builder.write_to(&temp);
+    let db = Database::open(temp.base()).unwrap();
+
+    for threads in [2, 4] {
+        let mut sink = StopAfterFirst::default();
+        let stats = convert_parallel(&db, &mut sink, threads, 2).unwrap();
+        assert!(!stats.complete, "cancelled 2CBH conversion cannot be reported complete");
+        assert_eq!(sink.seen, vec![1, 2], "only the first chunk may have been delivered");
+        assert_eq!(stats.games, 2);
+        assert_eq!(stats.records, 2);
+    }
+}
