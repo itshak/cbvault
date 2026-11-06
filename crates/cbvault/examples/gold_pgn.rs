@@ -73,11 +73,11 @@ fn main() {
     } else {
         std::env::var("CBVAULT_TEST_DB_2CBH").is_ok()
             || std::env::var("CBVAULT_2CBH_GOLD_PGN").is_ok()
-            || Path::new("/Users/ais/Documents/ChessBase/Bases/Mega2026/Mega Database 2026.2cbh").exists()
+
     };
     let (base, gold_path) = if use_2cbh {
         let db = std::env::var("CBVAULT_TEST_DB_2CBH")
-            .unwrap_or_else(|_| "/Users/ais/Documents/ChessBase/Bases/Mega2026/Mega Database 2026.2cbh".to_string());
+            .expect("set CBVAULT_TEST_DB_2CBH to a private local 2CBH database path");
         let gold = std::env::var("CBVAULT_2CBH_GOLD_PGN").unwrap_or_else(|_| {
             Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../fixtures-local/mega-db/mega26_2cbh_export.pgn")
