@@ -455,21 +455,36 @@ impl GameBuf {
         db: &'a Database,
         want_annotations: bool,
     ) -> Result<GameRef<'a>> {
-        let annotations = if want_annotations && header.annotations_offset() != 0 {
+        let (annotations, twocbh_annotations) = if want_annotations && header.annotations_offset() != 0 {
             match &header {
-                GameHeaderRef::Classic(h) => Some(db.annotations()?.of_ref(h, db.wide(), &mut self.annotation)?),
+                GameHeaderRef::Classic(h) => {
+                    (Some(db.annotations()?.of_ref(h, db.wide(), &mut self.annotation)?), None)
+                }
                 GameHeaderRef::ClassicOwned(h) => {
                     let h_ref = cbvault_format::cbh::GameHeaderRef::from_bytes(h.id(), h.bytes().try_into().unwrap());
-                    Some(db.annotations()?.of_ref(&h_ref, db.wide(), &mut self.annotation)?)
+                    (Some(db.annotations()?.of_ref(&h_ref, db.wide(), &mut self.annotation)?), None)
                 }
-                GameHeaderRef::TwoCbh(_) => None,
+                GameHeaderRef::TwoCbh(_) => {
+                    let segment = db.annotations_segment()?.ok_or_else(|| {
+                        Error::corrupt(&db.members().annotations, header.annotations_offset(), "referenced 2CBA file is missing")
+                    })?;
+                    let frame = segment.record_at(header.annotations_offset())?;
+                    // Keep the no-mmap frame alive in reusable per-game scratch.
+                    self.annotation.clear();
+                    self.annotation.extend_from_slice(frame.bytes());
+                    let native = cbvault_format::twocbh::Annotations::parse(&db.members().annotations, &self.annotation)?;
+                    for item in native.iter_items() {
+                        item?;
+                    }
+                    (None, Some(native))
+                }
             }
         } else {
-            None
+            (None, None)
         };
         let GameBuf { white, black, event, site, annotator, source, fen, line, .. } = self;
         let start_fen = (!fen.is_empty()).then_some(fen.as_str());
-        Ok(game_ref(
+        let mut game = game_ref(
             id,
             header,
             Names { white, black, event, site, annotator, source },
@@ -477,7 +492,9 @@ impl GameBuf {
             &line.moves,
             &line.keys,
             annotations,
-        ))
+        );
+        game.twocbh_annotations = twocbh_annotations;
+        Ok(game)
     }
 
     /// The sink's view of the last 2CBH game walked.
@@ -520,6 +537,7 @@ pub fn game_ref<'a>(
         moves,
         keys,
         annotations,
+        twocbh_annotations: None,
     }
 }
 
