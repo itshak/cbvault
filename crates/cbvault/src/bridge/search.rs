@@ -740,6 +740,9 @@ pub fn for_each_position_key_range(
     threads: usize,
     on_hit: &mut (impl FnMut(Hit) + Send),
 ) -> Result<PositionSearch> {
+    if db.generation() == super::Generation::TwoCbh {
+        return for_each_position_key_range_v2(db, ranges, query, threads, on_hit);
+    }
     let want = query.key;
     let is_cancelled = || query.cancelled.is_some_and(|cancel| cancel());
     let moves = db.moves()?;
@@ -813,6 +816,110 @@ pub fn for_each_position_key_range(
         pool.install(|| ranges.par_iter().map(replay_chunk).collect::<Result<Vec<_>>>())?
     };
 
+    let mut total = PositionSearch { complete: true, ..PositionSearch::default() };
+    for replay in replays {
+        total.games += replay.stats.games;
+        total.plies += replay.stats.plies;
+        total.failures += replay.stats.failures;
+        for hit in replay.hits {
+            on_hit(hit);
+            total.hits += 1;
+        }
+        if replay.cancelled || is_cancelled() {
+            total.complete = false;
+        }
+    }
+    Ok(total)
+}
+
+
+/// The v2 version of the unindexed position replay. It must never parse a
+/// 2CBG frame using the classic 4-byte CBG header, or enumerate 46-byte CBH
+/// records where v2 has 192-byte records.
+fn for_each_position_key_range_v2(
+    db: &Database,
+    ranges: &[(u32, u32)],
+    query: &PositionQuery<'_>,
+    threads: usize,
+    on_hit: &mut (impl FnMut(Hit) + Send),
+) -> Result<PositionSearch> {
+    let want = query.key;
+    let is_cancelled = || query.cancelled.is_some_and(|cancel| cancel());
+    let moves = db.moves_segment()?;
+    let replay_chunk = |&(first, last): &(u32, u32)| -> Result<Replay> {
+        let mut out = Replay::default();
+        let mut buf = GameBuf::with_capacity(super::walk::DEFAULT_PLY_ROOM);
+        buf.set_wants(true, false);
+        if is_cancelled() {
+            out.cancelled = true;
+            return Ok(out);
+        }
+        let mut since_poll = 0u32;
+        for id in first..=last {
+            since_poll += 1;
+            if since_poll >= CANCEL_POLL_GAMES {
+                since_poll = 0;
+                if is_cancelled() {
+                    out.cancelled = true;
+                    break;
+                }
+            }
+            let header = match db.header_ref(id) {
+                Ok(h) => h,
+                Err(_) => {
+                    out.stats.failures += 1;
+                    continue;
+                }
+            };
+            if !matches!(header.kind(), RecordKind::Game | RecordKind::Analysis) || header.is_deleted() {
+                continue;
+            }
+            let at = header.moves_offset();
+            let seg_rec = match moves.record_at(at) {
+                Ok(r) => r,
+                Err(_) => {
+                    out.stats.failures += 1;
+                    continue;
+                }
+            };
+            let game = match cbvault_format::twocbh::moves::GameMoves::from_record(moves.path(), seg_rec.record()) {
+                Ok(g) => g,
+                Err(_) => {
+                    out.stats.failures += 1;
+                    continue;
+                }
+            };
+            let keep_going = match buf.walk_v2_with(id, at, &game, query.early_stop) {
+                Ok(cont) => cont,
+                Err(_) => {
+                    out.stats.failures += 1;
+                    continue;
+                }
+            };
+            out.stats.games += 1;
+            out.stats.plies += buf.moves().len() as u64;
+            for (ply, key) in buf.keys().iter().enumerate() {
+                if *key == want {
+                    out.hits.push(Hit { game: id, ply: ply as u32, key: *key });
+                }
+            }
+            if !keep_going {
+                out.cancelled = true;
+                break;
+            }
+        }
+        Ok(out)
+    };
+
+    let replays: Vec<Replay> = if threads <= 1 || ranges.len() <= 1 {
+        ranges.iter().map(&replay_chunk).collect::<Result<_>>()?
+    } else {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .map_err(|e| Error::corrupt(db.base(), 0, format!("thread pool creation failed: {e}")))?;
+        pool.install(|| ranges.par_iter().map(replay_chunk).collect::<Result<Vec<_>>>())?
+    };
     let mut total = PositionSearch { complete: true, ..PositionSearch::default() };
     for replay in replays {
         total.games += replay.stats.games;
