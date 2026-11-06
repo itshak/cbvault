@@ -116,6 +116,16 @@ fn run() -> Result<(), String> {
     if gold.next_game()?.is_some() {
         return Err("ChessBase gold contains extra games after the last eligible source record".into());
     }
+    let expected = std::env::var("CBVAULT_STRICT_GOLD_EXPECTED_GAMES")
+        .map_err(|e| if e == std::env::VarError::NotPresent { String::new() } else { e.to_string() })
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(3_410_497);
+    if count != expected {
+        return Err(format!(
+            "complete-corpus gate: compared {count} games, expected {expected}; never pass a partial Mega export"
+        ));
+    }
     for (p, before_len, before_sha) in snapshots {
         let (after_len, after_sha) = file_digest(&p)?;
         if (before_len, before_sha) != (after_len, after_sha) {
