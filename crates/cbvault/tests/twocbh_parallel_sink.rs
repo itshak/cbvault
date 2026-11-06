@@ -60,11 +60,8 @@ fn multiworker_v2_conversion_matches_sequential_annotated_and_keyed_stream() {
         if id % 3 == 0 {
             // Include an unknown native annotation kind as an independent
             // failure, not merely an invalid move-record checksum.
-            let item = if id == 9 {
-                0x77u16.to_le_bytes().to_vec()
-            } else {
-                text_annotation(false, 1, "Synthetic note")
-            };
+            let item =
+                if id == 9 { 0x77u16.to_le_bytes().to_vec() } else { text_annotation(false, 1, "Synthetic note") };
             let data = annotations(&[(0, vec![item])]);
             let ann_at = b.annotations(&data);
             b.annotated_game(at, ann_at);
