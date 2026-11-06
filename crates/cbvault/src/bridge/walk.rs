@@ -23,7 +23,7 @@ use cbvault_chess::start::{Start, StartCache, start_board_cached};
 use cbvault_format::cbh::bytes::NameBuf;
 use cbvault_format::cbh::moves::GameMoves;
 use cbvault_format::cbh::{Entity, GameAnnotations};
-use cbvault_format::error::Result;
+use cbvault_format::error::{Error, Result};
 use gigachess::Board;
 
 use super::sink::{GameHeaderRef, GameRef};
