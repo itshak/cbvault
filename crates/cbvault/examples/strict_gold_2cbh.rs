@@ -404,21 +404,70 @@ struct Compared {
     bytes: u64,
 }
 
+/// One deterministic, fully specified PGN serialization of the complete
+/// parsed game. Only nonsemantic presentation is changed: tag order is
+/// sorted, whitespace between tokens is one ASCII space, move numbers are
+/// omitted, and semicolon/braced comments use the same braced syntax.
+/// Literal comment text, tag values, Unicode, NAGs, RAV and result bytes
+/// are copied exactly. Never call this the raw ChessBase PGN byte stream.
+fn canonical_pgn(tags: &[(String, String)], tokens: &[Token]) -> String {
+    let mut tags = tags.to_vec();
+    tags.sort();
+    let mut out = String::new();
+    for (name, value) in tags {
+        out.push('[');
+        out.push_str(&name);
+        out.push_str(" \"");
+        for ch in value.chars() {
+            if ch == '"' || ch == '\\' {
+                out.push('\\');
+            }
+            out.push(ch);
+        }
+        out.push_str("\"]\n");
+    }
+    out.push('\n');
+    for item in tokens {
+        match item {
+            Token::Word(word) | Token::Nag(word) => out.push_str(word),
+            Token::Comment(comment) => {
+                out.push('{');
+                out.push_str(comment);
+                out.push('}');
+            }
+            Token::Open => out.push('('),
+            Token::Close => out.push(')'),
+        }
+        out.push(' ');
+    }
+    out.push('\n');
+    out
+}
+
+/// Perform actual byte comparison of the canonical PGN, not an estimate
+/// based on Debug formatting or a token similarity percentage.
+fn compared_bytes(gold: &Game, normalized_gold: &[Token], ours: &Game, san: u64, nulls: u64) -> Compared {
+    let expected = canonical_pgn(&gold.tags, normalized_gold);
+    let actual = canonical_pgn(&ours.tags, &ours.tokens);
+    Compared {
+        equal: expected.as_bytes() == actual.as_bytes(),
+        san,
+        nulls,
+        first_byte: first_byte_diff(expected.as_bytes(), actual.as_bytes()),
+        bytes: actual.len() as u64,
+    }
+}
+
 fn compare_game(gold: &Game, ours: &Game) -> Result<Compared, String> {
     let mut gold_tags = gold.tags.clone();
     let mut ours_tags = ours.tags.clone();
     gold_tags.sort();
     ours_tags.sort();
-    // Every tag remains significant. No KEEP list or ChessBase-only tag skip.
-    if gold_tags != ours_tags {
-        return Ok(Compared {
-            equal: false,
-            san: 0,
-            nulls: 0,
-            first_byte: first_byte_diff(format!("{gold_tags:?}").as_bytes(), format!("{ours_tags:?}").as_bytes()),
-            bytes: 0,
-        });
+    let mut normalized_gold = gold.tokens.clone();
+    if gold_tags != ours_tags || gold.tokens.len() != ours.tokens.len() {
+        return Ok(compared_bytes(gold, &normalized_gold, ours, 0, 0));
     }
+
     let mut start = Board::startpos();
     if let Some((_, fen)) = ours_tags.iter().find(|(k, _)| k == "FEN") {
         start = gigachess::fen::parse_fen(fen).map_err(|e| format!("invalid FEN in PGN: {e}"))?;
@@ -428,13 +477,8 @@ fn compare_game(gold: &Game, ours: &Game) -> Result<Compared, String> {
     let mut stack = Vec::new();
     let mut san = 0u64;
     let mut nulls = 0u64;
-    let mut bytes = 0u64;
-    if gold.tokens.len() != ours.tokens.len() {
-        return Ok(Compared { equal: false, san, nulls, first_byte: 0, bytes });
-    }
-    for (idx, (a, b)) in gold.tokens.iter().zip(&ours.tokens).enumerate() {
-        bytes += format!("{a:?}").len() as u64;
-        match (a, b) {
+    for (idx, (gold_item, our_item)) in gold.tokens.iter().zip(&ours.tokens).enumerate() {
+        match (gold_item, our_item) {
             (Token::Open, Token::Open) => {
                 stack.push((board, before_last));
                 board = before_last;
@@ -446,7 +490,7 @@ fn compare_game(gold: &Game, ours: &Game) -> Result<Compared, String> {
             (Token::Word(ga), Token::Word(ob)) => {
                 if matches!(ob.as_str(), "1-0" | "0-1" | "1/2-1/2" | "*") {
                     if ga != ob {
-                        return Ok(Compared { equal: false, san, nulls, first_byte: bytes as usize, bytes });
+                        return Ok(compared_bytes(gold, &normalized_gold, ours, san, nulls));
                     }
                     continue;
                 }
@@ -454,40 +498,38 @@ fn compare_game(gold: &Game, ours: &Game) -> Result<Compared, String> {
                 let is_null = ob == "--" || ga == "Z0";
                 let mv = if is_null {
                     if !null_match && ga != ob {
-                        return Ok(Compared { equal: false, san, nulls, first_byte: idx, bytes });
+                        return Ok(compared_bytes(gold, &normalized_gold, ours, san, nulls));
                     }
                     Move::NULL
                 } else {
-                    match san_to_move(&board, ob) {
-                        Some(mv) => mv,
-                        None => return Ok(Compared { equal: false, san, nulls, first_byte: idx, bytes }),
-                    }
+                    san_to_move(&board, ob).ok_or_else(|| format!("illegal or unparseable SAN at token {idx}: {ob:?}"))?
                 };
                 if ga != ob {
                     if null_match {
                         nulls += 1;
+                        normalized_gold[idx] = Token::Word(ob.clone());
                     } else if redundant_qualifier(ga, ob) && san_to_move(&board, ga) == Some(mv) {
-                        // Both spellings must resolve to the identical LEGAL
-                        // move on the actual board, so no alternative legal
-                        // candidate exists for the minimal SAN.
+                        // Both forms reconstruct the same move on this actual
+                        // gigachess board; string prefix alone is insufficient.
                         san += 1;
+                        normalized_gold[idx] = Token::Word(ob.clone());
                     } else {
-                        return Ok(Compared { equal: false, san, nulls, first_byte: idx, bytes });
+                        return Ok(compared_bytes(gold, &normalized_gold, ours, san, nulls));
                     }
                 }
                 before_last = board;
                 board.play(mv).map_err(|e| format!("illegal PGN move at token {idx}: {e}"))?;
             }
-            _ if a == b => {}
+            _ if gold_item == our_item => {}
             _ => {
-                return Ok(Compared { equal: false, san, nulls, first_byte: idx, bytes });
+                return Ok(compared_bytes(gold, &normalized_gold, ours, san, nulls));
             }
         }
     }
     if !stack.is_empty() {
         return Err("unclosed PGN variation".into());
     }
-    Ok(Compared { equal: true, san, nulls, first_byte: 0, bytes })
+    Ok(compared_bytes(gold, &normalized_gold, ours, san, nulls))
 }
 
 fn redundant_qualifier(gold: &str, ours: &str) -> bool {
