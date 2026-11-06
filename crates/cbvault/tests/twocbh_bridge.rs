@@ -408,3 +408,27 @@ fn twocbh_tag_scan_and_owned_names_use_v2_headers_and_lid() {
     assert_eq!(scan(&db, &Filter::BlackEloAtLeast(2799), 1).unwrap().len(), 0);
     assert_eq!(scan(&db, &Filter::Result(GameResult::WhiteWins), 1).unwrap().ids(), vec![1]);
 }
+
+#[test]
+fn v2_unified_header_and_entity_sources_are_safe_and_typed() {
+    use cbvault::bridge::{EntitySource, HeaderSource};
+
+    let temp = TempDb::create("v2_typed_header_entity_sources");
+    let mut builder = Builder::new();
+    let mut board = Board::startpos();
+    let at = builder.moves(1, &words(&mut board, "e2e4"));
+    builder.game(at);
+    builder.write_to(&temp);
+
+    let db = Database::open(temp.base()).unwrap();
+    assert!(db.try_classic_headers().is_err());
+    assert!(db.try_classic_entities().is_err());
+    match db.header_source() {
+        HeaderSource::TwoCbh(h) => assert_eq!(h.records(), 1),
+        HeaderSource::Classic(_) => panic!("2CBH must not be presented as classic headers"),
+    }
+    match db.entity_source() {
+        EntitySource::TwoCbh(_) => {},
+        EntitySource::Classic(_) => panic!("2CBH must not be presented as classic entities"),
+    }
+}
