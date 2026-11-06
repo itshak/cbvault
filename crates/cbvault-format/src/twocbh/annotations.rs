@@ -215,10 +215,16 @@ impl<'a> Iterator for Items<'a> {
         match parse_annotation(self.content, &mut self.offset, type_code) {
             Ok(Some(annotation)) => Some(Ok(Item { position: self.curr_pos, offset: item_offset, annotation })),
             Ok(None) => {
-                // Unknown type: stop cleanly
+                // The item boundary after an unknown kind is not known. Stopping
+                // silently would make every caller treat a truncated annotated
+                // game as fully decoded, so always surface a typed failure.
                 self.stopped = true;
                 self.stopped_at = Some((self.curr_pos, type_code));
-                None
+                Some(Err(Error::corrupt(
+                    "<.2cba>",
+                    u64::from(item_offset),
+                    format!("unknown 2CBA annotation type 0x{type_code:04x} at position {}", self.curr_pos),
+                )))
             }
             Err(e) => {
                 self.stopped = true;

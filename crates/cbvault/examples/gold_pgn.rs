@@ -922,7 +922,19 @@ fn run_2cbh(
                     }
                 };
                 let anns_rec = if header.annotations_offset() != 0 {
-                    cba.as_ref().and_then(|cba| cba.record_at(header.annotations_offset()).ok())
+                    match &cba {
+                        Some(segment) => match segment.record_at(header.annotations_offset()) {
+                            Ok(r) => Some(r),
+                            Err(_) => {
+                                report.skipped_annotation_err += 1;
+                                continue;
+                            }
+                        },
+                        None => {
+                            report.skipped_annotation_err += 1;
+                            continue;
+                        }
+                    }
                 } else {
                     None
                 };

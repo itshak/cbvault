@@ -862,20 +862,21 @@ impl PgnWriter {
         match anns {
             None => emit(&self.tree, &mut Bare, &mut self.game, &mut self.steps).map_err(as_io)?,
             Some(a) => {
-                if a.check_positions(stats.total_plies).is_ok() && self.prepare_v2(a).is_ok() {
-                    let mut notes = Commentary {
-                        anns: comments::AnnotationsRef::TwoCbh(a),
-                        index: &self.index,
-                        evp: &self.evp,
-                        parts: &mut self.parts,
-                        moves: stats.total_plies,
-                        last: self.tree.main_line_last(),
-                    };
-                    notes.game_comment(&mut self.game).map_err(as_io)?;
-                    emit(&self.tree, &mut notes, &mut self.game, &mut self.steps).map_err(as_io)?;
-                } else {
-                    emit(&self.tree, &mut Bare, &mut self.game, &mut self.steps).map_err(as_io)?;
-                }
+                // Never turn an unreadable annotation record into a successful
+                // bare PGN: unknown valid types and corrupt positions are
+                // failures that the caller and strict gold gate must see.
+                a.check_positions(stats.total_plies).map_err(as_io)?;
+                self.prepare_v2(a).map_err(as_io)?;
+                let mut notes = Commentary {
+                    anns: comments::AnnotationsRef::TwoCbh(a),
+                    index: &self.index,
+                    evp: &self.evp,
+                    parts: &mut self.parts,
+                    moves: stats.total_plies,
+                    last: self.tree.main_line_last(),
+                };
+                notes.game_comment(&mut self.game).map_err(as_io)?;
+                emit(&self.tree, &mut notes, &mut self.game, &mut self.steps).map_err(as_io)?;
             }
         }
         for b in result_tag(header.result()).as_bytes() {

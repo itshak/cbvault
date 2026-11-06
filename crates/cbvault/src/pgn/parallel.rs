@@ -331,7 +331,7 @@ pub fn export_span_report_v2(
     let cbg_path = cbvault_format::twocbh::sibling(base, ".2cbg");
     let cbg = cbvault_format::twocbh::Segment::open(cbg_path)?;
     let cba_path = cbvault_format::twocbh::sibling(base, ".2cba");
-    let _cba = if cba_path.exists() { cbvault_format::twocbh::Segment::open(cba_path).ok() } else { None };
+    let cba = if cba_path.exists() { Some(cbvault_format::twocbh::Segment::open(cba_path)?) } else { None };
     let total = headers.games();
 
     let batch = if batch_size == 0 { DEFAULT_BATCH } else { batch_size };
@@ -401,7 +401,21 @@ pub fn export_span_report_v2(
             };
 
             let anns_rec = if header.annotations_offset() != 0 {
-                _cba.as_ref().and_then(|cba| cba.record_at(header.annotations_offset()).ok())
+                match &cba {
+                    Some(segment) => match segment.record_at(header.annotations_offset()) {
+                        Ok(r) => Some(r),
+                        Err(e) => {
+                            local_stats.failures += 1;
+                            record(&failures, failure_limit, format!("game {rec_id} annotations: {e}"));
+                            continue;
+                        }
+                    },
+                    None => {
+                        local_stats.failures += 1;
+                        record(&failures, failure_limit, format!("game {rec_id}: referenced 2CBA annotation file is missing"));
+                        continue;
+                    }
+                }
             } else {
                 None
             };

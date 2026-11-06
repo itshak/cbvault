@@ -170,14 +170,25 @@ pub fn stem_of(path: &Path) -> PathBuf {
 /// rather than reading a [`Error::MissingFile`] for a `.cbh` that will never be
 /// there.
 pub fn generation_of(path: impl AsRef<Path>) -> Generation {
-    let stem = stem_of(path.as_ref());
-    if [".cbh", ".cbg"].iter().any(|e| sibling(&stem, e).symlink_metadata().is_ok()) {
-        return Generation::Classic;
-    }
-    if [".2cbh", ".2cbg"].iter().any(|e| sibling(&stem, e).symlink_metadata().is_ok()) {
+    let path = path.as_ref();
+    // The caller's explicit extension wins even when both generations share
+    // one basename. Avoid silently interpreting a 2CBH database as classic.
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    if matches!(ext.as_str(), "2cbh" | "2cbg" | "2cba" | "2lid" | "2lgd" | "2lcd") {
         return Generation::TwoCbh;
     }
-    Generation::Unknown
+    if matches!(ext.as_str(), "cbh" | "cbg" | "cba" | "cbp" | "cbt" | "cbc" | "cbs") {
+        return Generation::Classic;
+    }
+    let stem = stem_of(path);
+    let classic = [".cbh", ".cbg"].iter().any(|e| sibling(&stem, e).symlink_metadata().is_ok());
+    let v2 = [".2cbh", ".2cbg"].iter().any(|e| sibling(&stem, e).symlink_metadata().is_ok());
+    match (classic, v2) {
+        (true, false) => Generation::Classic,
+        (false, true) => Generation::TwoCbh,
+        // Ambiguous bare stems must be explicitly selected by extension.
+        _ => Generation::Unknown,
+    }
 }
 
 /// The files of an opened set: the seven every classic set has, and the
@@ -303,11 +314,18 @@ impl Database {
     /// Opens the set `path` names — its base name with no extension, or any one
     /// of its member files, in any case.
     pub fn open(path: impl AsRef<Path>) -> Result<Database> {
-        let stem = stem_of(path.as_ref());
-        match generation_of(&stem) {
+        let path = path.as_ref();
+        let stem = stem_of(path);
+        match generation_of(path) {
             Generation::Classic => Self::open_classic(stem),
             Generation::TwoCbh => Self::open_twocbh(stem),
-            Generation::Unknown => Err(Error::MissingFile { path: sibling(&stem, ".cbh"), role: Role::Headers }),
+            Generation::Unknown => {
+                if sibling(&stem, ".cbh").exists() && sibling(&stem, ".2cbh").exists() {
+                    Err(Error::corrupt(&stem, 0, "both classic and 2CBH exist: pass an explicit .cbh or .2cbh path"))
+                } else {
+                    Err(Error::MissingFile { path: sibling(&stem, ".cbh"), role: Role::Headers })
+                }
+            }
         }
     }
 
@@ -526,7 +544,7 @@ impl Database {
                     return Ok(opt.as_ref());
                 }
                 let path = self.members.annotations.clone();
-                let seg = if path.exists() { cbvault_format::twocbh::Segment::open(path).ok() } else { None };
+                let seg = if path.exists() { Some(cbvault_format::twocbh::Segment::open(path)?) } else { None };
                 let _ = t.annotations.set(seg);
                 Ok(t.annotations.get().and_then(|o| o.as_ref()))
             }
@@ -1064,9 +1082,11 @@ impl Database {
                 let game =
                     cbvault_format::twocbh::moves::GameMoves::from_record(&self.members.moves, seg_rec.record())?;
                 let h = header.as_twocbh().copied().expect("2cbh header");
-                let anns_seg = self.annotations_segment()?;
-                let anns_rec = if h.annotations_offset() != 0 {
-                    anns_seg.and_then(|cba| cba.record_at(h.annotations_offset()).ok())
+                let anns_rec = if want_annotations && h.annotations_offset() != 0 {
+                    let seg = self.annotations_segment()?.ok_or_else(|| {
+                        Error::corrupt(&self.members.annotations, h.annotations_offset(), "2CBA annotation frame referenced but file is missing")
+                    })?;
+                    Some(seg.record_at(h.annotations_offset())?)
                 } else {
                     None
                 };
