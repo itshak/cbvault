@@ -176,7 +176,9 @@ impl<'db> Walker<'db> {
         }
         let view = match self.buf.view(id, header, self.db, self.want_annotations) {
             Ok(view) => view,
-            Err(_) => self.buf.view(id, header, self.db, false)?,
+            // A requested but unreadable 2CBA annotation is a failed game,
+            // not a successful bare move list.
+            Err(e) => return self.failed(id, e, sink),
         };
         sink.game(view);
         Ok(true)
