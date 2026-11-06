@@ -334,10 +334,7 @@ fn explicitly_selected_v2_member_wins_over_same_stem_classic_file() {
         assert_eq!(cbvault::bridge::generation_of(&path), Generation::TwoCbh);
         assert_eq!(Database::open(&path).unwrap().generation(), Generation::TwoCbh);
     }
-    assert_eq!(
-        cbvault::bridge::generation_of(temp.base().with_extension("cbh")),
-        Generation::Classic
-    );
+    assert_eq!(cbvault::bridge::generation_of(temp.base().with_extension("cbh")), Generation::Classic);
     assert_eq!(
         cbvault::bridge::generation_of(temp.base()),
         Generation::Unknown,
@@ -373,12 +370,9 @@ fn twocbh_position_search_replays_v2_words_not_classic_cbg_framing() {
 
     let cancel = || true;
     let mut cancelled_hits = Vec::new();
-    let stats = for_each_position_key(
-        &db,
-        &PositionQuery::of(want).cancel_with(&cancel),
-        2,
-        |hit| cancelled_hits.push(hit),
-    ).unwrap();
+    let stats =
+        for_each_position_key(&db, &PositionQuery::of(want).cancel_with(&cancel), 2, |hit| cancelled_hits.push(hit))
+            .unwrap();
     assert!(!stats.complete);
     assert!(cancelled_hits.is_empty());
 }

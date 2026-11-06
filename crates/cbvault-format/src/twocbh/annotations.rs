@@ -177,9 +177,8 @@ impl<'a> Iterator for Items<'a> {
             self.stopped = true;
             // Empty annotation records are valid; a nonempty one must end
             // in the documented END_MARKER, not an implicit EOF.
-            return (!self.content.is_empty()).then(|| {
-                Err(Error::corrupt("<.2cba>", self.offset as u64, "missing 2CBA end marker"))
-            });
+            return (!self.content.is_empty())
+                .then(|| Err(Error::corrupt("<.2cba>", self.offset as u64, "missing 2CBA end marker")));
         }
 
         while self.remaining_in_block == 0 {

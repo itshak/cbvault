@@ -355,7 +355,11 @@ impl V2Chunk {
             let native_header = match game.header.as_twocbh().copied() {
                 Some(header) => header,
                 None => {
-                    self.entries.push(V2Entry::Failed(Error::corrupt(db.base(), u64::from(id), "not a v2 game header")));
+                    self.entries.push(V2Entry::Failed(Error::corrupt(
+                        db.base(),
+                        u64::from(id),
+                        "not a v2 game header",
+                    )));
                     continue;
                 }
             };
@@ -389,9 +393,9 @@ fn v2_read_annotations<'a>(
     offset: u64,
     scratch: &'a mut Vec<u8>,
 ) -> Result<cbvault_format::twocbh::Annotations<'a>> {
-    let seg = db.annotations_segment()?.ok_or_else(|| {
-        Error::corrupt(&db.members().annotations, offset, "referenced 2CBA missing")
-    })?;
+    let seg = db
+        .annotations_segment()?
+        .ok_or_else(|| Error::corrupt(&db.members().annotations, offset, "referenced 2CBA missing"))?;
     let frame = seg.record_at(offset)?;
     scratch.clear();
     scratch.extend_from_slice(frame.bytes());
@@ -496,11 +500,13 @@ fn convert_parallel_v2(db: &Database, sink: &mut impl GameSink, threads: usize, 
             break;
         }
         let chunks: Vec<V2Chunk> = pool.install(|| {
-            wave.par_iter().map(|&(first, last)| {
-                let mut chunk = free.lock().unwrap().pop().unwrap_or_default();
-                chunk.decode(db, first, last, want_keys);
-                chunk
-            }).collect()
+            wave.par_iter()
+                .map(|&(first, last)| {
+                    let mut chunk = free.lock().unwrap().pop().unwrap_or_default();
+                    chunk.decode(db, first, last, want_keys);
+                    chunk
+                })
+                .collect()
         });
         for chunk in chunks {
             v2_deliver(db, sink, &chunk, &mut annotation_scratch, want_annotations, &mut stats);

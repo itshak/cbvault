@@ -20,8 +20,8 @@
 use cbvault_format::cbh::Entity;
 #[cfg(test)]
 use cbvault_format::cbh::GameHeader;
-use cbvault_format::game::Head;
 use cbvault_format::error::{Error, Result};
+use cbvault_format::game::Head;
 use cbvault_format::game::{Eco, GameResult, RecordKind};
 use rayon::prelude::*;
 
@@ -379,9 +379,7 @@ impl Filter {
         let white = header.white();
         let black = header.black();
         let id_eq = |stored: i64, expected: u32| stored == i64::from(expected);
-        let id_in = |stored: i64, ids: &IdSet| {
-            u32::try_from(stored).is_ok_and(|value| ids.contains(value))
-        };
+        let id_in = |stored: i64, ids: &IdSet| u32::try_from(stored).is_ok_and(|value| ids.contains(value));
         match self {
             Filter::All => true,
             Filter::WhiteEloAtLeast(min) => welo >= *min,
@@ -585,13 +583,21 @@ pub trait DisplaySearchName {
 }
 
 impl DisplaySearchName for Name<'_> {
-    fn is_empty(&self) -> bool { Name::is_empty(self) }
-    fn push_text(&self, out: &mut String) { Name::push_text(self, out); }
+    fn is_empty(&self) -> bool {
+        Name::is_empty(self)
+    }
+    fn push_text(&self, out: &mut String) {
+        Name::push_text(self, out);
+    }
 }
 
 impl DisplaySearchName for SearchName<'_> {
-    fn is_empty(&self) -> bool { SearchName::is_empty(self) }
-    fn push_text(&self, out: &mut String) { SearchName::push_text(self, out); }
+    fn is_empty(&self) -> bool {
+        SearchName::is_empty(self)
+    }
+    fn push_text(&self, out: &mut String) {
+        SearchName::push_text(self, out);
+    }
 }
 
 impl Match<'_> {
@@ -658,11 +664,7 @@ fn ranges_of(db: &Database, first: u32, last: u32) -> Vec<(u32, u32)> {
 
 /// The scan itself, over `ranges`.
 fn scan_ranges<'db>(db: &'db Database, ranges: &[(u32, u32)], filter: &Filter, threads: usize) -> Result<Scan<'db>> {
-    let classic_entities = if db.generation() == super::Generation::Classic {
-        Some(db.entities())
-    } else {
-        None
-    };
+    let classic_entities = if db.generation() == super::Generation::Classic { Some(db.entities()) } else { None };
     let v2_entities = db.twocbh_entities();
     let scan_chunk = |&(first, last): &(u32, u32)| -> Result<Vec<Match<'db>>> {
         let mut out = Vec::new();
@@ -703,7 +705,7 @@ fn scan_ranges<'db>(db: &'db Database, ranges: &[(u32, u32)], filter: &Filter, t
                     white: SearchName::Classic(entities.name(Entity::Player, header.white())?.unwrap_or(BLANK)),
                     black: SearchName::Classic(entities.name(Entity::Player, header.black())?.unwrap_or(BLANK)),
                     event: SearchName::Classic(Name::of(
-                        entities.name(Entity::Tournament, header.tournament())?.unwrap_or(BLANK).last()
+                        entities.name(Entity::Tournament, header.tournament())?.unwrap_or(BLANK).last(),
                     )),
                 });
             }
@@ -967,7 +969,6 @@ pub fn for_each_position_key_range(
     }
     Ok(total)
 }
-
 
 /// The v2 version of the unindexed position replay. It must never parse a
 /// 2CBG frame using the classic 4-byte CBG header, or enumerate 46-byte CBH

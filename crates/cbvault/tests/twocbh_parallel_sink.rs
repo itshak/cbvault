@@ -31,12 +31,7 @@ impl GameSink for Collector {
     fn game(&mut self, game: GameRef<'_>) {
         assert_eq!(game.keys.len(), game.moves.len() + 1);
         let annotations = game.twocbh_annotations.as_ref().map_or(0, |a| a.iter_items().count());
-        self.games.push(Seen {
-            id: game.id,
-            moves: game.moves.to_vec(),
-            keys: game.keys.to_vec(),
-            annotations,
-        });
+        self.games.push(Seen { id: game.id, moves: game.moves.to_vec(), keys: game.keys.to_vec(), annotations });
     }
     fn failed(&mut self, id: u32, _: &cbvault::bridge::Error) {
         self.failed.push(id);

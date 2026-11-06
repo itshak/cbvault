@@ -47,7 +47,9 @@ fn run() -> Result<(), String> {
     for ext in src_ext {
         let p = source.with_extension(ext);
         if !p.exists() {
-            if ext == "2cba" { continue; }
+            if ext == "2cba" {
+                continue;
+            }
             return Err(format!("required 2CBH companion .{ext} is missing"));
         }
         let (len, sha) = file_digest(&p)?;
@@ -79,11 +81,11 @@ fn run() -> Result<(), String> {
             non_game_slots += 1;
             continue;
         }
-        let gold_game = gold.next_game()?.ok_or_else(|| {
-            format!("ChessBase PGN ended early before eligible source record ordinal {}", count + 1)
-        })?;
-        let our_text = db.game_pgn_with(id, &mut buffer, true)
-            .map_err(|e| format!("error exporting source record {id}: {e}"))?;
+        let gold_game = gold
+            .next_game()?
+            .ok_or_else(|| format!("ChessBase PGN ended early before eligible source record ordinal {}", count + 1))?;
+        let our_text =
+            db.game_pgn_with(id, &mut buffer, true).map_err(|e| format!("error exporting source record {id}: {e}"))?;
         ours_sha.update(our_text.as_bytes());
         ours_len += our_text.len() as u64;
         if raw_first.is_none() {
@@ -128,9 +130,18 @@ fn run() -> Result<(), String> {
     let is_raw_equal = gold_len == ours_len && gold_hash == our_hash;
     eprintln!(
         "strict gold: source_slots={} non_game_slots={} games={} canonical_bytes={} unexplained_games={} verified_san={} verified_null={} raw_equal={} gold_raw_bytes={} ours_raw_bytes={} raw_first_diff_offset={:?} first_unexplained={:?}",
-        db.records(), non_game_slots, count, canonical_bytes, differing_games,
-        san_exceptions, null_exceptions, is_raw_equal, gold_len, ours_len,
-        raw_first, first_diff
+        db.records(),
+        non_game_slots,
+        count,
+        canonical_bytes,
+        differing_games,
+        san_exceptions,
+        null_exceptions,
+        is_raw_equal,
+        gold_len,
+        ours_len,
+        raw_first,
+        first_diff
     );
     eprintln!("strict gold raw SHA-256: gold={} ours={}", hex(&gold_hash), hex(&our_hash));
     if differing_games != 0 {
@@ -215,11 +226,7 @@ impl<R: BufRead> Games<R> {
                 }
             }
         }
-        if source.trim().is_empty() {
-            Ok(None)
-        } else {
-            parse_game(source).map(Some)
-        }
+        if source.trim().is_empty() { Ok(None) } else { parse_game(source).map(Some) }
     }
 }
 
@@ -239,7 +246,9 @@ fn parse_game(raw: String) -> Result<Game, String> {
         if in_tags && trimmed.starts_with('[') && trimmed.ends_with(']') {
             tags.push(parse_tag(trimmed)?);
         } else {
-            if !trimmed.is_empty() { in_tags = false; }
+            if !trimmed.is_empty() {
+                in_tags = false;
+            }
             if !in_tags {
                 body.push_str(line);
                 body.push('\n');
@@ -254,13 +263,15 @@ fn parse_game(raw: String) -> Result<Game, String> {
 }
 
 fn parse_tag(line: &str) -> Result<(String, String), String> {
-    let inner = line.strip_prefix('[').and_then(|s| s.strip_suffix(']'))
-        .ok_or("invalid PGN tag brackets")?;
-    let (key, value) = inner.split_once(char::is_whitespace)
-        .ok_or("missing PGN tag value")?;
-    if key.is_empty() { return Err("empty PGN tag key".into()); }
+    let inner = line.strip_prefix('[').and_then(|s| s.strip_suffix(']')).ok_or("invalid PGN tag brackets")?;
+    let (key, value) = inner.split_once(char::is_whitespace).ok_or("missing PGN tag value")?;
+    if key.is_empty() {
+        return Err("empty PGN tag key".into());
+    }
     let value = value.trim_start();
-    let Some(value) = value.strip_prefix('"') else { return Err("PGN tag value is not quoted".into()); };
+    let Some(value) = value.strip_prefix('"') else {
+        return Err("PGN tag value is not quoted".into());
+    };
     let mut text = String::new();
     let mut escaped = false;
     let mut closed = false;
@@ -298,16 +309,23 @@ fn lex(body: &str) -> Result<Vec<Token>, String> {
             let mut c = String::new();
             let mut closed = false;
             for t in chars.by_ref() {
-                if t == '}' { closed = true; break; }
+                if t == '}' {
+                    closed = true;
+                    break;
+                }
                 c.push(t);
             }
-            if !closed { return Err("unterminated PGN comment".into()); }
+            if !closed {
+                return Err("unterminated PGN comment".into());
+            }
             tokens.push(Token::Comment(c));
         } else if ch == ';' {
             chars.next();
             let mut c = String::new();
             while let Some(&t) = chars.peek() {
-                if t == '\n' { break; }
+                if t == '\n' {
+                    break;
+                }
                 c.push(t);
                 chars.next();
             }
@@ -321,12 +339,16 @@ fn lex(body: &str) -> Result<Vec<Token>, String> {
             while chars.peek().is_some_and(char::is_ascii_digit) {
                 n.push(chars.next().unwrap());
             }
-            if n.len() == 1 { return Err("NAG without a number".into()); }
+            if n.len() == 1 {
+                return Err("NAG without a number".into());
+            }
             tokens.push(Token::Nag(n));
         } else {
             let mut word = String::new();
             while let Some(&t) = chars.peek() {
-                if t.is_whitespace() || matches!(t, '{' | '}' | '(' | ')' | '$' | ';') { break; }
+                if t.is_whitespace() || matches!(t, '{' | '}' | '(' | ')' | '$' | ';') {
+                    break;
+                }
                 word.push(t);
                 chars.next();
             }
@@ -359,9 +381,13 @@ fn compare_game(gold: &Game, ours: &Game) -> Result<Compared, String> {
     ours_tags.sort();
     // Every tag remains significant. No KEEP list or ChessBase-only tag skip.
     if gold_tags != ours_tags {
-        return Ok(Compared { equal: false, san: 0, nulls: 0, first_byte: first_byte_diff(
-            format!("{gold_tags:?}").as_bytes(), format!("{ours_tags:?}").as_bytes()
-        ), bytes: 0 });
+        return Ok(Compared {
+            equal: false,
+            san: 0,
+            nulls: 0,
+            first_byte: first_byte_diff(format!("{gold_tags:?}").as_bytes(), format!("{ours_tags:?}").as_bytes()),
+            bytes: 0,
+        });
     }
     let mut start = Board::startpos();
     if let Some((_, fen)) = ours_tags.iter().find(|(k, _)| k == "FEN") {
@@ -389,13 +415,17 @@ fn compare_game(gold: &Game, ours: &Game) -> Result<Compared, String> {
             }
             (Token::Word(ga), Token::Word(ob)) => {
                 if matches!(ob.as_str(), "1-0" | "0-1" | "1/2-1/2" | "*") {
-                    if ga != ob { return Ok(Compared { equal: false, san, nulls, first_byte: bytes as usize, bytes }); }
+                    if ga != ob {
+                        return Ok(Compared { equal: false, san, nulls, first_byte: bytes as usize, bytes });
+                    }
                     continue;
                 }
                 let null_match = (ga == "Z0" && ob == "--") || (ga == "--" && ob == "Z0");
                 let is_null = ob == "--" || ga == "Z0";
                 let mv = if is_null {
-                    if !null_match && ga != ob { return Ok(Compared { equal: false, san, nulls, first_byte: idx, bytes }); }
+                    if !null_match && ga != ob {
+                        return Ok(Compared { equal: false, san, nulls, first_byte: idx, bytes });
+                    }
                     Move::NULL
                 } else {
                     match san_to_move(&board, ob) {
@@ -406,9 +436,7 @@ fn compare_game(gold: &Game, ours: &Game) -> Result<Compared, String> {
                 if ga != ob {
                     if null_match {
                         nulls += 1;
-                    } else if redundant_qualifier(ga, ob)
-                        && san_to_move(&board, ga) == Some(mv)
-                    {
+                    } else if redundant_qualifier(ga, ob) && san_to_move(&board, ga) == Some(mv) {
                         // Both spellings must resolve to the identical LEGAL
                         // move on the actual board, so no alternative legal
                         // candidate exists for the minimal SAN.
@@ -426,19 +454,21 @@ fn compare_game(gold: &Game, ours: &Game) -> Result<Compared, String> {
             }
         }
     }
-    if !stack.is_empty() { return Err("unclosed PGN variation".into()); }
+    if !stack.is_empty() {
+        return Err("unclosed PGN variation".into());
+    }
     Ok(Compared { equal: true, san, nulls, first_byte: 0, bytes })
 }
 
 fn redundant_qualifier(gold: &str, ours: &str) -> bool {
     let g = gold.as_bytes();
     let o = ours.as_bytes();
-    if g.len() <= o.len() || g.len() - o.len() > 2 || g[0] != o[0]
-        || !matches!(g[0], b'K' | b'Q' | b'R' | b'B' | b'N')
-    { return false; }
+    if g.len() <= o.len() || g.len() - o.len() > 2 || g[0] != o[0] || !matches!(g[0], b'K' | b'Q' | b'R' | b'B' | b'N')
+    {
+        return false;
+    }
     let extra = g.len() - o.len();
-    g[1..1 + extra].iter().all(|x| b"abcdefgh12345678".contains(x))
-        && g[1 + extra..] == o[1..]
+    g[1..1 + extra].iter().all(|x| b"abcdefgh12345678".contains(x)) && g[1 + extra..] == o[1..]
 }
 
 fn first_byte_diff(a: &[u8], b: &[u8]) -> usize {
@@ -448,15 +478,69 @@ fn first_byte_diff(a: &[u8], b: &[u8]) -> usize {
 // No external hash dependency or platform-specific shell command: the
 // standard FIPS-180-4 SHA-256 transform is sufficient for local provenance.
 const K: [u32; 64] = [
-    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4b,
-    0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,
-    0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,
-    0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,
-    0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,
-    0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,
-    0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,
-    0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
-    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,
+    0x428a2f98,
+    0x71374491,
+    0xb5c0fbcf,
+    0xe9b5dba5,
+    0x3956c25b,
+    0x59f111f1,
+    0x923f82a4b,
+    0xab1c5ed5,
+    0xd807aa98,
+    0x12835b01,
+    0x243185be,
+    0x550c7dc3,
+    0x72be5d74,
+    0x80deb1fe,
+    0x9bdc06a7,
+    0xc19bf174,
+    0xe49b69c1,
+    0xefbe4786,
+    0x0fc19dc6,
+    0x240ca1cc,
+    0x2de92c6f,
+    0x4a7484aa,
+    0x5cb0a9dc,
+    0x76f988da,
+    0x983e5152,
+    0xa831c66d,
+    0xb00327c8,
+    0xbf597fc7,
+    0xc6e00bf3,
+    0xd5a79147,
+    0x06ca6351,
+    0x14292967,
+    0x27b70a85,
+    0x2e1b2138,
+    0x4d2c6dfc,
+    0x53380d13,
+    0x650a7354,
+    0x766a0abb,
+    0x81c2c92e,
+    0x92722c85,
+    0xa2bfe8a1,
+    0xa81a664b,
+    0xc24b8b70,
+    0xc76c51a3,
+    0xd192e819,
+    0xd6990624,
+    0xf40e3585,
+    0x106aa070,
+    0x19a4c116,
+    0x1e376c08,
+    0x2748774c,
+    0x34b0bcb5,
+    0x391c0cb3,
+    0x4ed8aa4a,
+    0x5b9cca4f,
+    0x682e6ff3,
+    0x748f82ee,
+    0x78a5636f,
+    0x84c87814,
+    0x8cc70208,
+    0x90befffa,
+    0xa4506ceb,
+    0xbef9a3f7,
     0xc67178f2,
 ];
 
@@ -470,8 +554,10 @@ struct Sha256 {
 impl Sha256 {
     fn new() -> Self {
         Self {
-            h: [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19],
-            data: [0; 64], len: 0, total: 0,
+            h: [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19],
+            data: [0; 64],
+            len: 0,
+            total: 0,
         }
     }
     fn update(&mut self, mut bytes: &[u8]) {
@@ -515,7 +601,9 @@ impl Sha256 {
         let bits = self.total.wrapping_mul(8);
         self.update(&[0x80]);
         if self.len > 56 {
-            while self.len != 0 { self.update(&[0]); }
+            while self.len != 0 {
+                self.update(&[0]);
+            }
         }
         while self.len < 56 {
             self.update(&[0]);
@@ -546,7 +634,9 @@ fn file_digest(path: &Path) -> Result<(u64, [u8; 32]), String> {
     let mut n = 0u64;
     loop {
         let len = file.read(&mut buf).map_err(|e| e.to_string())?;
-        if len == 0 { break; }
+        if len == 0 {
+            break;
+        }
         hash.update(&buf[..len]);
         n += len as u64;
     }

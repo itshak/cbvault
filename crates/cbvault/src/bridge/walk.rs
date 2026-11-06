@@ -466,13 +466,18 @@ impl GameBuf {
                 }
                 GameHeaderRef::TwoCbh(_) => {
                     let segment = db.annotations_segment()?.ok_or_else(|| {
-                        Error::corrupt(&db.members().annotations, header.annotations_offset(), "referenced 2CBA file is missing")
+                        Error::corrupt(
+                            &db.members().annotations,
+                            header.annotations_offset(),
+                            "referenced 2CBA file is missing",
+                        )
                     })?;
                     let frame = segment.record_at(header.annotations_offset())?;
                     // Keep the no-mmap frame alive in reusable per-game scratch.
                     self.annotation.clear();
                     self.annotation.extend_from_slice(frame.bytes());
-                    let native = cbvault_format::twocbh::Annotations::parse(&db.members().annotations, &self.annotation)?;
+                    let native =
+                        cbvault_format::twocbh::Annotations::parse(&db.members().annotations, &self.annotation)?;
                     for item in native.iter_items() {
                         item?;
                     }

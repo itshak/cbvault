@@ -1084,7 +1084,11 @@ impl Database {
                 let h = header.as_twocbh().copied().expect("2cbh header");
                 let anns_rec = if want_annotations && h.annotations_offset() != 0 {
                     let seg = self.annotations_segment()?.ok_or_else(|| {
-                        Error::corrupt(&self.members.annotations, h.annotations_offset(), "2CBA annotation frame referenced but file is missing")
+                        Error::corrupt(
+                            &self.members.annotations,
+                            h.annotations_offset(),
+                            "2CBA annotation frame referenced but file is missing",
+                        )
                     })?;
                     Some(seg.record_at(h.annotations_offset())?)
                 } else {

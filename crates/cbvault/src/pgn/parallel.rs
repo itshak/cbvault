@@ -412,7 +412,11 @@ pub fn export_span_report_v2(
                     },
                     None => {
                         local_stats.failures += 1;
-                        record(&failures, failure_limit, format!("game {rec_id}: referenced 2CBA annotation file is missing"));
+                        record(
+                            &failures,
+                            failure_limit,
+                            format!("game {rec_id}: referenced 2CBA annotation file is missing"),
+                        );
                         continue;
                     }
                 }
