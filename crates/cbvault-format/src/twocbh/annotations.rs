@@ -8,8 +8,8 @@
 //! `count` annotations, terminated by the marker `0x7fffffff`.
 //!
 //! Each annotation starts with a 2-byte type code (`u16 LE`). Unknown types
-//! stop the decoding cleanly and report the unsupported type code via
-//! [`Annotations::stopped_at`].
+//! produce a typed iterator error, rather than silently truncating the
+//! record. The iterator retains `stopped_at` for diagnostic callers.
 
 use std::path::Path;
 
@@ -170,13 +170,22 @@ impl<'a> Iterator for Items<'a> {
     type Item = Result<Item<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.stopped || self.offset >= self.content.len() {
+        if self.stopped {
             return None;
+        }
+        if self.offset >= self.content.len() {
+            self.stopped = true;
+            // Empty annotation records are valid; a nonempty one must end
+            // in the documented END_MARKER, not an implicit EOF.
+            return (!self.content.is_empty()).then(|| {
+                Err(Error::corrupt("<.2cba>", self.offset as u64, "missing 2CBA end marker"))
+            });
         }
 
         while self.remaining_in_block == 0 {
             if self.offset + 4 > self.content.len() {
-                return None;
+                self.stopped = true;
+                return Some(Err(Error::corrupt("<.2cba>", self.offset as u64, "truncated 2CBA position/end marker")));
             }
             let pos = i32::from_le_bytes(self.content[self.offset..self.offset + 4].try_into().unwrap());
             self.offset += 4;
@@ -458,6 +467,38 @@ mod tests {
         }
 
         assert_eq!(ann.texts(), vec!["A strong novelty!".to_string()]);
+    }
+
+    #[test]
+    fn unknown_annotation_kind_must_not_look_like_success() {
+        let mut body = Vec::new();
+        body.extend(0i32.to_le_bytes());
+        body.extend(1i32.to_le_bytes());
+        body.extend(0x7777u16.to_le_bytes());
+        body.extend(END_MARKER.to_le_bytes());
+        let raw = record_with_tag(ANNOTATION_TAG, body.len() as u32, 0, &body);
+        let ann = Annotations::parse(Path::new("unknown.2cba"), &raw).unwrap();
+        let mut items = ann.iter_items();
+        let e = items.next().expect("unknown kind must be reported").unwrap_err();
+        assert!(e.to_string().contains("0x7777"), "{e}");
+        assert_eq!(items.stopped_at, Some((0, 0x7777)));
+        assert!(items.next().is_none());
+        assert!(ann.check_positions(5).is_err());
+    }
+
+    #[test]
+    fn missing_end_marker_is_a_failure_not_successful_eof() {
+        let mut body = Vec::new();
+        body.extend(0i32.to_le_bytes());
+        body.extend(1i32.to_le_bytes());
+        body.extend(0x03u16.to_le_bytes());
+        body.extend([1u8, 0, 0]);
+        let raw = record_with_tag(ANNOTATION_TAG, body.len() as u32, 0, &body);
+        let ann = Annotations::parse(Path::new("truncated.2cba"), &raw).unwrap();
+        let mut items = ann.iter_items();
+        assert!(items.next().expect("one item").is_ok());
+        assert!(items.next().expect("missing terminator").is_err());
+        assert!(items.next().is_none());
     }
 
     #[test]
