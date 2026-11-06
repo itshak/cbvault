@@ -58,7 +58,14 @@ fn multiworker_v2_conversion_matches_sequential_annotated_and_keyed_stream() {
         let line = if id % 2 == 0 { "e2e4 e7e5 g1f3" } else { "d2d4 d7d5 c2c4" };
         let at = b.moves(1, &words(&mut board, line));
         if id % 3 == 0 {
-            let data = annotations(&[(0, vec![text_annotation(false, 1, "Synthetic note")])]);
+            // Include an unknown native annotation kind as an independent
+            // failure, not merely an invalid move-record checksum.
+            let item = if id == 9 {
+                0x77u16.to_le_bytes().to_vec()
+            } else {
+                text_annotation(false, 1, "Synthetic note")
+            };
+            let data = annotations(&[(0, vec![item])]);
             let ann_at = b.annotations(&data);
             b.annotated_game(at, ann_at);
         } else {
@@ -70,10 +77,10 @@ fn multiworker_v2_conversion_matches_sequential_annotated_and_keyed_stream() {
 
     let mut serial = Collector::default();
     let a = for_each_game(&db, &mut serial).unwrap();
-    assert_eq!(a.games, 11);
-    assert_eq!(a.failures, 1);
-    assert_eq!(serial.failed, vec![6]);
-    assert_eq!(serial.games.iter().filter(|g| g.annotations.is_some()).count(), 3);
+    assert_eq!(a.games, 10);
+    assert_eq!(a.failures, 2);
+    assert_eq!(serial.failed, vec![6, 9]);
+    assert_eq!(serial.games.iter().filter(|g| g.annotations.is_some()).count(), 2);
 
     for threads in [2, 4] {
         let mut parallel = Collector::default();
