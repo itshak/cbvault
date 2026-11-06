@@ -751,6 +751,37 @@ mod tests {
     }
 
     #[test]
+    fn strict_nag_and_unicode_mutations_always_fail() {
+        let a = parse_game("[Event \"E\"]\n\n1. e4 $1 {Évaluation ♞} *\n".into()).unwrap();
+        let b = parse_game("[Event \"E\"]\n\n1. e4 $2 {Évaluation ♞} *\n".into()).unwrap();
+        let c = parse_game("[Event \"E\"]\n\n1. e4 $1 {Évaluation ♘} *\n".into()).unwrap();
+        for changed in [&b, &c] {
+            let difference = compare_game(&a, changed).unwrap();
+            assert!(!difference.equal);
+            assert!(difference.first_byte > 0);
+        }
+    }
+
+    #[test]
+    fn strict_null_exception_requires_an_actual_played_null_move() {
+        let gold = parse_game("[Event \"E\"]\n\n1.e4 Z0 *\n".into()).unwrap();
+        let ours = parse_game("[Event \"E\"]\n\n1. e4 -- *\n".into()).unwrap();
+        let compared = compare_game(&gold, &ours).unwrap();
+        assert!(compared.equal);
+        assert_eq!(compared.nulls, 1);
+    }
+
+    #[test]
+    fn san_overqualification_is_not_approved_when_two_knights_can_move() {
+        let tags = "[Event \"E\"]\n[SetUp \"1\"]\n[FEN \"4k3/8/8/8/8/8/8/1N2KN2 w - - 0 1\"]\n\n";
+        let gold = parse_game(format!("{tags}1. Nbd2 *\n")).unwrap();
+        let ours = parse_game(format!("{tags}1. Nd2 *\n")).unwrap();
+        // String prefix stripping alone would count this as parity, despite
+        // both knights being legal d2 candidates. The legal board must reject.
+        assert!(!matches!(compare_game(&gold, &ours), Ok(Compared { equal: true, .. })));
+    }
+
+    #[test]
     fn strict_full_tags_and_variations() {
         let a = parse_game("[Event \"E\"]\n[White \"W\"]\n\n1. e4 e5 (1... c5) 2. Nf3 *\n".into()).unwrap();
         let mut wrong = parse_game("[Event \"F\"]\n[White \"W\"]\n\n1. e4 e5 (1... c5) 2. Nf3 *\n".into()).unwrap();
