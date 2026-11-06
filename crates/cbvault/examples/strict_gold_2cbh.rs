@@ -786,10 +786,13 @@ mod tests {
 
     #[test]
     fn canonical_byte_serialization_does_not_hide_literal_tag_or_comment_bytes() {
-        let same_a = parse_game("[ZCustom \"a\\\\b\\\"c\"]\n[Event \"E\"]\n\n1. e4 { exact spacing } *\n".into()).unwrap();
-        let same_b = parse_game("[Event \"E\"]\n[ZCustom \"a\\\\b\\\"c\"]\n\n1.e4 { exact spacing } *\n".into()).unwrap();
+        let same_a =
+            parse_game("[ZCustom \"a\\\\b\\\"c\"]\n[Event \"E\"]\n\n1. e4 { exact spacing } *\n".into()).unwrap();
+        let same_b =
+            parse_game("[Event \"E\"]\n[ZCustom \"a\\\\b\\\"c\"]\n\n1.e4 { exact spacing } *\n".into()).unwrap();
         assert!(compare_game(&same_a, &same_b).unwrap().equal, "only tag order and movenumber spacing normalize");
-        let different = parse_game("[Event \"E\"]\n[ZCustom \"a\\\\b\\\"c\"]\n\n1.e4 {exact spacing } *\n".into()).unwrap();
+        let different =
+            parse_game("[Event \"E\"]\n[ZCustom \"a\\\\b\\\"c\"]\n\n1.e4 {exact spacing } *\n".into()).unwrap();
         assert!(!compare_game(&same_a, &different).unwrap().equal, "comment whitespace remains byte-significant");
     }
 
