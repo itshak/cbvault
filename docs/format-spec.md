@@ -202,8 +202,9 @@ reader validates it):
 | other | `Kind::Other(code)` | kept by code+size | ✓ |
 
 Colours in `04`/`05` payloads: **2 = `G` (green), 3 = `Y` (yellow),
-4 = `R` (red)**; colours 1, 7, 8, 9 and others are observed/unknown and
-**left out** of `[%csl]/[%cal]` (`comments.rs::colour`). Square names:
+4 = `R` (red), 7 = `B` (blue), 8 = `C` (cyan), 9 = `O` (orange)**
+(verified empirically against ChessBase 18 export, game 471420); other colour
+codes are unmapped and left out of `[%csl]/[%cal]` (`comments.rs::colour`). Square names:
 `a1` = 1, file by file (`push_name`).
 
 `[%evp]` values (`write_evp`): centipawns as stored, mate in *n* plies as

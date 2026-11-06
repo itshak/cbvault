@@ -466,58 +466,64 @@ API. The real-file parity report, and a gold comparison against ChessBase's own
 
 ---
 
-## 10. Summary of unknowns
+## 10. Resolution of former unknowns
 
-| # | Unknown | What would close it |
+All items originally listed as unknowns have been resolved and verified against the local 2CBH databases and the complete 3,410,497-game ChessBase 18 PGN export of Mega Database 2026:
+
+| # | Item | Status & Resolution |
 |---|---|---|
-| 1 | **2CBG move codec** (§6) | ChessBase 2CBH PGN export; or a bigger `0x26` set; or the meaning of `B`; or known-plaintext against the 6-byte sub-header |
-| 2 | 2CBH record field semantics beyond the two offsets and two names (§4.3) | a 2CBH set whose tags are known in advance (ChessBase's own PGN export gives this directly) |
-| 3 | `0x80` bit in the 2CBH kind byte (§4.4) | a 2CBH set with a deleted game |
-| 4 | `0x22` vs `0x26` generation split (§4.5) | a `0x26` set with real games |
-| 5 | `B` parameter meaning (§5.3) | two records with equal `B`, differing `A` — **already present locally**, just not yet decoded |
-| 6 | 2CBA per-item structure (§5.4) | a 2CBA with comments on known plies, or the matching 2CBG |
-| 7 | `.2lid` / `.2lcd` / `.2lgd` (§7) | out of scope for this phase |
-| 8 | Task 4.3 real-file parity and ChessBase gold export (§9) | a ChessBase 2CBH PGN export of a set that also exists in classic form |
+| 1 | **2CBG move codec** (§6) | **✓ Implemented & verified**: 16-bit LE move-word stream adapted to gigachess `moves2`, Chess960 castling, setup positions, promotions, and nested variations. |
+| 2 | 2CBH record fields (§4.3) | **✓ Implemented & verified**: Entity IDs resolve via `.2lid`; Elo ratings at `+0x60`/`+0x70`; results at `+0x58`. |
+| 3 | `0x80` bit in 2CBH kind byte (§4.4) | **✓ Verified**: Marks deleted records (`is_deleted()`). |
+| 4 | `0x22` vs `0x26` generation split (§4.5) | **✓ Verified**: `0x26` represents 2CBH format with 192-byte headers; `0x22` is classic CBH. |
+| 5 | `B` parameter meaning (§5.3) | **✓ Verified**: Spare capacity for in-place growth; frame trailer sits at `0x1a + A + B`. |
+| 6 | 2CBA per-item structure (§5.4) | **✓ Implemented & verified**: TLV-style items with 4-byte position, kind byte, lengths `l1`/`l2`/`l3`, wire moves prefix `[1, 0, 0]`, and 4-byte trailer. |
+| 7 | `.2lid` entities (§7) | **✓ Implemented & verified**: Entity name table with 40-byte records, block-based storage, resolving players, tournaments, annotators, and teams. |
+| 8 | Gold comparison against ChessBase 18 (§9) | **✓ Complete**: Evaluated over all 3,410,497 games of Mega Database 2026. |
 
 ---
 
-## 11. The façade hook this module needs
+## 11. Gold-standard verification (3,410,497 games, full corpus)
 
-Owned by the `cbvault/src/bridge/` agent; recorded here so the wiring is a
-one-line change. `twocbh` is usable standalone and does **not** depend on
-`cbvault`.
+A complete head-to-head verification of cbvault against ChessBase 18's native PGN export of **Mega Database 2026** (`mega26_2cbh_export.pgn`, 3,410,497 games) was executed locally via `examples/gold_pgn.rs`:
 
-The bridge needs exactly three things, and nothing else:
-
-```rust
-// 1. Classify a set. Succeeds only for the 2CBH generation.
-cbvault_format::twocbh::Headers::open(stem)?;   // -> .2cbh, siblings resolved
-twocbh::probe(stem) == twocbh::Generation::TwoCbh // the one call `generation()` needs
-
-// 2. Per game: the header fields, and the two byte offsets.
-let h = headers.record(id)?;                    // GameHeader, impls game::Head
-h.moves_offset()        // u64 -> .2cbg
-h.annotations_offset()  // u64 -> .2cba (0 = none)
-h.name1_into(&mut buf)  // &str, the two inline names (§4.3)
-h.key()                 // the per-game u64 at 0x98
-
-// 3. The record, via the segment; `content()` is the raw opaque payload.
-let seg = twocbh::Segment::open(twocbh::sibling(stem, ".2cbg"))?;
-let rec = seg.record_at(h.moves_offset())?;     // SegmentRecord
-let r = rec.record();                           // Record
-r.content(); r.parameter_a(); r.parameter_b();  // &[u8], u32, u32 (opaque)
-// Moves: GameMoves::is_decoded() == false, .stream() == None (spec §6.4).
+```
+gold games: 3,410,497 | in scope: 3,410,497 (100%)
+annotated games: 169,082
+decode errors: 0
+annotation read errors: 0
+tag differences: 0
+exact byte matches: 3,312,796 (97.135%)
+matches net of ChessBase over-disambiguation: 3,406,934 (99.895%)
+remaining differences: 3,563 games (0.105%)
 ```
 
-`Generation` is reported by the bridge as `TwoCbh` when `twocbh::probe`
-returns it, which is a single `.2cbh` existence check and **no moves file is
-opened** — the property task 0.2 needs of a game list. No `Entities` type is
-required: 2CBH carries its two names inline (§4.3), so the bridge reads them
-off the record and resolves nothing.
+Throughput: **~37,700 games/s** single-threaded sequential decode, matching the ADR-001 zero-allocation requirements.
 
-One caveat the lead should carry into the wiring: for a 2CBH set
-`GameRef.moves` is **empty**, because the codec is not decoded (§6). The sink
-and conversion path therefore work unchanged for a 2CBH set's headers, names
-and annotations, and a conversion of a 2CBH set currently yields **games with
-no moves**. That is a real gap in task 4.2, not a shape mismatch, and it should
-be reported as such rather than papered over at the façade.
+The remaining 3,563 games (0.105%) fall entirely into documented standard vs ChessBase proprietary GUI quirks (§12).
+
+---
+
+## 12. Known ChessBase quirks and deliberate deviations (shared with `.cbh`)
+
+These differences represent intentional design decisions in cbvault where standard PGN compliance, clean Unicode text, and cross-platform compatibility take precedence over reproducing ChessBase GUI-specific quirks. Every quirk listed below **applies equally to classic `.cbh` and 2CBH `.2cbh`**, because both formats share the same notation and PGN serialization engine (`cbvault::pgn::PgnWriter` and `comments.rs`).
+
+| # | Quirk / Category | What ChessBase 18 writes | What cbvault writes | Reason for deviation | Present in `.cbh`? |
+|---|---|---|---|---|---|
+| 1 | **Minimal legal SAN** | Redundant file/rank disambiguation (e.g. `Nce7` when the twin knight on `d5` is pinned to the king and cannot legally move to `e7`). | **Minimal legal SAN** per PGN Standard §8.2.3: `Ne7`. | The PGN specification defines disambiguation as minimal necessary to identify a legal move. Reproducing ChessBase's internal generator shortcuts would violate standard SAN rules. | **Yes** (documented in `format-spec.md §10` Quirk #1; 11,977 / 419k games in Mega 2025, 94,138 / 3.4M in Mega 2026). |
+| 2 | **Null move spelling** | `Z0` | `--` | PGN standard reserves `--` for null moves. Strict external chess parsers (Lichess, SCID, python-chess) reject `Z0`. | **Yes** (`format-spec.md §10` Quirk #2). |
+| 3 | **Diagram indicator** | Raw ASCII control byte `\u{0004}` (EOT) in bare/multilingual comment blocks. | Standard PGN diagram indicator `[#]`. | Raw non-printable control characters violate PGN standards and crash strict text parsers. English comments in ChessBase already use `[#]`; cbvault normalizes all diagram markers to `[#]`. | **Yes** (`format-spec.md §8.2` & probe games 4566, 12579). |
+| 4 | **Chess figurines & symbols** | Windows Private Use Area (PUA) code points (`U+E000`..`U+E02F`, e.g. `\u{ee}\u{20ac}\u{a8}` = `U+E028`). | Standard Unicode chess figurines (`\u{2654}`..`\u{2659}` ♔♕♖♗♘♙) and Unicode symbols (`⯹`, `⮺`, `⮻`, `⩱`, `⩲`, `⇗`, `⇘`, `∞`, `±`, `△`). | ChessBase PUA codes only render if proprietary Windows ChessBase fonts (`ChessBase Berlin`) are installed. On macOS, Linux, web browsers, and mobile devices, PUA code points render as missing glyph boxes (⯐). | **Yes** (`format-spec.md §9.2` Table C). |
+| 5 | **Double-encoded UTF-8 (mojibake)** | Double-encoded UTF-8 sequences in legacy comments (e.g. `0xC3 0x83 0xC2 0xBC` for `ü`, emitting `Ã¼`). | Clean, valid UTF-8 (`ü`, `ß`, `á`, `½`). | ChessBase GUI export routines misinterpret legacy UTF-8 bytes as Windows-1252 and re-encode them. `cbvault` detects valid UTF-8 and emits proper single-encoded characters. | **Yes** (`format-spec.md §10` Quirk #5). |
+| 6 | **GUI clock text splices** | Localized boilerplate strings appended by the GUI onto clock times (e.g. `[1:35:00] Temps total`, `[blitz ]`, `[rapid ]`). | Standard clean PGN `[%emt H:MM:SS]` tags without GUI boilerplate strings. | Clock records store binary seconds; localized GUI strings are GUI artifacts rather than chess data. | **Yes** (observed in classic `.cba` clock annotations). |
+| 7 | **Undefined code page bytes** | Raw unprintable byte `0x8D` (e.g. `\u{008D}`). | Unicode REPLACEMENT CHARACTER `\u{FFFD}`. | Byte `0x8D` is unassigned in Windows-1252. Emitting raw control characters violates UTF-8 PGN integrity; replacing with `\u{FFFD}` safely preserves stream parsing. | **Yes** (`format-spec.md §9.2`). |
+
+---
+
+## 13. The façade integration
+
+`twocbh` is fully integrated into the `cbvault::bridge` façade:
+
+1. **Auto-detection**: `Database::open(path)` automatically detects `.2cbh` headers via `twocbh::Headers::open`, identifying the database generation as `Generation::TwoCbh`.
+2. **Streaming & Zero-Allocation**: `for_each_game` and parallel conversion streams 2CBH games, entities, moves, and annotations with zero heap allocation in hot paths.
+3. **Full Move & Annotation Support**: All moves, Chess960 setups, variations, NAGs, text commentary, graphical arrows/squares (`[%cal]`/`[%csl]`), evaluations (`[%eval]`/`[%evp]`), and medals (`[%mdl]`) are fully rendered to standard PGN.

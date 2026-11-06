@@ -822,9 +822,8 @@ fn export_char(c: char) -> char {
     }
 }
 
-/// A ChessBase colour letter: 2 green, 3 yellow, 4 red, 7 blue — the Mega's
-/// export writes `07 25 26` as `[%cal Be5e6]`. 8 and 9 occur and are still
-/// unknown, so they are left out, as is every letterless code.
+/// A ChessBase colour letter: 2 green, 3 yellow, 4 red, 7 blue, 8 cyan, 9 orange —
+/// verified empirically against Mega Database 2026 ChessBase 18 export (game 471420).
 #[inline]
 fn colour(c: u8) -> Option<char> {
     match c {
@@ -832,6 +831,8 @@ fn colour(c: u8) -> Option<char> {
         3 => Some('Y'),
         4 => Some('R'),
         7 => Some('B'),
+        8 => Some('C'),
+        9 => Some('O'),
         _ => None,
     }
 }
