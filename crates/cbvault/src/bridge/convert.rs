@@ -302,6 +302,9 @@ struct V2Row {
     annotated: bool,
 }
 
+// An inline row avoids one heap allocation per game in the conversion
+// hot path. The larger enum is deliberate; the arena is bounded per wave.
+#[allow(clippy::large_enum_variant)]
 enum V2Entry {
     Skipped,
     Failed(Error),
