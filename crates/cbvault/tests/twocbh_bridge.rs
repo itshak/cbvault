@@ -424,7 +424,7 @@ fn v2_unified_header_and_entity_sources_are_safe_and_typed() {
     assert!(db.try_classic_headers().is_err());
     assert!(db.try_classic_entities().is_err());
     match db.header_source() {
-        HeaderSource::TwoCbh(h) => assert_eq!(h.records(), 1),
+        HeaderSource::TwoCbh(h) => assert_eq!(h.games(), 1),
         HeaderSource::Classic(_) => panic!("2CBH must not be presented as classic headers"),
     }
     match db.entity_source() {
