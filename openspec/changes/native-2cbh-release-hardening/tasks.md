@@ -1,11 +1,13 @@
 # Implementation checklist — synthetic implementation versus private release acceptance
 
+**Public synthetic implementation: COMPLETE and cross-platform CI green.** Only stage 2 requires real licensed Mega Database data; no such corpus or private PGN was used or uploaded in this change. The active OpenSpec remains open until stage 2 strict parity and owner approval.
+
 Checked implementation items mean merged code and generated-data regression coverage, **not** a passed private Mega Database golden test. A green public CI build never authorizes a claim of full 2CBH parity.
 
 ## 0. Record baseline
 - [x] 0.1 Create a new active successor rather than overwrite the archived native-2cbh-readonly history.
 - [x] 0.2 Preserve measured Mega Database 2026 facts and successful five-job CI for original baseline 07716d49; document one-corpus limitations.
-- [ ] 0.3 Strictly validate the active OpenSpec in CI. Merge the delta into the permanent capability spec only after the private golden gate and owner approval, when this change is archived.
+- [x] 0.3 Strictly validate the active OpenSpec in Linux CI; retain its deltas as an active change until the private golden gate and owner approval, when they will be merged into the permanent capability spec during archive.
 
 ## 1. Implement NOW, using GENERATED data ONLY
 - [x] 1.1 Unknown .2cba annotation kinds, truncated data and invalid framing return typed errors from the iterator; never None or silently stopped.
@@ -22,7 +24,7 @@ Checked implementation items mean merged code and generated-data regression cove
 - [x] 1.12 Implement board-verified SAN overqualification and Z0/null exception adjudication with per-occurrence counts. For ChessBase-specific Unicode/PUA, diagrams, encoding and GUI clock output, **do not enable blanket allowances**: add only narrow, contextual, proof-backed and independently tested transforms in 2.3–2.4 when the private oracle demonstrates a genuine difference.
 - [x] 1.13 Synthetic strict gold positives and negatives cover changes to tags, comments (including literal CRLF), NAGs, variations, results, Unicode, missing/extra/reordered/duplicate games, illegal SAN, SAN ambiguity and fabricated null; all unauthorized differences fail.
 - [x] 1.14 Run generated malformed/unknown-frame fuzz and no-mmap regressions, build performance/benchmark targets, maintain classic CBH/CBV/CBZ tests and MIT provenance/privacy. **Paired full-corpus throughput, RSS and zero-allocation acceptance remain in private stage 2.5.**
-- [ ] 1.15 Run final fmt, all-target all-feature Clippy -D warnings, all-feature tests, benchmark compilation, fuzz and five GitHub CI jobs on main. Document final exact SHAs; no release/tag.
+- [x] 1.15 Complete fmt, all-target all-feature Clippy -D warnings, all-feature and strict-oracle example tests, synthetic 2CBH no-mmap integration tests, benchmark compilation, nightly fuzz, and all five CI jobs on main. Verified code commit `1bbdff9219503784add4bb39674c4f013da2b25f`, [five-green run 42183997583](https://github.com/itshak/cbvault/actions/runs/42183997583). No release/tag.
 
 ## 2. PRIVATE GOLD work ONLY for NEXT AGENT
 
