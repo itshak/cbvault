@@ -12,7 +12,7 @@ struct Seen {
     id: u32,
     moves: Vec<u16>,
     keys: Vec<u64>,
-    annotations: usize,
+    annotations: Option<Vec<u8>>,
 }
 
 #[derive(Default)]
@@ -30,7 +30,12 @@ impl GameSink for Collector {
     }
     fn game(&mut self, game: GameRef<'_>) {
         assert_eq!(game.keys.len(), game.moves.len() + 1);
-        let annotations = game.twocbh_annotations.as_ref().map_or(0, |a| a.iter_items().count());
+        let annotations = game.twocbh_annotations.as_ref().map(|a| {
+            a.iter_items()
+                .collect::<Result<Vec<_>, _>>()
+                .expect("all requested annotations must parse without silent termination");
+            a.content().to_vec()
+        });
         self.games.push(Seen { id: game.id, moves: game.moves.to_vec(), keys: game.keys.to_vec(), annotations });
     }
     fn failed(&mut self, id: u32, _: &cbvault::bridge::Error) {
@@ -68,6 +73,7 @@ fn multiworker_v2_conversion_matches_sequential_annotated_and_keyed_stream() {
     assert_eq!(a.games, 11);
     assert_eq!(a.failures, 1);
     assert_eq!(serial.failed, vec![6]);
+    assert_eq!(serial.games.iter().filter(|g| g.annotations.is_some()).count(), 3);
 
     for threads in [2, 4] {
         let mut parallel = Collector::default();
