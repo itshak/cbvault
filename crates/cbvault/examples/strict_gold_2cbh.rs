@@ -727,6 +727,57 @@ mod tests {
     }
 
     #[test]
+    fn strict_game_stream_requires_full_count_and_rejects_extra_or_reordered_games() {
+        let first = "[Event \"First\"]\n[White \"Alpha\"]\n\n1. e4 e5 *\n\n";
+        let second = "[Event \"Second\"]\n[White \"Beta\"]\n\n1. d4 d5 *\n\n";
+        let input = format!("{first}{second}");
+        let mut games = Games::new(std::io::BufReader::new(input.as_bytes()));
+        let expected_first = parse_game(first.into()).unwrap();
+        let expected_second = parse_game(second.into()).unwrap();
+        let got_first = games.next_game().unwrap().expect("first game");
+        let got_second = games.next_game().unwrap().expect("second game");
+        assert!(compare_game(&expected_first, &got_first).unwrap().equal);
+        assert!(compare_game(&expected_second, &got_second).unwrap().equal);
+        assert!(games.next_game().unwrap().is_none(), "full EOF is mandatory");
+        assert!(!compare_game(&expected_first, &got_second).unwrap().equal, "reordered records must fail");
+        assert!(!compare_game(&expected_second, &got_first).unwrap().equal, "reordered records must fail");
+
+        let mut missing = Games::new(std::io::BufReader::new(first.as_bytes()));
+        assert!(missing.next_game().unwrap().is_some());
+        assert!(missing.next_game().unwrap().is_none(), "an expected second game is missing");
+
+        let three = format!("{first}{second}{first}");
+        let mut extra = Games::new(std::io::BufReader::new(three.as_bytes()));
+        assert!(extra.next_game().unwrap().is_some());
+        assert!(extra.next_game().unwrap().is_some());
+        assert!(extra.next_game().unwrap().is_some(), "a duplicated extra game is not EOF");
+    }
+
+    #[test]
+    fn strict_comments_cannot_hide_tag_like_lines_or_mutations() {
+        let input = "[Event \"A\"]\n\n1. e4 {A multiline note:\n[Event \"not a new game\"]\ncontinued} e5 *\n\n[Event \"B\"]\n\n1. d4 d5 *\n";
+        let mut reader = Games::new(std::io::BufReader::new(input.as_bytes()));
+        let first = reader.next_game().unwrap().unwrap();
+        let second = reader.next_game().unwrap().unwrap();
+        assert_eq!(first.tags, vec![("Event".to_owned(), "A".to_owned())]);
+        assert_eq!(second.tags, vec![("Event".to_owned(), "B".to_owned())]);
+        assert_eq!(first.tokens.iter().filter(|t| matches!(t, Token::Comment(_))).count(), 1);
+        assert!(reader.next_game().unwrap().is_none());
+
+        let altered = parse_game(first.raw.replace("continued", "continues")).unwrap();
+        assert!(!compare_game(&first, &altered).unwrap().equal);
+    }
+
+    #[test]
+    fn canonical_byte_serialization_does_not_hide_literal_tag_or_comment_bytes() {
+        let same_a = parse_game("[ZCustom \"a\\\\b\\\"c\"]\n[Event \"E\"]\n\n1. e4 { exact spacing } *\n".into()).unwrap();
+        let same_b = parse_game("[Event \"E\"]\n[ZCustom \"a\\\\b\\\"c\"]\n\n1.e4 { exact spacing } *\n".into()).unwrap();
+        assert!(compare_game(&same_a, &same_b).unwrap().equal, "only tag order and movenumber spacing normalize");
+        let different = parse_game("[Event \"E\"]\n[ZCustom \"a\\\\b\\\"c\"]\n\n1.e4 {exact spacing } *\n".into()).unwrap();
+        assert!(!compare_game(&same_a, &different).unwrap().equal, "comment whitespace remains byte-significant");
+    }
+
+    #[test]
     fn strict_full_tags_and_variations() {
         let a = parse_game("[Event \"E\"]\n[White \"W\"]\n\n1. e4 e5 (1... c5) 2. Nf3 *\n".into()).unwrap();
         let mut wrong = parse_game("[Event \"F\"]\n[White \"W\"]\n\n1. e4 e5 (1... c5) 2. Nf3 *\n".into()).unwrap();
