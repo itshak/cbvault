@@ -212,6 +212,24 @@ impl Range {
     }
 }
 
+/// The one search-only header field not present in the shared Head trait.
+pub trait SearchHeader: Head {
+    /// The source entity ID of a game.
+    fn source_id(&self) -> i64;
+}
+
+impl SearchHeader for cbvault_format::cbh::GameHeader {
+    fn source_id(&self) -> i64 {
+        i64::from(self.source())
+    }
+}
+
+impl SearchHeader for GameHeaderRef<'_> {
+    fn source_id(&self) -> i64 {
+        self.source()
+    }
+}
+
 /// A predicate over one header record, in its resolved form.
 ///
 /// Every variant is a comparison of a field the record already holds, so the
@@ -355,7 +373,7 @@ impl Filter {
 
     /// Applies a resolved header filter uniformly to classic and 2CBH.
     /// IDs are compared as i64 because v2 entity identifiers are 64-bit.
-    pub fn matches<H: Head>(&self, id: u32, header: &H) -> bool {
+    pub fn matches<H: SearchHeader>(&self, id: u32, header: &H) -> bool {
         let (welo, belo) = header.elo();
         let (round, subround) = header.round();
         let white = header.white();
@@ -389,7 +407,7 @@ impl Filter {
             Filter::BlackSet(ids) => id_in(black, ids),
             Filter::Tournament(want) => id_eq(header.tournament(), *want),
             Filter::Annotator(want) => id_eq(header.annotator(), *want),
-            Filter::Source(want) => id_eq(header.other().map_or(0, |(_, source)| source), *want),
+            Filter::Source(want) => id_eq(header.source_id(), *want),
             Filter::Ids(ids) => ids.contains(id),
             Filter::AllOf(a, b) => a.matches(id, header) && b.matches(id, header),
             Filter::AnyOf(a, b) => a.matches(id, header) || b.matches(id, header),
