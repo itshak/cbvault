@@ -31,6 +31,12 @@ rayon.workspace = true
 criterion = { version = "0.5", default-features = false }
 cbvault-fixtures.workspace = true
 
+# The strict private gold executable also contains pure generated positive and
+# negative oracle tests. Run them in ordinary CI, not only cargo test --examples.
+[[example]]
+name = "strict_gold_2cbh"
+test = true
+
 [[bench]]
 name = "phase3"
 harness = false
