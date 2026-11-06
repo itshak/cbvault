@@ -355,15 +355,35 @@ fn lex(body: &str) -> Result<Vec<Token>, String> {
             if word.is_empty() {
                 return Err("unexpected PGN movetext delimiter".into());
             }
-            // Move number and whitespace layout are nonsemantic PGN syntax.
-            // Do not erase a SAN, comment, NAG, variation or result token.
-            if word.chars().all(|c| c.is_ascii_digit() || c == '.') && word.contains('.') {
-                continue;
+            // Standard PGN permits 1.e4 and 1...Nf6 without spaces.
+            // Split *only* an initial decimal number followed by dots;
+            // every remaining SAN byte must still be compared and replayed.
+            if let Some(san) = without_move_number(&word) {
+                if !san.is_empty() {
+                    tokens.push(Token::Word(san.to_owned()));
+                }
+            } else {
+                tokens.push(Token::Word(word));
             }
-            tokens.push(Token::Word(word));
         }
     }
     Ok(tokens)
+}
+
+/// Remove only a syntactic move-number prefix, never part of a SAN move.
+fn without_move_number(word: &str) -> Option<&str> {
+    let bytes = word.as_bytes();
+    let mut at = 0;
+    while at < bytes.len() && bytes[at].is_ascii_digit() {
+        at += 1;
+    }
+    if at == 0 || at == bytes.len() || bytes[at] != b'.' {
+        return None;
+    }
+    while at < bytes.len() && bytes[at] == b'.' {
+        at += 1;
+    }
+    Some(&word[at..])
 }
 
 struct Compared {
@@ -663,6 +683,19 @@ mod tests {
         assert!(!compare_game(&a, &b).unwrap().equal);
         let c = parse_game("[Event \"E\"]\n[White \"W\"]\n\n1. e4 {Good} *\n".into()).unwrap();
         assert!(compare_game(&a, &c).unwrap().equal);
+    }
+
+    #[test]
+    fn fused_move_numbers_do_not_hide_or_fabricate_san() {
+        let a = parse_game("[Event \"E\"]\n\n1.e4 e5 (1...c5) 2.Nf3 *\n".into()).unwrap();
+        let b = parse_game("[Event \"E\"]\n\n1. e4 e5 (1... c5) 2. Nf3 *\n".into()).unwrap();
+        assert_eq!(a.tokens, b.tokens);
+        assert!(compare_game(&a, &b).unwrap().equal);
+        let wrong = parse_game("[Event \"E\"]\n\n1.e4 e6 (1...c5) 2.Nf3 *\n".into()).unwrap();
+        assert!(!compare_game(&a, &wrong).unwrap().equal);
+        assert_eq!(without_move_number("abc"), None);
+        assert_eq!(without_move_number("23...Qxf2+"), Some("Qxf2+"));
+        assert_eq!(without_move_number("12..."), Some(""));
     }
 
     #[test]
