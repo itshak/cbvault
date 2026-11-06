@@ -381,6 +381,24 @@ impl V2Chunk {
     }
 }
 
+fn v2_read_annotations<'a>(
+    db: &Database,
+    offset: u64,
+    scratch: &'a mut Vec<u8>,
+) -> Result<cbvault_format::twocbh::Annotations<'a>> {
+    let seg = db.annotations_segment()?.ok_or_else(|| {
+        Error::corrupt(&db.members().annotations, offset, "referenced 2CBA missing")
+    })?;
+    let frame = seg.record_at(offset)?;
+    scratch.clear();
+    scratch.extend_from_slice(frame.bytes());
+    let anns = cbvault_format::twocbh::Annotations::parse(&db.members().annotations, scratch)?;
+    for item in anns.iter_items() {
+        item?;
+    }
+    Ok(anns)
+}
+
 fn v2_deliver(
     db: &Database,
     sink: &mut impl GameSink,
@@ -404,19 +422,7 @@ fn v2_deliver(
                 let native = if row.annotated && want_annotations {
                     // A no-mmap SegmentRecord may own its read bytes; borrow
                     // from our reusable scratch until the synchronous callback.
-                    let result = (|| -> Result<cbvault_format::twocbh::Annotations<'_>> {
-                        let seg = db.annotations_segment()?.ok_or_else(|| {
-                            Error::corrupt(&db.members().annotations, row.header.annotations_offset(), "referenced 2CBA missing")
-                        })?;
-                        let frame = seg.record_at(row.header.annotations_offset())?;
-                        scratch.clear();
-                        scratch.extend_from_slice(frame.bytes());
-                        let anns = cbvault_format::twocbh::Annotations::parse(&db.members().annotations, scratch)?;
-                        for item in anns.iter_items() {
-                            item?;
-                        }
-                        Ok(anns)
-                    })();
+                    let result = v2_read_annotations(db, row.header.annotations_offset(), scratch);
                     match result {
                         Ok(anns) => Some(anns),
                         Err(e) => {
