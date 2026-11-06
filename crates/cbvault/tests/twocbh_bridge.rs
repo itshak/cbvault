@@ -42,8 +42,7 @@ fn explicit_generation_survives_parallel_export_and_verify_with_both_stems() {
     let v2 = temp.base().with_extension("2cbh");
 
     let mut output = Vec::new();
-    let (exported, failures) =
-        cbvault::pgn::parallel::export_span_report(&v2, &mut output, 1, 2, 10, 1, 0).unwrap();
+    let (exported, failures) = cbvault::pgn::parallel::export_span_report(&v2, &mut output, 1, 2, 10, 1, 0).unwrap();
     assert_eq!(exported.games, 1);
     assert_eq!(exported.failures, 0);
     assert!(failures.is_empty());
@@ -55,13 +54,9 @@ fn explicit_generation_survives_parallel_export_and_verify_with_both_stems() {
     assert!(failures.is_empty());
 
     assert!(cbvault::replay::verify_parallel(&temp.base(), 1, 2, 10).is_err());
-    assert!(
-        cbvault::pgn::parallel::export_span_report(&temp.base(), &mut Vec::new(), 1, 2, 10, 1, 0).is_err()
-    );
+    assert!(cbvault::pgn::parallel::export_span_report(&temp.base(), &mut Vec::new(), 1, 2, 10, 1, 0).is_err());
     assert!(cbvault::replay::verify_parallel(&classic, 1, 2, 10).is_err());
-    assert!(
-        cbvault::pgn::parallel::export_span_report(&classic, &mut Vec::new(), 1, 2, 10, 1, 0).is_err()
-    );
+    assert!(cbvault::pgn::parallel::export_span_report(&classic, &mut Vec::new(), 1, 2, 10, 1, 0).is_err());
 }
 
 #[test]
