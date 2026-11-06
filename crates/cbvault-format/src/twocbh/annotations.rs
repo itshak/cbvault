@@ -359,7 +359,8 @@ fn parse_annotation<'a>(content: &'a [u8], offset: &mut usize, t: u16) -> Result
                 r.take(18)?;
                 let sl = r.len_val()?;
                 r.take(sl)?;
-                let move_count = r.u16_val()? as usize;
+                r.take(3)?;
+                let move_count = r.len_val()?;
                 r.take(move_count * 5)?;
                 if r.offset + 4 <= r.content.len() && r.content[r.offset..r.offset + 4] == [0, 0, 0, 0] {
                     r.take(4)?;

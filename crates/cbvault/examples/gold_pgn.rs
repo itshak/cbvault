@@ -930,8 +930,16 @@ fn run_2cbh(
                 if probe.contains(&rec_id) {
                     println!("probe {rec_id} annotations:");
                     if let Some(a) = anns.as_ref() {
-                        for it in a.iter_items().flatten() {
-                            println!("  item pos={} offset={} annot={:?}", it.position, it.offset, it.annotation);
+                        for (idx, it) in a.iter_items().enumerate() {
+                            match it {
+                                Ok(it) => {
+                                    println!(
+                                        "  item {idx} pos={} offset={} annot={:?}",
+                                        it.position, it.offset, it.annotation
+                                    )
+                                }
+                                Err(e) => println!("  item {idx} ERROR: {:?}", e),
+                            }
                         }
                     }
                     println!("probe {rec_id} tokens:");
