@@ -17,12 +17,16 @@
 //! is [`Database::for_each_position_key`], with progress and a cancel that
 //! takes effect within one chunk.
 
-use cbvault_format::cbh::{Entity, GameHeader};
+use cbvault_format::cbh::Entity;
+#[cfg(test)]
+use cbvault_format::cbh::GameHeader;
+use cbvault_format::game::Head;
 use cbvault_format::error::{Error, Result};
 use cbvault_format::game::{Eco, GameResult, RecordKind};
 use rayon::prelude::*;
 
 use super::namebase::Name;
+use super::sink::GameHeaderRef;
 use super::{Database, GameBuf};
 
 /// Games where either player is one of `ids`.
@@ -349,34 +353,43 @@ impl Filter {
         Filter::Not(Box::new(self))
     }
 
-    /// Whether `header`, the record of game `id`, satisfies the filter.
-    pub fn matches(&self, id: u32, header: &GameHeader) -> bool {
+    /// Applies a resolved header filter uniformly to classic and 2CBH.
+    /// IDs are compared as i64 because v2 entity identifiers are 64-bit.
+    pub fn matches<H: Head>(&self, id: u32, header: &H) -> bool {
+        let (welo, belo) = header.elo();
+        let (round, subround) = header.round();
+        let white = header.white();
+        let black = header.black();
+        let id_eq = |stored: i64, expected: u32| stored == i64::from(expected);
+        let id_in = |stored: i64, ids: &IdSet| {
+            u32::try_from(stored).is_ok_and(|value| ids.contains(value))
+        };
         match self {
             Filter::All => true,
-            Filter::WhiteEloAtLeast(min) => i32::from(header.white_elo()) >= *min,
-            Filter::BlackEloAtLeast(min) => i32::from(header.black_elo()) >= *min,
-            Filter::EloAtLeast(min) => i32::from(header.white_elo()) >= *min || i32::from(header.black_elo()) >= *min,
-            Filter::WhiteEloBetween(range) => range.contains(i32::from(header.white_elo())),
-            Filter::BlackEloBetween(range) => range.contains(i32::from(header.black_elo())),
-            Filter::EloBetween(range) => {
-                range.contains(i32::from(header.white_elo())) || range.contains(i32::from(header.black_elo()))
-            }
+            Filter::WhiteEloAtLeast(min) => welo >= *min,
+            Filter::BlackEloAtLeast(min) => belo >= *min,
+            Filter::EloAtLeast(min) => welo >= *min || belo >= *min,
+            Filter::WhiteEloBetween(range) => range.contains(welo),
+            Filter::BlackEloBetween(range) => range.contains(belo),
+            Filter::EloBetween(range) => range.contains(welo) || range.contains(belo),
             Filter::YearBetween(range) => range.contains(i32::from(header.played_date().year())),
             Filter::Result(want) => header.result() == *want,
-            Filter::Round { round, sub } => header.round() == *round && sub.is_none_or(|s| header.subround() == s),
+            Filter::Round { round: want, sub } => {
+                round == i32::from(*want) && sub.is_none_or(|s| subround == i32::from(s))
+            }
             Filter::Eco { code, sub } => match header.eco() {
                 Eco::Code { code: c, sub: s } => c == *code && sub.is_none_or(|w| s == w),
                 _ => false,
             },
-            Filter::Player(id) => header.white() == *id,
-            Filter::Opponent(id) => header.black() == *id,
-            Filter::Either(id) => header.white() == *id || header.black() == *id,
-            Filter::PlayerSet(ids) => ids.contains(header.white()) || ids.contains(header.black()),
-            Filter::WhiteSet(ids) => ids.contains(header.white()),
-            Filter::BlackSet(ids) => ids.contains(header.black()),
-            Filter::Tournament(id) => header.tournament() == *id,
-            Filter::Annotator(id) => header.annotator() == *id,
-            Filter::Source(id) => header.source() == *id,
+            Filter::Player(want) => id_eq(white, *want),
+            Filter::Opponent(want) => id_eq(black, *want),
+            Filter::Either(want) => id_eq(white, *want) || id_eq(black, *want),
+            Filter::PlayerSet(ids) => id_in(white, ids) || id_in(black, ids),
+            Filter::WhiteSet(ids) => id_in(white, ids),
+            Filter::BlackSet(ids) => id_in(black, ids),
+            Filter::Tournament(want) => id_eq(header.tournament(), *want),
+            Filter::Annotator(want) => id_eq(header.annotator(), *want),
+            Filter::Source(want) => id_eq(header.other().map_or(0, |(_, source)| source), *want),
             Filter::Ids(ids) => ids.contains(id),
             Filter::AllOf(a, b) => a.matches(id, header) && b.matches(id, header),
             Filter::AnyOf(a, b) => a.matches(id, header) || b.matches(id, header),
@@ -425,20 +438,77 @@ fn parse_eco(text: &str) -> Option<(u16, Option<u8>)> {
     }
 }
 
-/// One game a scan matched, with the names the match needs, borrowed.
-#[derive(Clone, Copy)]
+/// An entity name from either database generation. Classic names remain
+/// borrowed; 2CBH .2lid names are decoded on demand for matched rows only.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SearchName<'a> {
+    /// Borrowed classic namebase record.
+    Classic(Name<'a>),
+    /// The two native v2 UTF-8 entity fields.
+    TwoCbh { last: String, first: String },
+}
+
+impl SearchName<'_> {
+    /// First field, usually a surname or tournament title.
+    pub fn last(&self) -> &[u8] {
+        match self {
+            Self::Classic(name) => name.last(),
+            Self::TwoCbh { last, .. } => last.as_bytes(),
+        }
+    }
+
+    /// Second field, usually the player forename.
+    pub fn first(&self) -> &[u8] {
+        match self {
+            Self::Classic(name) => name.first(),
+            Self::TwoCbh { first, .. } => first.as_bytes(),
+        }
+    }
+
+    /// Whether both name fields are empty.
+    pub fn is_empty(&self) -> bool {
+        self.last().is_empty() && self.first().is_empty()
+    }
+
+    /// An already UTF-8 single-field name, or None for multi-field names.
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            Self::Classic(name) => name.as_str(),
+            Self::TwoCbh { last, first } if first.is_empty() => Some(last),
+            Self::TwoCbh { .. } => None,
+        }
+    }
+
+    /// Write the displayed name as Last, First, preserving native Unicode.
+    pub fn push_text(&self, out: &mut String) {
+        match self {
+            Self::Classic(name) => name.push_text(out),
+            Self::TwoCbh { last, first } => {
+                out.push_str(last);
+                if !first.is_empty() {
+                    if !last.is_empty() {
+                        out.push_str(", ");
+                    }
+                    out.push_str(first);
+                }
+            }
+        }
+    }
+}
+
+/// One game a scan matched, with generation-aware header and names.
+#[derive(Clone, Debug)]
 pub struct Match<'a> {
-    /// The game's number in `.cbh`.
+    /// Stable 1-based record ID.
     pub id: u32,
-    /// The header record as stored.
-    pub header: GameHeader,
-    /// The white player, as `Last, First` — the slice of the mapped `.cbp`,
-    /// not a copy.
-    pub white: Name<'a>,
-    /// The black player.
-    pub black: Name<'a>,
-    /// The tournament's title.
-    pub event: Name<'a>,
+    /// Header from the correct ChessBase generation.
+    pub header: GameHeaderRef<'a>,
+    /// White player name, classic borrowed or native v2 decoded.
+    pub white: SearchName<'a>,
+    /// Black player name.
+    pub black: SearchName<'a>,
+    /// Tournament title.
+    pub event: SearchName<'a>,
 }
 
 /// Every match of a scan, in ascending game order, with the names each one
@@ -491,7 +561,7 @@ impl<'a> Scan<'a> {
 impl Match<'_> {
     /// The player's name written into `out` as `Last, First`, decoded by the
     /// rules the PGN tags use. `false` when the record has no such name.
-    pub fn player(name: &Name<'_>, out: &mut String) -> bool {
+    pub fn player(name: &SearchName<'_>, out: &mut String) -> bool {
         if name.is_empty() {
             return false;
         }
@@ -553,24 +623,55 @@ fn ranges_of(db: &Database, first: u32, last: u32) -> Vec<(u32, u32)> {
 
 /// The scan itself, over `ranges`.
 fn scan_ranges<'db>(db: &'db Database, ranges: &[(u32, u32)], filter: &Filter, threads: usize) -> Result<Scan<'db>> {
-    let entities = db.entities();
+    let classic_entities = if db.generation() == super::Generation::Classic {
+        Some(db.entities())
+    } else {
+        None
+    };
+    let v2_entities = db.twocbh_entities();
     let scan_chunk = |&(first, last): &(u32, u32)| -> Result<Vec<Match<'db>>> {
         let mut out = Vec::new();
-        let mut batch = db.record_batch(first, last)?;
-        for header in batch.by_ref() {
-            if !matches!(header.kind(), RecordKind::Game) || header.is_deleted() {
-                continue;
+        if let Some(entities) = v2_entities {
+            // Native 2CBH headers are 192 bytes and .2lid entities are
+            // interleaved. Never reinterpret them as classic 46-byte records.
+            for id in first..=last {
+                let header = db.header_ref(id)?;
+                if !matches!(header.kind(), RecordKind::Game) || header.is_deleted() {
+                    continue;
+                }
+                if !filter.matches(id, &header) {
+                    continue;
+                }
+                let white = entities.player(header.white())?.unwrap_or_default();
+                let black = entities.player(header.black())?.unwrap_or_default();
+                let event = entities.tournament(header.tournament())?.unwrap_or_default();
+                out.push(Match {
+                    id,
+                    header,
+                    white: SearchName::TwoCbh { last: white.last, first: white.first },
+                    black: SearchName::TwoCbh { last: black.last, first: black.first },
+                    event: SearchName::TwoCbh { last: event.title, first: String::new() },
+                });
             }
-            if !filter.matches(header.id(), &header) {
-                continue;
+        } else if let Some(entities) = classic_entities {
+            let mut batch = db.record_batch(first, last)?;
+            for header in batch.by_ref() {
+                if !matches!(header.kind(), RecordKind::Game) || header.is_deleted() {
+                    continue;
+                }
+                if !filter.matches(header.id(), &header) {
+                    continue;
+                }
+                out.push(Match {
+                    id: header.id(),
+                    header: GameHeaderRef::ClassicOwned(header),
+                    white: SearchName::Classic(entities.name(Entity::Player, header.white())?.unwrap_or(BLANK)),
+                    black: SearchName::Classic(entities.name(Entity::Player, header.black())?.unwrap_or(BLANK)),
+                    event: SearchName::Classic(Name::of(
+                        entities.name(Entity::Tournament, header.tournament())?.unwrap_or(BLANK).last()
+                    )),
+                });
             }
-            out.push(Match {
-                id: header.id(),
-                header,
-                white: entities.name(Entity::Player, header.white())?.unwrap_or(BLANK),
-                black: entities.name(Entity::Player, header.black())?.unwrap_or(BLANK),
-                event: Name::of(entities.name(Entity::Tournament, header.tournament())?.unwrap_or(BLANK).last()),
-            });
         }
         Ok(out)
     };
