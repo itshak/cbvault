@@ -494,7 +494,7 @@ fn convert_parallel_v2(db: &Database, sink: &mut impl GameSink, threads: usize, 
     let mut annotation_scratch = Vec::new();
     let wave_size = threads.saturating_mul(2).max(2);
 
-    for wave in ranges.chunks(wave_size) {
+    'waves: for wave in ranges.chunks(wave_size) {
         if sink.cancelled() {
             stats.complete = false;
             break;
@@ -509,6 +509,13 @@ fn convert_parallel_v2(db: &Database, sink: &mut impl GameSink, threads: usize, 
                 .collect()
         });
         for chunk in chunks {
+            // Poll between chunks, not only between whole waves. A user
+            // cancellation must prevent delivery of already-decoded future
+            // chunks, while keeping the delivered IDs a strict source prefix.
+            if sink.cancelled() {
+                stats.complete = false;
+                break 'waves;
+            }
             v2_deliver(db, sink, &chunk, &mut annotation_scratch, want_annotations, &mut stats);
             free.lock().unwrap().push(chunk);
         }
