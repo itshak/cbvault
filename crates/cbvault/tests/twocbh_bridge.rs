@@ -314,3 +314,34 @@ fn test_twocbh_results_and_tournament_types() {
     assert!(!tour.is_rapid());
     assert!(!tour.is_correspondence());
 }
+
+#[test]
+fn explicitly_selected_v2_member_wins_over_same_stem_classic_file() {
+    let temp = TempDb::create("v2_explicit_generation");
+    let mut builder = Builder::new();
+    let mut board = Board::startpos();
+    let w = words(&mut board, "e2e4 e7e5");
+    let at = builder.moves(1, &w);
+    builder.game(at);
+    builder.write_to(&temp);
+
+    // An unrelated classic header with the identical basename must never
+    // redirect an explicitly selected .2cbh or .2lid source to classic.
+    std::fs::write(temp.base().with_extension("cbh"), b"classic header present").unwrap();
+
+    for ext in ["2cbh", "2cbg", "2cba", "2lid"] {
+        let path = temp.base().with_extension(ext);
+        assert_eq!(cbvault::bridge::generation_of(&path), Generation::TwoCbh);
+        assert_eq!(Database::open(&path).unwrap().generation(), Generation::TwoCbh);
+    }
+    assert_eq!(
+        cbvault::bridge::generation_of(temp.base().with_extension("cbh")),
+        Generation::Classic
+    );
+    assert_eq!(
+        cbvault::bridge::generation_of(temp.base()),
+        Generation::Unknown,
+        "ambiguous extensionless names must not guess"
+    );
+    assert!(Database::open(temp.base()).is_err());
+}
