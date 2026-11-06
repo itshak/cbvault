@@ -389,7 +389,7 @@ fn compare_game(gold: &Game, ours: &Game) -> Result<Compared, String> {
             }
             (Token::Word(ga), Token::Word(ob)) => {
                 if matches!(ob.as_str(), "1-0" | "0-1" | "1/2-1/2" | "*") {
-                    if ga != ob { return Ok(Compared { equal: false, san, nulls, first_byte: idx, bytes }); }
+                    if ga != ob { return Ok(Compared { equal: false, san, nulls, first_byte: bytes as usize, bytes }); }
                     continue;
                 }
                 let null_match = (ga == "Z0" && ob == "--") || (ga == "--" && ob == "Z0");
@@ -399,15 +399,15 @@ fn compare_game(gold: &Game, ours: &Game) -> Result<Compared, String> {
                     Move::NULL
                 } else {
                     match san_to_move(&board, ob) {
-                        Ok(mv) => mv,
-                        Err(_) => return Ok(Compared { equal: false, san, nulls, first_byte: idx, bytes }),
+                        Some(mv) => mv,
+                        None => return Ok(Compared { equal: false, san, nulls, first_byte: idx, bytes }),
                     }
                 };
                 if ga != ob {
                     if null_match {
                         nulls += 1;
                     } else if redundant_qualifier(ga, ob)
-                        && san_to_move(&board, ga).ok() == Some(mv)
+                        && san_to_move(&board, ga) == Some(mv)
                     {
                         // Both spellings must resolve to the identical LEGAL
                         // move on the actual board, so no alternative legal
