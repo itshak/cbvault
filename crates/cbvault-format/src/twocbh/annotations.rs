@@ -113,8 +113,24 @@ impl<'a> Annotations<'a> {
         Ok(past)
     }
 
-    /// The annotation text this record carries, as one string per run of
-    /// printable bytes or text annotations.
+    /// Extracts text annotations without swallowing an unknown or corrupt kind.
+    /// Use this when complete decoding must be verified, rather than the
+    /// diagnostic best-effort `texts` helper.
+    pub fn try_texts(&self) -> Result<Vec<String>> {
+        let mut out = Vec::new();
+        for item in self.iter_items() {
+            let item = item?;
+            if let Annotation::Text { text: t, .. } = item.annotation
+                && !t.is_empty()
+            {
+                out.push(text(t));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Best-effort diagnostic text, including printable binary payload runs.
+    /// This can suppress decode errors; never use it to validate annotations.
     pub fn texts(&self) -> Vec<String> {
         let mut out = Vec::new();
         // First try decoded text items
@@ -190,6 +206,13 @@ impl<'a> Iterator for Items<'a> {
             self.offset += 4;
             if pos == END_MARKER {
                 self.stopped = true;
+                if self.offset != self.content.len() {
+                    return Some(Err(Error::corrupt(
+                        "<.2cba>",
+                        self.offset as u64,
+                        "trailing bytes after 2CBA end marker",
+                    )));
+                }
                 return None;
             }
             if pos < GAME_POSITION {
@@ -371,7 +394,10 @@ fn parse_annotation<'a>(content: &'a [u8], offset: &mut usize, t: u16) -> Result
                 r.take(sl)?;
                 r.take(3)?;
                 let move_count = r.len_val()?;
-                r.take(move_count * 5)?;
+                let bytes = move_count
+                    .checked_mul(5)
+                    .ok_or_else(|| r.bad("quoted-game move count overflow"))?;
+                r.take(bytes)?;
                 if r.offset + 4 <= r.content.len() && r.content[r.offset..r.offset + 4] == [0, 0, 0, 0] {
                     r.take(4)?;
                 }
@@ -397,12 +423,11 @@ fn parse_annotation<'a>(content: &'a [u8], offset: &mut usize, t: u16) -> Result
             Ok(Some(Annotation::Other { code: t, data }))
         }
         0x20 => {
-            let prefix = r.take(4)?;
+            let start = r.offset;
+            r.take(4)?;
             let n = r.len_val()?;
-            let _body = r.take(n)?;
-            let start = prefix.as_ptr() as usize - content.as_ptr() as usize;
-            let len = 4 + 4 + n;
-            Ok(Some(Annotation::Other { code: t, data: &content[start..start + len] }))
+            r.take(n)?;
+            Ok(Some(Annotation::Other { code: t, data: &content[start..r.offset] }))
         }
         0x1c => {
             let start = r.offset;
@@ -512,6 +537,7 @@ mod tests {
         }
 
         assert_eq!(ann.texts(), vec!["A strong novelty!".to_string()]);
+        assert_eq!(ann.try_texts().unwrap(), vec!["A strong novelty!".to_string()]);
     }
 
     #[test]
@@ -529,6 +555,35 @@ mod tests {
         assert_eq!(items.stopped_at, Some((0, 0x7777)));
         assert!(items.next().is_none());
         assert!(ann.check_positions(5).is_err());
+        assert!(ann.try_texts().is_err(), "strict text extraction must not hide unknown annotations");
+    }
+
+    #[test]
+    fn trailing_bytes_after_end_marker_must_fail() {
+        let mut body = Vec::new();
+        body.extend(END_MARKER.to_le_bytes());
+        body.extend([0u8; 4]);
+        let raw = record_with_tag(ANNOTATION_TAG, body.len() as u32, 0, &body);
+        let ann = Annotations::parse(Path::new("trailing.2cba"), &raw).unwrap();
+        assert!(ann.iter_items().next().unwrap().is_err());
+        assert!(ann.try_texts().is_err());
+    }
+
+    #[test]
+    fn opaque_0x20_payload_is_borrowed_exactly() {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&[1, 2, 3, 4]);
+        payload.extend_from_slice(&3i32.to_le_bytes());
+        payload.extend_from_slice(&[5, 6, 7]);
+        let mut offset = 0;
+        match parse_annotation(&payload, &mut offset, 0x20).unwrap().unwrap() {
+            Annotation::Other { code, data } => {
+                assert_eq!(code, 0x20);
+                assert_eq!(data, payload.as_slice());
+                assert_eq!(offset, payload.len());
+            }
+            _ => panic!("expected opaque annotation"),
+        }
     }
 
     #[test]
