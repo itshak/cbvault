@@ -52,6 +52,8 @@ impl Evaluation {
             (0xff, _) => 32767,
             (1, v) if v > 0 => 30000 - v,
             (1, v) => -30000 - v,
+            (2, v) if v > 0 => 28000 - v,
+            (2, v) => -28000 - v,
             (_, v) => v,
         }
     }
@@ -115,7 +117,7 @@ pub fn time_spent(data: &[u8], classic: bool) -> Option<(u8, u8, u8, u8)> {
     if d[1] >= 60 || d[2] >= 60 {
         return None;
     }
-    Some(if classic { (d[0], d[1], d[2], d[3]) } else { (d[3], d[2], d[1], 0) })
+    Some(if classic { (d[0], d[1], d[2], d[3]) } else { (d[3], d[2], d[1], d[0]) })
 }
 
 /// The two numbers ChessBase's own PGN writes in `[%eval …]` for an engine

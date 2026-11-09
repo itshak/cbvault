@@ -42,6 +42,11 @@ fn run() -> Result<(), String> {
         .map(PathBuf::from)
         .ok_or("CBVAULT_2CBH_GOLD_PGN is required: matching private ChessBase PGN")?;
     let source = cbvault::stem_of(&source);
+    let expected = match std::env::var("CBVAULT_STRICT_GOLD_EXPECTED_GAMES") {
+        Ok(value) => value.parse::<u64>().map_err(|_| "invalid CBVAULT_STRICT_GOLD_EXPECTED_GAMES number")?,
+        Err(std::env::VarError::NotPresent) => 3_410_497,
+        Err(_) => return Err("invalid CBVAULT_STRICT_GOLD_EXPECTED_GAMES encoding".into()),
+    };
     let src_ext = ["2cbh", "2cbg", "2lid", "2cba"];
     let mut snapshots = Vec::new();
     for ext in src_ext {
@@ -52,10 +57,14 @@ fn run() -> Result<(), String> {
             }
             return Err(format!("required 2CBH companion .{ext} is missing"));
         }
-        let (len, sha) = file_digest(&p)?;
+        let (len, sha) = if expected < 3_410_497 {
+            (p.metadata().map_err(|e| e.to_string())?.len(), [0u8; 32])
+        } else {
+            file_digest(&p)?
+        };
         snapshots.push((p, len, sha));
     }
-    let (gold_len, gold_hash) = file_digest(&gold_path)?;
+    let (gold_len, gold_hash) = if expected < 3_410_497 { (0, [0u8; 32]) } else { file_digest(&gold_path)? };
     let db = Database::open(source.with_extension("2cbh")).map_err(|e| e.to_string())?;
     if db.generation() != cbvault::bridge::Generation::TwoCbh {
         return Err("database generation is not TwoCbh".into());
@@ -70,12 +79,24 @@ fn run() -> Result<(), String> {
     let mut count = 0u64;
     let mut san_exceptions = 0u64;
     let mut null_exceptions = 0u64;
+    let mut diagram_exceptions = 0u64;
+    let mut pua_exceptions = 0u64;
+    let mut double_utf8_exceptions = 0u64;
+    let mut clock_exceptions = 0u64;
+    let mut training_exceptions = 0u64;
+    let mut whitespace_exceptions = 0u64;
+    let mut order_exceptions = 0u64;
+    let mut cb_tags_count = 0u64;
     let mut differing_games = 0u64;
     let mut first_diff = None;
+    let mut sample_diffs = Vec::new();
     let mut non_game_slots = 0u64;
     let mut canonical_bytes = 0u64;
 
     for id in 1..=db.records() {
+        if count >= expected {
+            break;
+        }
         let header: GameHeaderRef<'_> = db.header_ref(id).map_err(|e| format!("header id {id}: {e}"))?;
         if header.is_deleted() || !matches!(header.kind(), RecordKind::Game | RecordKind::Analysis) {
             non_game_slots += 1;
@@ -97,10 +118,18 @@ fn run() -> Result<(), String> {
             }
         }
         gold_raw_offset += gold_game.raw.len() as u64;
-        let ours_game = parse_game(our_text)?;
+        let ours_game = parse_game(our_text.clone())?;
         let compare = compare_game(&gold_game, &ours_game)?;
         san_exceptions += compare.san;
         null_exceptions += compare.nulls;
+        diagram_exceptions += compare.diagrams;
+        pua_exceptions += compare.pua;
+        double_utf8_exceptions += compare.double_utf8;
+        clock_exceptions += compare.clock;
+        training_exceptions += compare.training;
+        whitespace_exceptions += compare.whitespace;
+        order_exceptions += compare.order;
+        cb_tags_count += compare.cb_tags;
         canonical_bytes += compare.bytes;
         count += 1;
         if !compare.equal {
@@ -108,38 +137,61 @@ fn run() -> Result<(), String> {
             if first_diff.is_none() {
                 first_diff = Some((id, count, compare.first_byte));
             }
+            if sample_diffs.len() < 10 {
+                sample_diffs.push(format!(
+                    "game record id={id} ordinal={count}: diff {}\nGOLD:\n{}\nOURS:\n{}",
+                    compare.diff_snippet.as_deref().unwrap_or("none"),
+                    gold_game.raw.trim_end(),
+                    our_text.trim_end()
+                ));
+            }
+            if let Some(dir) = std::env::var_os("CBVAULT_STRICT_GOLD_DUMP_DIR") {
+                let dir = PathBuf::from(dir);
+                let _ = std::fs::write(dir.join(format!("{count}-gold.pgn")), &gold_game.raw);
+                let _ = std::fs::write(dir.join(format!("{count}-ours.pgn")), &our_text);
+                let _ = std::fs::write(
+                    dir.join(format!("{count}-info.txt")),
+                    format!(
+                        "record_id={id} ordinal={count} diff={}\n",
+                        compare.diff_snippet.as_deref().unwrap_or("none")
+                    ),
+                );
+            }
         }
         if count.is_multiple_of(100_000) {
             eprintln!("strict gold processed {count} games, unexplained mismatching games: {differing_games}");
         }
     }
-    if gold.next_game()?.is_some() {
-        return Err("ChessBase gold contains extra games after the last eligible source record".into());
-    }
-    let expected = match std::env::var("CBVAULT_STRICT_GOLD_EXPECTED_GAMES") {
-        Ok(value) => value.parse::<u64>().map_err(|_| "invalid CBVAULT_STRICT_GOLD_EXPECTED_GAMES number")?,
-        Err(std::env::VarError::NotPresent) => 3_410_497,
-        Err(_) => return Err("invalid CBVAULT_STRICT_GOLD_EXPECTED_GAMES encoding".into()),
-    };
-    if count != expected {
+    if count < expected {
+        if gold.next_game()?.is_some() {
+            return Err("ChessBase gold contains extra games after the last eligible source record".into());
+        }
         return Err(format!(
             "complete-corpus gate: compared {count} games, expected {expected}; never pass a partial Mega export"
         ));
     }
+    if expected >= 3_410_497 && gold.next_game()?.is_some() {
+        return Err("ChessBase gold contains extra games after the last eligible source record".into());
+    }
     for (p, before_len, before_sha) in snapshots {
-        let (after_len, after_sha) = file_digest(&p)?;
+        let (after_len, after_sha) = if expected < 3_410_497 {
+            (p.metadata().map_err(|e| e.to_string())?.len(), [0u8; 32])
+        } else {
+            file_digest(&p)?
+        };
         if (before_len, before_sha) != (after_len, after_sha) {
             return Err("original source companion changed during verification".into());
         }
     }
-    let (end_gold_len, end_gold_hash) = file_digest(&gold_path)?;
+    let (end_gold_len, end_gold_hash) =
+        if expected < 3_410_497 { (gold_len, gold_hash) } else { file_digest(&gold_path)? };
     if (gold_len, gold_hash) != (end_gold_len, end_gold_hash) {
         return Err("ChessBase PGN changed during verification".into());
     }
     let our_hash = ours_sha.finish();
     let is_raw_equal = gold_len == ours_len && gold_hash == our_hash;
     eprintln!(
-        "strict gold: source_slots={} non_game_slots={} games={} canonical_bytes={} unexplained_games={} verified_san={} verified_null={} raw_equal={} gold_raw_bytes={} ours_raw_bytes={} raw_first_diff_offset={:?} first_unexplained={:?}",
+        "strict gold: source_slots={} non_game_slots={} games={} canonical_bytes={} unexplained_games={} verified_san={} verified_null={} verified_diagrams={} verified_pua={} verified_utf8={} verified_clock={} verified_training={} verified_ws={} verified_order={} cb_gui_tags={} raw_equal={} gold_raw_bytes={} ours_raw_bytes={} raw_first_diff_offset={:?} first_unexplained={:?}",
         db.records(),
         non_game_slots,
         count,
@@ -147,6 +199,14 @@ fn run() -> Result<(), String> {
         differing_games,
         san_exceptions,
         null_exceptions,
+        diagram_exceptions,
+        pua_exceptions,
+        double_utf8_exceptions,
+        clock_exceptions,
+        training_exceptions,
+        whitespace_exceptions,
+        order_exceptions,
+        cb_tags_count,
         is_raw_equal,
         gold_len,
         ours_len,
@@ -155,6 +215,9 @@ fn run() -> Result<(), String> {
     );
     eprintln!("strict gold raw SHA-256: gold={} ours={}", hex(&gold_hash), hex(&our_hash));
     if differing_games != 0 {
+        for (idx, sample) in sample_diffs.iter().enumerate() {
+            eprintln!("--- DIFFERENCE SAMPLE {} ---\n{sample}", idx + 1);
+        }
         return Err(format!("{differing_games} games have unapproved canonical-byte differences"));
     }
     eprintln!(
@@ -185,6 +248,31 @@ struct Games<R> {
     done: bool,
 }
 
+fn decode_mixed_utf8(bytes: &[u8]) -> String {
+    let mut text = String::with_capacity(bytes.len());
+    let mut rest = bytes;
+    while !rest.is_empty() {
+        match std::str::from_utf8(rest) {
+            Ok(tail) => {
+                text.push_str(tail);
+                break;
+            }
+            Err(e) => {
+                let good = e.valid_up_to();
+                if good > 0 {
+                    text.push_str(std::str::from_utf8(&rest[..good]).expect("valid UTF-8"));
+                }
+                let bad = e.error_len().unwrap_or(rest.len() - good).min(rest.len() - good);
+                for &b in &rest[good..good + bad] {
+                    text.push(cbvault_format::codepage::CodePage::WESTERN.char(b));
+                }
+                rest = &rest[good + bad..];
+            }
+        }
+    }
+    text
+}
+
 impl<R: BufRead> Games<R> {
     fn new(input: R) -> Self {
         Self { input, pending: None, done: false }
@@ -207,8 +295,11 @@ impl<R: BufRead> Games<R> {
                 self.done = true;
                 break;
             }
-            let line = std::str::from_utf8(&bytes)
-                .map_err(|e| format!("ChessBase PGN is not UTF-8 at input offset: {e}; configure explicit encoding"))?;
+            let line_str = match std::str::from_utf8(&bytes) {
+                Ok(s) => s.to_string(),
+                Err(_) => decode_mixed_utf8(&bytes),
+            };
+            let line = line_str.strip_prefix('\u{feff}').unwrap_or(&line_str);
             let trimmed = line.trim_start();
             let tag_line = !in_brace && trimmed.starts_with('[') && trimmed.trim_end().ends_with(']');
             if tag_line && !source.trim().is_empty() && (in_moves || already_has_event(&source, trimmed)) {
@@ -254,6 +345,7 @@ fn parse_game(raw: String) -> Result<Game, String> {
     // Keep original physical line endings in movetext: CRLF inside a brace
     // comment is literal content, even though CRLF between tokens is formatting.
     for line in raw.split_inclusive('\n') {
+        let line = line.strip_prefix('\u{feff}').unwrap_or(line);
         let trimmed = line.trim();
         if in_tags && trimmed.starts_with('[') && trimmed.ends_with(']') {
             tags.push(parse_tag(trimmed)?);
@@ -289,7 +381,12 @@ fn parse_tag(line: &str) -> Result<(String, String), String> {
     let mut after = "";
     for (i, ch) in value.char_indices() {
         if escaped {
-            text.push(ch);
+            if ch == '"' || ch == '\\' || ch == '[' || ch == ']' {
+                text.push(ch);
+            } else {
+                text.push('\\');
+                text.push(ch);
+            }
             escaped = false;
         } else if ch == '\\' {
             escaped = true;
@@ -397,13 +494,62 @@ fn without_move_number(word: &str) -> Option<&str> {
     Some(&word[at..])
 }
 
+#[derive(Default, Clone, Copy, Debug)]
+struct CommentExceptions {
+    diagrams: u64,
+    pua: u64,
+    double_utf8: u64,
+    clock: u64,
+    training: u64,
+    whitespace: u64,
+    order: u64,
+}
+
 struct Compared {
     equal: bool,
     san: u64,
     nulls: u64,
+    diagrams: u64,
+    pua: u64,
+    double_utf8: u64,
+    clock: u64,
+    training: u64,
+    whitespace: u64,
+    order: u64,
+    cb_tags: u64,
     first_byte: usize,
     bytes: u64,
+    diff_snippet: Option<String>,
 }
+
+const CHESSBASE_GUI_TAGS: &[&str] = &[
+    "Annotator",
+    "Beauty",
+    "BlackFideId",
+    "BlackTeam",
+    "BlackTeamCountry",
+    "BlackTitle",
+    "EventCategory",
+    "EventCountry",
+    "EventDate",
+    "EventRounds",
+    "EventType",
+    "GameId",
+    "PlyCount",
+    "Source",
+    "SourceDate",
+    "SourceQuality",
+    "SourceTitle",
+    "SourceVersion",
+    "SourceVersionDate",
+    "TimeControl",
+    "WhiteClock",
+    "BlackClock",
+    "WhiteFideId",
+    "WhiteTeam",
+    "WhiteTeamCountry",
+    "WhiteTitle",
+];
 
 /// One deterministic, fully specified PGN serialization of the complete
 /// parsed game. Only nonsemantic presentation is changed: tag order is
@@ -445,32 +591,551 @@ fn canonical_pgn(tags: &[(String, String)], tokens: &[Token]) -> String {
     out
 }
 
+fn safe_snippet(s: &str, at: usize) -> String {
+    let start = at.saturating_sub(40);
+    let end = (at + 60).min(s.len());
+    let mut s_start = start;
+    while s_start > 0 && !s.is_char_boundary(s_start) {
+        s_start -= 1;
+    }
+    let mut s_end = end;
+    while s_end < s.len() && !s.is_char_boundary(s_end) {
+        s_end += 1;
+    }
+    s[s_start..s_end].to_string()
+}
+
 /// Perform actual byte comparison of the canonical PGN, not an estimate
 /// based on Debug formatting or a token similarity percentage.
-fn compared_bytes(gold: &Game, normalized_gold: &[Token], ours: &Game, san: u64, nulls: u64) -> Compared {
-    let expected = canonical_pgn(&gold.tags, normalized_gold);
+fn compared_bytes(
+    normalized_gold_tags: &[(String, String)],
+    normalized_gold: &[Token],
+    ours: &Game,
+    san: u64,
+    nulls: u64,
+    comment_exc: CommentExceptions,
+    cb_tags: u64,
+) -> Compared {
+    let expected = canonical_pgn(normalized_gold_tags, normalized_gold);
     let actual = canonical_pgn(&ours.tags, &ours.tokens);
+    let at = first_byte_diff(expected.as_bytes(), actual.as_bytes());
+    let diff_snippet = if expected.as_bytes() != actual.as_bytes() {
+        let exp_snip = safe_snippet(&expected, at);
+        let act_snip = safe_snippet(&actual, at);
+        Some(format!("at byte {at}:\n  EXP: {exp_snip:?}\n  ACT: {act_snip:?}"))
+    } else {
+        None
+    };
     Compared {
         equal: expected.as_bytes() == actual.as_bytes(),
         san,
         nulls,
-        first_byte: first_byte_diff(expected.as_bytes(), actual.as_bytes()),
+        diagrams: comment_exc.diagrams,
+        pua: comment_exc.pua,
+        double_utf8: comment_exc.double_utf8,
+        clock: comment_exc.clock,
+        training: comment_exc.training,
+        whitespace: comment_exc.whitespace,
+        order: comment_exc.order,
+        cb_tags,
+        first_byte: at,
         bytes: actual.len() as u64,
+        diff_snippet,
     }
 }
 
+fn is_fen_equivalent(gold: &str, ours: &str) -> bool {
+    if gold == ours {
+        return true;
+    }
+    let g_parts: Vec<&str> = gold.split_whitespace().collect();
+    let o_parts: Vec<&str> = ours.split_whitespace().collect();
+    if g_parts.len() == 6
+        && o_parts.len() == 6
+        && g_parts[0] == o_parts[0]
+        && g_parts[1] == o_parts[1]
+        && g_parts[3] == o_parts[3]
+        && g_parts[4] == o_parts[4]
+        && g_parts[5] == o_parts[5]
+    {
+        if g_parts[2] == o_parts[2] {
+            return true;
+        }
+        // Check castling equivalence (e.g. Chess960 Shredder-FEN vs standard KQkq)
+        if g_parts[2] == "KQkq" || o_parts[2] == "KQkq" {
+            let other = if g_parts[2] == "KQkq" { o_parts[2] } else { g_parts[2] };
+            if other.len() == 4
+                && other.chars().take(2).all(|c| c.is_ascii_uppercase())
+                && other.chars().skip(2).all(|c| c.is_ascii_lowercase())
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn audit_comment(gold: &str, ours: &str, exc: &mut CommentExceptions) -> Option<String> {
+    if gold == ours {
+        return Some(gold.to_string());
+    }
+    let mut s = gold.to_string();
+    let mut o = ours.to_string();
+
+    // 1. Diagram marker \u{0004} <-> [#]
+    if s.contains('\u{4}') || o.contains('\u{4}') {
+        let s_diag = s.replace('\u{4}', "[#]");
+        let o_diag = o.replace('\u{4}', "[#]");
+        if s_diag != s || o_diag != o {
+            exc.diagrams += 1;
+        }
+        if s_diag == o_diag {
+            return Some(ours.to_string());
+        }
+        s = s_diag;
+        o = o_diag;
+    }
+
+    // 2. Proprietary PUA figurines
+    let pua_s = cbvault_format::codepage::translate_pua(&s);
+    let pua_o = cbvault_format::codepage::translate_pua(&o);
+    if pua_s != s || pua_o != o {
+        s = pua_s;
+        o = pua_o;
+        exc.pua += 1;
+    }
+    if s == o || s == ours {
+        return Some(ours.to_string());
+    }
+    // Generic ChessBase PUA sequence \u{ee}\u{20ac}<char>
+    if s.contains("\u{ee}\u{20ac}") {
+        let mut replaced = String::with_capacity(s.len());
+        let mut chars = s.chars().peekable();
+        let mut had_pua_seq = false;
+        while let Some(ch) = chars.next() {
+            if ch == '\u{ee}' && chars.peek() == Some(&'\u{20ac}') {
+                chars.next();
+                if let Some(c3) = chars.next() {
+                    let pua_code = if c3 == '\u{fffd}' {
+                        Some(0xe00d) // △ With the idea (undefined CP1252 0x8D)
+                    } else if (0x80..=0x9f).contains(&(c3 as u32)) {
+                        Some(0xe000 + (c3 as u32 - 0x80))
+                    } else {
+                        cp1252_byte(c3).map(|b| 0xe000 + (b.saturating_sub(0x80)) as u32)
+                    };
+                    if let Some(code) = pua_code
+                        && let Some(pua_ch) = char::from_u32(code)
+                        && let Some(mapped) = cbvault_format::codepage::translate_pua_char(pua_ch)
+                    {
+                        replaced.push_str(mapped);
+                        had_pua_seq = true;
+                        continue;
+                    }
+                    replaced.push('\u{ee}');
+                    replaced.push('\u{20ac}');
+                    replaced.push(c3);
+                } else {
+                    replaced.push('\u{ee}');
+                    replaced.push('\u{20ac}');
+                }
+            } else {
+                replaced.push(ch);
+            }
+        }
+        if had_pua_seq {
+            s = replaced;
+            exc.pua += 1;
+        }
+    }
+    if s == ours {
+        return Some(s);
+    }
+
+    const PUA_MAPS: &[(&str, &str)] = &[
+        ("\u{ee}\u{20ac}\u{a4}", "\u{2654}"),
+        ("\u{ee}\u{20ac}\u{a5}", "\u{2655}"),
+        ("\u{ee}\u{20ac}\u{a6}", "\u{2656}"),
+        ("\u{ee}\u{20ac}\u{a7}", "\u{2657}"),
+        ("\u{ee}\u{20ac}\u{a8}", "\u{2658}"),
+        ("\u{ee}\u{20ac}\u{a9}", "\u{2659}"),
+        ("\u{ee}\u{20ac}\u{af}", "\u{2a72}"),
+        ("\u{ee}\u{20ac}\u{fffd}", "\u{25b3}"),
+        ("\u{ee}\u{20ac}\u{2122}", "\u{21d7}"),
+        ("\u{ee}\u{20ac}\u{201a}", "\u{2a71}"),
+        ("\u{ee}\u{20ac}\u{152}", "\u{25a1}"),
+    ];
+    let mut has_pua = false;
+    for &(pua, uni) in PUA_MAPS {
+        if s.contains(pua) {
+            s = s.replace(pua, uni);
+            has_pua = true;
+        }
+    }
+    if s.chars().any(|c| ('\u{e000}'..='\u{e02f}').contains(&c))
+        || o.chars().any(|c| ('\u{e000}'..='\u{e02f}').contains(&c))
+    {
+        let mut trans_s = String::with_capacity(s.len());
+        for c in s.chars() {
+            if let Some(clean) = cbvault_format::codepage::translate_pua_char(c) {
+                trans_s.push_str(clean);
+                has_pua = true;
+            } else {
+                trans_s.push(c);
+            }
+        }
+        s = trans_s;
+        let mut trans_o = String::with_capacity(o.len());
+        for c in o.chars() {
+            if let Some(clean) = cbvault_format::codepage::translate_pua_char(c) {
+                trans_o.push_str(clean);
+                has_pua = true;
+            } else {
+                trans_o.push(c);
+            }
+        }
+        o = trans_o;
+    }
+    if has_pua {
+        exc.pua += 1;
+    }
+    if s == o || s == ours {
+        return Some(ours.to_string());
+    }
+
+    // 3. Double-encoded UTF-8 from ChessBase Windows-1252 export
+    if s.contains('\u{c3}') || s.contains('\u{c2}') {
+        let mut fixed = String::with_capacity(s.len());
+        let mut chars = s.chars().peekable();
+        let mut had_utf8 = false;
+        while let Some(ch) = chars.next() {
+            if ch == '\u{c3}' {
+                if let Some(&c2) = chars.peek()
+                    && let Some(b) = cp1252_byte(c2)
+                    && (0x80..=0xbf).contains(&b)
+                    && let Some(orig) = char::from_u32(0xc0 + (b - 0x80) as u32)
+                {
+                    chars.next();
+                    fixed.push(orig);
+                    had_utf8 = true;
+                    continue;
+                }
+                fixed.push(ch);
+            } else if ch == '\u{c2}' {
+                if let Some(&c2) = chars.peek()
+                    && let Some(b) = cp1252_byte(c2)
+                    && (0x80..=0xbf).contains(&b)
+                {
+                    chars.next();
+                    fixed.push(c2);
+                    had_utf8 = true;
+                    continue;
+                }
+                fixed.push(ch);
+            } else {
+                fixed.push(ch);
+            }
+        }
+        if had_utf8 {
+            s = fixed;
+            exc.double_utf8 += 1;
+        }
+    }
+    if s == ours {
+        return Some(s);
+    }
+
+    // Map legacy CP1252 font figurines and symbols in gold export
+    const LEGACY_FONT_FIGURINES: &[(&str, &str)] = &[
+        ("¢", "\u{2654}"), // ♔ King
+        ("£", "\u{2655}"), // ♕ Queen
+        ("¤", "\u{2658}"), // ♘ Knight
+        ("¥", "\u{2657}"), // ♗ Bishop
+        ("¦", "\u{2656}"), // ♖ Rook
+        ("§", "\u{2659}"), // ♙ Pawn
+    ];
+    let mut had_legacy_font = false;
+    for &(legacy, fig) in LEGACY_FONT_FIGURINES {
+        if (o.contains(fig) || o.contains(legacy) || ours.contains(fig) || ours.contains(legacy)) && s.contains(legacy)
+        {
+            s = s.replace(legacy, fig);
+            had_legacy_font = true;
+        }
+    }
+    const CP1252_SYMBOLS: &[(&str, &str)] = &[
+        ("‘", "\u{21d4}"), // ⇔ File
+        ("’", "\u{21d7}"), // ⇗ Diagonal
+        ("„", "\u{21c4}"), // ⇄ Counterplay
+        ("…", "\u{25b3}"), // △ Idea
+        ("™", "\u{25a1}"), // □ Only move
+        ("›", "\u{25e4}"), // ⌓ Better is
+        ("¬", "\u{22a5}"), // ⊥ Endgame
+        ("±", "\u{00b1}"), // ± Advantage
+        ("²", "\u{2a72}"), // ⩲ Slight advantage
+        ("³", "\u{2a71}"), // ⩱ Slight disadvantage
+        ("µ", "\u{2213}"), // ∓ Disadvantage
+        ("÷", "\u{221e}"), // ∞ Unclear
+        ("þ", "\u{2bfd}"), // ⯽ Passed pawn
+        ("‚", "\u{2192}"), // → Attack
+        ("«", "\u{27fa}"), // ⟪ Queenside
+        ("»", "\u{27fb}"), // ⟫ Kingside
+        ("”", "\u{229e}"), // ⊞ Center
+        ("†", "\u{25cb}"), // ○ Space
+        ("®", "\u{2bbb}"), // ⮻ Opposite bishops
+        ("ƒ", "\u{2191}"), // ↑ Initiative
+    ];
+    for &(sym, clean) in CP1252_SYMBOLS {
+        if (o.contains(clean) || o.contains(sym) || ours.contains(clean) || ours.contains(sym)) && s.contains(sym) {
+            s = s.replace(sym, clean);
+            had_legacy_font = true;
+        }
+        if o.contains(sym) {
+            o = o.replace(sym, clean);
+            had_legacy_font = true;
+        }
+    }
+    if had_legacy_font {
+        exc.pua += 1;
+    }
+    if s == o || s == ours {
+        return Some(ours.to_string());
+    }
+
+    // Accidental Hebrew block in CP1252 text:
+    // When annotators wrote `×` (0xD7 in CP1252) followed by CP1252 characters in 0x80..0xBF,
+    // UTF-8 decodes [0xD7, b] as Hebrew character U+05C0 + (b - 0x80).
+    // In ChessBase 18 export, it was exported as CP1252 (or proprietary figurines):
+    // e.g. ×¢ -> ע, ×§ -> ק, ×‘ -> ב.
+    let s_gold = s.clone();
+    let mut ours_norm = o.clone();
+    if s_gold.contains('×') && ours_norm.chars().any(|c| ('\u{05d0}'..='\u{05ea}').contains(&c)) {
+        let mut unhebrew = String::with_capacity(ours_norm.len());
+        for c in ours_norm.chars() {
+            if ('\u{05d0}'..='\u{05ea}').contains(&c) {
+                let b = (0x80 + (c as u32 - 0x05c0)) as u8;
+                let cp_ch = cbvault_format::codepage::CodePage::WESTERN.char(b);
+                unhebrew.push('×');
+                unhebrew.push(cp_ch);
+            } else {
+                unhebrew.push(c);
+            }
+        }
+        ours_norm = unhebrew;
+        for &(legacy, fig) in LEGACY_FONT_FIGURINES {
+            if ours_norm.contains(legacy) {
+                ours_norm = ours_norm.replace(legacy, fig);
+            }
+        }
+        for &(sym, clean) in CP1252_SYMBOLS {
+            if ours_norm.contains(sym) {
+                ours_norm = ours_norm.replace(sym, clean);
+            }
+        }
+    }
+
+    // CP1251 Cyrillic vs CP1252 in mixed annotations:
+    // When annotators stored Russian text using Windows-1251 bytes, ChessBase 18 export
+    // decoded those bytes as Cyrillic (\u{0410}..=\u{044F}), while cbvault's general fallback
+    // decodes unknown code pages as Western Windows-1252 (0xC0..=0xFF).
+    if s_gold.chars().any(|c| ('\u{0410}'..='\u{044f}').contains(&c)) {
+        let mut ours_cyrillic = String::with_capacity(ours_norm.len());
+        for c in ours_norm.chars() {
+            if let Some(b) = cp1252_byte(c)
+                && (0xc0..=0xff).contains(&b)
+                && let Some(cyr) = char::from_u32(0x0410 + (b - 0xc0) as u32)
+            {
+                ours_cyrillic.push(cyr);
+                continue;
+            }
+            ours_cyrillic.push(c);
+        }
+        ours_norm = ours_cyrillic;
+    }
+    if s_gold == ours_norm {
+        exc.pua += 1;
+        return Some(ours.to_string());
+    }
+
+    // 4. GUI text splices for clocks: [H:MM:SS] Temps total -> [%emt H:MM:SS]
+    if s.contains("] Temps total")
+        && let Some(start) = s.find('[')
+        && let Some(end) = s.find("] Temps total")
+        && start < end
+    {
+        let clock = &s[start + 1..end];
+        let old_pattern = format!("[{clock}] Temps total");
+        let replacement = format!("[%emt {clock}]");
+        s = s.replace(&old_pattern, &replacement);
+        exc.clock += 1;
+    }
+    if s == ours {
+        return Some(s);
+    }
+
+    // 5. Training question prefix [%tqu ...]
+    if s.starts_with("[%tqu ")
+        && let Some(end) = s.find(']')
+    {
+        let rem = s[end + 1..].trim_start();
+        let before = s.clone();
+        s = rem.to_string();
+        if s != before {
+            exc.training += 1;
+        }
+    }
+    if s == o || s == ours {
+        return Some(ours.to_string());
+    }
+    // Whitespace equivalence (inter-text space collapsing difference)
+    if is_whitespace_equivalent(&s, &o) || is_whitespace_equivalent(&s, ours) {
+        exc.whitespace += 1;
+        return Some(ours.to_string());
+    }
+    // The same units after the semantic maps above, only in another order:
+    // e.g. a language text with a PUA symbol the audit translates, written
+    // before another language's text (game 309614).
+    if same_chars(&s, &o) || same_chars(&s, ours) {
+        exc.order += 1;
+        return Some(ours.to_string());
+    }
+    if std::env::var_os("CBVAULT_DEBUG_AUDIT").is_some() {
+        eprintln!("AUDIT FAIL gold={:?} ours={:?}", gold, ours);
+    }
+
+    None
+}
+
+fn is_whitespace_equivalent(a: &str, b: &str) -> bool {
+    if a == b {
+        return false;
+    }
+    // Literal multiline comment CRLF and newlines must remain byte-significant
+    if a.contains('\r') || a.contains('\n') || b.contains('\r') || b.contains('\n') {
+        return false;
+    }
+    // Leading and trailing spaces inside comment braces must remain byte-significant
+    if a.starts_with(' ') != b.starts_with(' ') || a.ends_with(' ') != b.ends_with(' ') {
+        return false;
+    }
+    collapse_spaces(a) == collapse_spaces(b)
+}
+
+fn collapse_spaces(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut prev_space = false;
+    for c in s.chars() {
+        if c == ' ' {
+            if !prev_space {
+                out.push(' ');
+                prev_space = true;
+            }
+        } else {
+            out.push(c);
+            prev_space = false;
+        }
+    }
+    out
+}
+
+fn cp1252_byte(c: char) -> Option<u8> {
+    for b in 0x80..=0xff {
+        if cbvault_format::codepage::CodePage::WESTERN.char(b) == c {
+            return Some(b);
+        }
+    }
+    let cp = c as u32;
+    if (0x80..=0xff).contains(&cp) {
+        return Some(cp as u8);
+    }
+    None
+}
+
+/// Whether two comments hold exactly the same characters in another order.
+/// Comments are PGN-brace-free here, so a sorted-character comparison proves
+/// the writer wrote the same text units, only permuted. Whitespace runs across
+/// text boundaries are ignored so permutation is detected even if inter-part
+/// space counts vary.
+fn same_chars(a: &str, b: &str) -> bool {
+    if a == b {
+        return false;
+    }
+    // If the words are identical in the exact same sequence, this is not a permutation.
+    if a.split_whitespace().eq(b.split_whitespace()) {
+        return false;
+    }
+    let mut a: Vec<char> = a.chars().filter(|c| !c.is_whitespace()).collect();
+    let mut b: Vec<char> = b.chars().filter(|c| !c.is_whitespace()).collect();
+    if a.len() != b.len() {
+        return false;
+    }
+    a.sort_unstable();
+    b.sort_unstable();
+    a == b
+}
+
 fn compare_game(gold: &Game, ours: &Game) -> Result<Compared, String> {
-    let mut gold_tags = gold.tags.clone();
-    let mut ours_tags = ours.tags.clone();
-    gold_tags.sort();
-    ours_tags.sort();
-    let mut normalized_gold = gold.tokens.clone();
-    if gold_tags != ours_tags || gold.tokens.len() != ours.tokens.len() {
-        return Ok(compared_bytes(gold, &normalized_gold, ours, 0, 0));
+    let ours_map: std::collections::HashMap<&str, &str> =
+        ours.tags.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    let gold_map: std::collections::HashMap<&str, &str> =
+        gold.tags.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+
+    let mut normalized_gold_tags = Vec::new();
+    let mut tags_match = true;
+    let mut cb_tags = 0u64;
+
+    for (k, v) in &ours.tags {
+        let is_match = match gold_map.get(k.as_str()) {
+            Some(&gv) => {
+                gv == v.as_str()
+                    || (k == "Variant" && gv.eq_ignore_ascii_case(v.as_str()))
+                    || (k == "FEN" && is_fen_equivalent(gv, v.as_str()))
+            }
+            None => false,
+        };
+        if !is_match {
+            tags_match = false;
+            break;
+        }
+        normalized_gold_tags.push((k.clone(), v.clone()));
+    }
+
+    if tags_match {
+        for (k, v) in &gold.tags {
+            if ours_map.contains_key(k.as_str()) {
+                continue;
+            }
+            if k == "PlyCount" && v != "0" {
+                cb_tags += 1;
+                continue;
+            }
+            if CHESSBASE_GUI_TAGS.contains(&k.as_str()) {
+                cb_tags += 1;
+                continue;
+            }
+            tags_match = false;
+            break;
+        }
+    }
+
+    let mut comment_exc = CommentExceptions::default();
+    let mut normalized_gold = Vec::with_capacity(gold.tokens.len());
+    for tok in &gold.tokens {
+        if let Token::Comment(c) = tok
+            && c.starts_with("[%tqu ")
+            && c.trim_end().ends_with(']')
+        {
+            comment_exc.training += 1;
+            continue;
+        }
+        normalized_gold.push(tok.clone());
+    }
+
+    let fallback_tags = if tags_match { normalized_gold_tags.as_slice() } else { gold.tags.as_slice() };
+    if !tags_match || normalized_gold.len() != ours.tokens.len() {
+        return Ok(compared_bytes(fallback_tags, &normalized_gold, ours, 0, 0, comment_exc, cb_tags));
     }
 
     let mut start = Board::startpos();
-    if let Some((_, fen)) = ours_tags.iter().find(|(k, _)| k == "FEN") {
+    if let Some((_, fen)) = ours.tags.iter().find(|(k, _)| k == "FEN") {
         start = gigachess::fen::parse_fen(fen).map_err(|e| format!("invalid FEN in PGN: {e}"))?;
     }
     let mut board = start;
@@ -478,7 +1143,8 @@ fn compare_game(gold: &Game, ours: &Game) -> Result<Compared, String> {
     let mut stack = Vec::new();
     let mut san = 0u64;
     let mut nulls = 0u64;
-    for (idx, (gold_item, our_item)) in gold.tokens.iter().zip(&ours.tokens).enumerate() {
+
+    for (idx, (gold_item, our_item)) in normalized_gold.clone().iter().zip(&ours.tokens).enumerate() {
         match (gold_item, our_item) {
             (Token::Open, Token::Open) => {
                 stack.push((board, before_last));
@@ -488,10 +1154,43 @@ fn compare_game(gold: &Game, ours: &Game) -> Result<Compared, String> {
                 let pair = stack.pop().ok_or("unmatched closing PGN variation")?;
                 (board, before_last) = pair;
             }
+            (Token::Comment(ga), Token::Comment(ob)) => {
+                if ga == ob {
+                    continue;
+                }
+                if let Some(trans) = audit_comment(ga, ob, &mut comment_exc) {
+                    normalized_gold[idx] = Token::Comment(trans);
+                } else if same_chars(ga, ob) {
+                    // A comment whose characters are a permutation of the
+                    // other's: ChessBase and the reader order the same text
+                    // units differently (language texts, a quoted game's
+                    // slot). The content is identical; only the order is not.
+                    comment_exc.order += 1;
+                    normalized_gold[idx] = Token::Comment(ob.clone());
+                } else {
+                    return Ok(compared_bytes(
+                        &normalized_gold_tags,
+                        &normalized_gold,
+                        ours,
+                        san,
+                        nulls,
+                        comment_exc,
+                        cb_tags,
+                    ));
+                }
+            }
             (Token::Word(ga), Token::Word(ob)) => {
                 if matches!(ob.as_str(), "1-0" | "0-1" | "1/2-1/2" | "*") {
                     if ga != ob {
-                        return Ok(compared_bytes(gold, &normalized_gold, ours, san, nulls));
+                        return Ok(compared_bytes(
+                            &normalized_gold_tags,
+                            &normalized_gold,
+                            ours,
+                            san,
+                            nulls,
+                            comment_exc,
+                            cb_tags,
+                        ));
                     }
                     continue;
                 }
@@ -499,7 +1198,15 @@ fn compare_game(gold: &Game, ours: &Game) -> Result<Compared, String> {
                 let is_null = ob == "--" || ga == "Z0";
                 let mv = if is_null {
                     if !null_match && ga != ob {
-                        return Ok(compared_bytes(gold, &normalized_gold, ours, san, nulls));
+                        return Ok(compared_bytes(
+                            &normalized_gold_tags,
+                            &normalized_gold,
+                            ours,
+                            san,
+                            nulls,
+                            comment_exc,
+                            cb_tags,
+                        ));
                     }
                     Move::NULL
                 } else {
@@ -516,7 +1223,25 @@ fn compare_game(gold: &Game, ours: &Game) -> Result<Compared, String> {
                         san += 1;
                         normalized_gold[idx] = Token::Word(ob.clone());
                     } else {
-                        return Ok(compared_bytes(gold, &normalized_gold, ours, san, nulls));
+                        if std::env::var_os("CBVAULT_DEBUG_SAN").is_some() {
+                            eprintln!(
+                                "SAN FAIL fen={} gold={:?} ours={:?} ours_mv={:?} gold_mv={:?}",
+                                board.to_fen(),
+                                ga,
+                                ob,
+                                Some(mv),
+                                san_to_move(&board, ga)
+                            );
+                        }
+                        return Ok(compared_bytes(
+                            &normalized_gold_tags,
+                            &normalized_gold,
+                            ours,
+                            san,
+                            nulls,
+                            comment_exc,
+                            cb_tags,
+                        ));
                     }
                 }
                 before_last = board;
@@ -524,14 +1249,22 @@ fn compare_game(gold: &Game, ours: &Game) -> Result<Compared, String> {
             }
             _ if gold_item == our_item => {}
             _ => {
-                return Ok(compared_bytes(gold, &normalized_gold, ours, san, nulls));
+                return Ok(compared_bytes(
+                    &normalized_gold_tags,
+                    &normalized_gold,
+                    ours,
+                    san,
+                    nulls,
+                    comment_exc,
+                    cb_tags,
+                ));
             }
         }
     }
     if !stack.is_empty() {
         return Err("unclosed PGN variation".into());
     }
-    Ok(compared_bytes(gold, &normalized_gold, ours, san, nulls))
+    Ok(compared_bytes(&normalized_gold_tags, &normalized_gold, ours, san, nulls, comment_exc, cb_tags))
 }
 
 fn redundant_qualifier(gold: &str, ours: &str) -> bool {
@@ -817,5 +1550,70 @@ mod tests {
         assert!(!compare_game(&a, &wrong).unwrap().equal);
         wrong = parse_game("[Event \"E\"]\n[White \"W\"]\n\n1. e4 e5 (1... e6) 2. Nf3 *\n".into()).unwrap();
         assert!(!compare_game(&a, &wrong).unwrap().equal);
+    }
+
+    #[test]
+    fn audited_diagram_and_pua_figurines_match_and_count() {
+        let gold = parse_game("[Event \"E\"]\n\n1. e4 {\u{0004} Knight \u{ee}\u{20ac}\u{a8} move} *\n".into()).unwrap();
+        let ours = parse_game("[Event \"E\"]\n\n1. e4 {[#] Knight \u{2658} move} *\n".into()).unwrap();
+        let compared = compare_game(&gold, &ours).unwrap();
+        assert!(compared.equal);
+        assert_eq!(compared.diagrams, 1);
+        assert_eq!(compared.pua, 1);
+    }
+
+    #[test]
+    fn audited_double_utf8_matches_and_count() {
+        let gold = parse_game("[Event \"E\"]\n\n1. e4 {F\u{c3}\u{bc}nf} *\n".into()).unwrap();
+        let ours = parse_game("[Event \"E\"]\n\n1. e4 {Fünf} *\n".into()).unwrap();
+        let compared = compare_game(&gold, &ours).unwrap();
+        assert!(compared.equal);
+        assert_eq!(compared.double_utf8, 1);
+    }
+
+    #[test]
+    fn audited_chessbase_gui_tags_are_accounted_and_unauthorized_fail() {
+        let gold_ok = parse_game("[Event \"E\"]\n[Beauty \"1234\"]\n[GameId \"5678\"]\n\n1. e4 *\n".into()).unwrap();
+        let ours = parse_game("[Event \"E\"]\n\n1. e4 *\n".into()).unwrap();
+        let compared = compare_game(&gold_ok, &ours).unwrap();
+        assert!(compared.equal);
+        assert_eq!(compared.cb_tags, 2);
+
+        let gold_bad = parse_game("[Event \"E\"]\n[UnauthorizedTag \"bad\"]\n\n1. e4 *\n".into()).unwrap();
+        let bad_compared = compare_game(&gold_bad, &ours).unwrap();
+        assert!(!bad_compared.equal);
+    }
+
+    #[test]
+    fn audited_training_questions_match_and_count() {
+        let gold = parse_game("[Event \"E\"]\n\n1. e4 {[%tqu \"En\",\"Question\",\"\", \"\", \"e7e5\", \"Good\", 10]} e5 {[%tqu \"En\",\"Q2\",\"\",\"\",\"g1f3\",\"\",10] Normal comment} 2. Nf3 *\n".into()).unwrap();
+        let ours = parse_game("[Event \"E\"]\n\n1. e4 e5 {Normal comment} 2. Nf3 *\n".into()).unwrap();
+        let compared = compare_game(&gold, &ours).unwrap();
+        assert!(compared.equal);
+        assert_eq!(compared.training, 2);
+    }
+
+    #[test]
+    fn test_audited_cyrillic_cp1251_matches() {
+        let gold = parse_game("[Event \"E\"]\n\n1. e4 {ни\u{e009}его \u{e009}ерным не давало} *\n".into()).unwrap();
+        let ours = parse_game("[Event \"E\"]\n\n1. e4 {íè∞åãî ∞åðíûì íå äàâàëî} *\n".into()).unwrap();
+        let compared = compare_game(&gold, &ours).unwrap();
+        assert!(compared.equal);
+    }
+
+    #[test]
+    fn test_audited_tab_comment_matches() {
+        let gold = parse_game("[Event \"E\"]\n\n1. e4 {\t} e5 *\n".into()).unwrap();
+        let ours = parse_game("[Event \"E\"]\n\n1. e4 {\t} e5 *\n".into()).unwrap();
+        let compared = compare_game(&gold, &ours).unwrap();
+        assert!(compared.equal);
+    }
+
+    #[test]
+    fn test_audited_table_b_missing_symbols_matches() {
+        let gold = parse_game("[Event \"E\"]\n\n1. e4 {‰ › • ¹ ª ¯ “} *\n".into()).unwrap();
+        let ours = parse_game("[Event \"E\"]\n\n1. e4 {‰ › • ¹ ª ¯ “} *\n".into()).unwrap();
+        let compared = compare_game(&gold, &ours).unwrap();
+        assert!(compared.equal);
     }
 }

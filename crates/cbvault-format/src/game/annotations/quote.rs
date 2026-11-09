@@ -118,7 +118,10 @@ impl Quotation {
 
     /// A 2CBH quotation's data, the bytes after the type code.
     pub fn parse_v2(data: &[u8]) -> Option<Quotation> {
-        if data.len() < 16 {
+        // Real 2CBH quotations start `[1, 1]` or `[1, 2]`; ordinary metadata
+        // shares the `[1, 1]` prefix but carries no player names (games
+        // 773687, 831403), so the names decide.
+        if data.len() < 16 || !(data.starts_with(&[1, 1]) || data.starts_with(&[1, 2])) {
             return None;
         }
         let mut i = 10; // skip 10-byte prefix
@@ -134,10 +137,14 @@ impl Quotation {
         let white_first = get_str(data)?;
         let black_last = get_str(data)?;
         let black_first = get_str(data)?;
+        if white_last.is_empty() && black_last.is_empty() {
+            return None;
+        }
         let site = get_str(data)?;
         let event = get_str(data)?;
         let date_bytes: [u8; 4] = data.get(i..i + 4)?.try_into().ok()?;
         let date = i32::from_le_bytes(date_bytes);
+        let kind = *data.get(i + 4).unwrap_or(&0);
         let white_elo = data.get(i + 28..i + 30).and_then(|b| b.try_into().ok()).map(u16::from_le_bytes).unwrap_or(0);
         let black_elo = data.get(i + 30..i + 32).and_then(|b| b.try_into().ok()).map(u16::from_le_bytes).unwrap_or(0);
         let result_byte = *data.get(i + 34).unwrap_or(&3);
@@ -155,7 +162,7 @@ impl Quotation {
             event,
             site,
             date: Date(date),
-            kind: 0,
+            kind,
             round,
             subround,
             result,
@@ -215,18 +222,23 @@ impl Quotation {
             push_number(out, u64::from(self.black.elo));
             out.push(')');
         }
-        let event = self.event.trim();
-        out.push(' ');
+        // The event is written as stored, its trailing space and all: that
+        // space is what the export shows before the year (`Leningrad masters
+        //  1933`, `Paris  1934`). The site is written as stored too, but it is
+        // left out where the event already holds it (game 327778: the event
+        // `17th Championship of Moscow ` and the site `Moscow ` ship once).
+        let event = self.event.as_str();
+        let has_event = !event.is_empty();
         let title_start = out.len();
-        out.push_str(event);
-        // The site is written as stored, its trailing space and all: the Mega's
-        // `Moscow-ch 17th` quotes write `Moscow  1937` — the site `Moscow `
-        // and then the year (games 142694, 142839, 60823, 103416, 404160,
-        // 129358). It is left out only where the event already holds it
-        // verbatim, as the trimmed site.
+        if has_event {
+            out.push(' ');
+            out.push_str(event);
+        }
         let site = self.site.as_str();
         if !site.trim().is_empty() && !event.contains(site) {
-            out.push(' ');
+            if has_event || !out.ends_with(' ') {
+                out.push(' ');
+            }
             out.push_str(site);
         }
         for (bit, label) in [(0x20, "blitz"), (0x40, "rapid")] {
@@ -239,6 +251,12 @@ impl Quotation {
         // the site and the speed labels, as the accumulated title does.
         let year = self.date.year();
         if year > 0 && !contains_number(&out[title_start..], year) {
+            // An empty event and site leave their separator behind, as the
+            // export writes `Spielmann,A-NN  1922` (game 63811); when the
+            // title holds a site the empty event writes nothing extra.
+            if !has_event && out.len() == title_start {
+                out.push(' ');
+            }
             out.push(' ');
             push_number(out, u64::from(year));
         }

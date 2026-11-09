@@ -321,11 +321,7 @@ fn parse_annotation<'a>(content: &'a [u8], offset: &mut usize, t: u16) -> Result
             Ok(Some(Annotation::Arrows(items)))
         }
         // Other known fixed/variable payloads
-        0x07 => {
-            let data = r.take(7)?;
-            Ok(Some(Annotation::Other { code: t, data }))
-        }
-        0x08 | 0x16 | 0x17 | 0x22 | 0x23 | 0x25 => {
+        0x07 | 0x08 | 0x16 | 0x17 | 0x22 | 0x23 | 0x25 => {
             let data = r.take(4)?;
             Ok(Some(Annotation::Other { code: t, data }))
         }
@@ -407,6 +403,56 @@ fn parse_annotation<'a>(content: &'a [u8], offset: &mut usize, t: u16) -> Result
             let start = prefix.as_ptr() as usize - content.as_ptr() as usize;
             let len = 4 + 4 + n;
             Ok(Some(Annotation::Other { code: t, data: &content[start..start + len] }))
+        }
+        0x1c => {
+            let start = r.offset;
+            let _marker = r.take(1)?;
+            let url_len = r.len_val()?;
+            let _ = r.take(url_len)?;
+            let desc_len = r.len_val()?;
+            let _ = r.take(desc_len)?;
+            let total = r.offset - start;
+            Ok(Some(Annotation::Other { code: t, data: &content[start..start + total] }))
+        }
+        0x09 => {
+            let start = r.offset;
+            r.take(2)?; // marker [1, 1]
+            r.i32_val()?; // field1
+            r.i32_val()?; // time_limit
+            r.u16_val()?; // points
+            let q_cnt = r.u16_val()? as usize;
+            for _ in 0..q_cnt {
+                r.u16_val()?; // lang
+                let q_len = r.len_val()?;
+                r.take(q_len)?;
+            }
+            let extra_cnt = r.u16_val()? as usize;
+            for _ in 0..extra_cnt {
+                r.u16_val()?; // lang
+                let n = r.len_val()?;
+                r.take(n)?;
+            }
+            for _ in 0..2 {
+                let hint_cnt = r.u16_val()? as usize;
+                for _ in 0..hint_cnt {
+                    r.u16_val()?; // lang
+                    let n = r.len_val()?;
+                    r.take(n)?;
+                }
+            }
+            let sol_cnt = r.take(1)?[0] as usize;
+            for _ in 0..sol_cnt {
+                r.take(3)?; // move
+                r.take(1)?; // points
+                let fb_cnt = r.u16_val()? as usize;
+                for _ in 0..fb_cnt {
+                    r.u16_val()?; // tag
+                    let fb_len = r.len_val()?;
+                    r.take(fb_len)?;
+                }
+            }
+            let total = r.offset - start;
+            Ok(Some(Annotation::Other { code: t, data: &content[start..start + total] }))
         }
         // Unknown type
         _ => Ok(None),
@@ -507,9 +553,9 @@ mod tests {
         body.extend((-1i32).to_le_bytes());
         body.extend(3i32.to_le_bytes());
 
-        // 1. Time spent: 0x07 (4 bytes reserved + sec=10, min=2, hr=1)
+        // 1. Time spent: 0x07 (flags/hundredths, sec=10, min=2, hr=1)
         body.extend(0x07u16.to_le_bytes());
-        body.extend([0, 0, 0, 0, 10, 2, 1]);
+        body.extend([0, 10, 2, 1]);
 
         // 2. Evaluation curve: 0x26 (0x01, length=8, 2 evaluations)
         body.extend(0x26u16.to_le_bytes());

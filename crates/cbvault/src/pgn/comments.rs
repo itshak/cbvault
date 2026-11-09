@@ -126,6 +126,12 @@ pub(super) struct Part {
     pub(super) sep: Sep,
     /// The part's text.
     pub(super) text: String,
+    /// Keep the part's whitespace runs as they stand (a quoted game, whose
+    /// fields can carry a trailing space that its own text needs).
+    pub(super) raw: bool,
+    /// Whether this part is a machine-generated token ([%cal], [%csl], [%mdl],
+    /// [%eval], [%emt], [%evp]) rather than a human-written text annotation.
+    pub(super) token: bool,
 }
 
 /// The parts of the comment being written, reused across comments and games:
@@ -159,8 +165,10 @@ impl Parts {
             let part = &mut self.items[self.len];
             part.sep = sep;
             part.text.clear();
+            part.raw = false;
+            part.token = false;
         } else {
-            self.items.push(Part { sep, text: String::new() });
+            self.items.push(Part { sep, text: String::new(), raw: false, token: false });
         }
         self.len += 1;
         let at = self.len - 1;
@@ -209,6 +217,7 @@ impl Commentary<'_> {
         medals(self.parts, anns, items)?;
         if !self.evp.is_empty() {
             let part = self.parts.push(Sep::None);
+            part.token = true;
             part.text.push_str(self.evp);
         }
         texts(self.parts, anns, items, false)?;
@@ -340,6 +349,7 @@ fn medals(parts: &mut Parts, anns: AnnotationsRef<'_>, items: [&[(i32, u32)]; 2]
         // with nothing between them (`[%csl Ge5][%cal Ge5h8][%mdl 32]`). Its
         // part's buffer is reused, so the token costs no allocation.
         let part = parts.push(Sep::None);
+        part.token = true;
         part.text.push_str("[%mdl ");
         let bits = if anns.is_classic() { u32::from_be_bytes(bytes) } else { u32::from_le_bytes(bytes) };
         push_number(&mut part.text, i64::from(bits));
@@ -355,6 +365,7 @@ fn evaluations(parts: &mut Parts, anns: AnnotationsRef<'_>, items: [&[(i32, u32)
         let Annotation::Other { code: 0x21, data } = anns.annotation_at(offset)? else { continue };
         let Some((score, depth)) = timing::evaluation_pair(data) else { continue };
         let part = parts.push(Sep::None);
+        part.token = true;
         part.text.push_str("[%eval ");
         push_number(&mut part.text, i64::from(score));
         part.text.push(',');
@@ -371,6 +382,7 @@ fn times(parts: &mut Parts, anns: AnnotationsRef<'_>, items: [&[(i32, u32)]; 2])
         let Annotation::Other { code: 0x07, data } = anns.annotation_at(offset)? else { continue };
         let Some((h, m, s, hundredths)) = timing::time_spent(data, anns.is_classic()) else { continue };
         let part = parts.push(Sep::Space);
+        part.token = true;
         part.text.push_str("[%emt ");
         // The hours are written as they stand (`1:25:00`), the minutes, seconds
         // and hundredths as two digits, exactly as `{h}:{m:02}:{s:02}` did.
@@ -394,7 +406,8 @@ fn times(parts: &mut Parts, anns: AnnotationsRef<'_>, items: [&[(i32, u32)]; 2])
 /// with nothing between them. The colours 7, 8 and 9 are unknown and left out.
 fn graphics(parts: &mut Parts, anns: AnnotationsRef<'_>, items: [&[(i32, u32)]; 2]) -> Result<()> {
     let csl_at = parts.as_slice().len();
-    parts.push(Sep::None);
+    let part = parts.push(Sep::None);
+    part.token = true;
     let mut marks = 0usize;
     for &(_, offset) in items.into_iter().flatten() {
         let Annotation::Squares(data) = anns.annotation_at(offset)? else { continue };
@@ -418,7 +431,8 @@ fn graphics(parts: &mut Parts, anns: AnnotationsRef<'_>, items: [&[(i32, u32)]; 
     }
 
     let cal_at = parts.as_slice().len();
-    parts.push(Sep::None);
+    let part = parts.push(Sep::None);
+    part.token = true;
     let mut marks = 0usize;
     for &(_, offset) in items.into_iter().flatten() {
         let Annotation::Arrows(data) = anns.annotation_at(offset)? else { continue };
@@ -450,37 +464,109 @@ fn graphics(parts: &mut Parts, anns: AnnotationsRef<'_>, items: [&[(i32, u32)]; 
     Ok(())
 }
 
+/// Whether two annotation texts are the same words once case and punctuation
+/// are ignored: a duplicated translation, not a language of its own.
+fn same_words(a: &[u8], b: &[u8]) -> bool {
+    let mut a = a.iter().copied().filter(|c| c.is_ascii_alphanumeric() || !c.is_ascii());
+    let mut b = b.iter().copied().filter(|c| c.is_ascii_alphanumeric() || !c.is_ascii());
+    loop {
+        match (a.next(), b.next()) {
+            (Some(x), Some(y)) if x.eq_ignore_ascii_case(&y) => {}
+            (None, None) => return true,
+            _ => return false,
+        }
+    }
+}
+
 /// The texts of `items` into the comment parts: `before` selects the ones
 /// meant to precede their move. Every text of every language is written, as
-/// ChessBase's export writes them — in the order that export writes them:
-/// any-language texts first, then ascending language number (English, German,
-/// French …), record order breaking ties. 3,735 of 3,752 mixed-language
-/// comment groups of the Mega follow it; the fast path, one text or a slice
-/// already in that order, costs no allocation.
+/// ChessBase's export writes them — in the order that export writes them.
+/// A game whose comment carries an `any language` source note keeps the
+/// record order of its own languages after that note, and so do move comments
+/// whose languages the game comment knows; a comment with a language of its
+/// own is sorted: any-language first, then ascending language number
+/// (English, German, French …), record order breaking ties. The fast path,
+/// one text, a record already in order, or nothing to reorder, costs no
+/// allocation.
 fn texts(parts: &mut Parts, anns: AnnotationsRef<'_>, items: [&[(i32, u32)]; 2], before: bool) -> Result<()> {
-    let key_of = |&(_, offset): &(i32, u32)| -> Result<Option<(i32, u32)>> {
-        match anns.annotation_at(offset)? {
-            Annotation::Text { before: b, language, .. } if b == before => Ok(Some((write_key(language), offset))),
-            // A quoted game (type `13`) is a text of the comment: ChessBase's
-            // own export writes it where its record stands, before the texts
-            // that follow it and after any that precede (`{1-0 Evans,W-
-            // McDonnell,A London 1829 (}` — the quotation, then the `(` text).
-            Annotation::Other { code: 0x13, .. } if !before => Ok(Some((QUOTATION_KEY, offset))),
-            _ => Ok(None),
-        }
-    };
+    let is_game = items.into_iter().flatten().any(|&(position, _)| position == GAME_POSITION);
     let mut count = 0usize;
     let mut ordered = true;
     let mut prev = i32::MIN;
+    let mut has_any = false;
+    let mut has_quote = false;
+    let mut seen_languages = 0u128;
+    let mut before_languages = 0u128;
+    let mut after_languages = 0u128;
+    let mut last_language = u16::MAX;
+    let mut interleaved = false;
+    let mut other = false;
+    let mut any_text: Option<&[u8]> = None;
+    let mut other_texts = [&[][..]; 8];
+    let mut other_count = 0usize;
+    let mut raw_comment = false;
     for item in items.into_iter().flatten() {
-        let Some((key, _)) = key_of(item)? else { continue };
-        if key == QUOTATION_KEY {
-            continue;
+        let (_, offset) = *item;
+        match anns.annotation_at(offset)? {
+            Annotation::Text { before: b, language, text } => {
+                raw_comment |= raw_mixed_text(text, language, anns.is_classic());
+                // A language whose texts come back after another language's
+                // is an interleaved import (61987), not a block ChessBase
+                // writes itself; only that keeps the record order.
+                let bit = 1u128 << (language & 127);
+                if language != language::ANY {
+                    if b == before {
+                        before_languages |= bit;
+                    } else {
+                        after_languages |= bit;
+                    }
+                }
+                if b != before {
+                    other = true;
+                    continue;
+                }
+                if language != last_language {
+                    interleaved |= seen_languages & bit != 0;
+                    seen_languages |= bit;
+                    last_language = language;
+                }
+                let key = write_key(language);
+                has_any |= key == -1;
+                if language != language::ANY {
+                    if other_count < other_texts.len() {
+                        other_texts[other_count] = text;
+                        other_count += 1;
+                    }
+                } else if any_text.is_none() {
+                    any_text = Some(text);
+                }
+                ordered &= key >= prev;
+                prev = key;
+                count += 1;
+            }
+            Annotation::Other { code: 0x13, .. } if !before => has_quote = true,
+            _ => {}
         }
-        ordered &= key >= prev;
-        prev = key;
-        count += 1;
     }
+    // A duplicated `any language` text is not a source note but the same
+    // words as a text of a language: it keeps the record order (122599's
+    // `{'Or' Or}`), while a source note goes first (725, 6214, 50128).
+    let duplicate = any_text.is_some_and(|any| other_texts[..other_count].iter().any(|&text| same_words(any, text)));
+    // The game's own comment: an `any language` note comes first, then the
+    // record order (725, 61987); without one it sorts like any other comment
+    // (8730). A move comment keeps the record only when its languages came
+    // interleaved (61987) or a duplicated `any` text precedes a move that has
+    // texts on both sides (122599's `{'Or' Or}`); otherwise it sorts (51022,
+    // 90019, 1332), the other `any` texts going first (6214, 50128, 34547).
+    let record = if is_game {
+        has_any
+    } else {
+        // Interleaved languages and a duplicated `any` text before a move
+        // whose before side has a language the after side lacks (122599's
+        // `{'Or' Or}`) keep the record; every other move comment sorts.
+        interleaved || (other && duplicate && before_languages & !after_languages != 0)
+    };
+    let any_first = has_any && !(!is_game && record && duplicate);
     let write = |parts: &mut Parts, offset: u32| -> Result<()> {
         match anns.annotation_at(offset)? {
             Annotation::Text { language, text, .. } => {
@@ -492,13 +578,15 @@ fn texts(parts: &mut Parts, anns: AnnotationsRef<'_>, items: [&[(i32, u32)]; 2],
                 // becomes the diagram `[#]`; an `any language` text keeps its
                 // bytes as stored (probe games 4566, 12579 against 10474, 13058).
                 let own_language = language != language::ANY || !anns.is_classic();
-                clean_into(part, text, own_language, anns.is_classic());
+                clean_into(part, text, own_language, anns.is_classic(), raw_comment);
             }
             Annotation::Other { code: 0x13, data } => {
                 let quotation = if anns.is_classic() {
                     Quotation::parse_classic(data).or_else(|| Quotation::parse(data))
                 } else {
-                    Quotation::parse_v2(data).or_else(|| Quotation::parse(data))
+                    // A `[1, 1]` payload without player names is ordinary
+                    // metadata, not a quoted game (games 773687, 831403).
+                    Quotation::parse_v2(data)
                 };
                 if let Some(q) = quotation {
                     // A quoted game follows the part before it with the `;`
@@ -507,10 +595,12 @@ fn texts(parts: &mut Parts, anns: AnnotationsRef<'_>, items: [&[(i32, u32)]; 2],
                     // no allocation either.
                     let part = parts.push(Sep::Semicolon);
                     q.chessbase_text_into(&mut part.text);
-                } else if !anns.is_classic() {
-                    // A valid quoted game that our decoder cannot interpret
-                    // must never vanish from a supposedly complete v2 PGN.
-                    // Keep classic behavior unchanged until its own gold gate.
+                    part.raw = true;
+                } else if !anns.is_classic() && data.starts_with(&[1, 2]) {
+                    // A `[1, 2]` payload is a quotation by construction; one
+                    // our decoder cannot interpret must never vanish from a
+                    // supposedly complete v2 PGN. `[1, 1]` metadata has no
+                    // quotation to write (games 773687, 831403).
                     return Err(Error::corrupt(
                         "<.2cba>",
                         u64::from(offset),
@@ -522,22 +612,14 @@ fn texts(parts: &mut Parts, anns: AnnotationsRef<'_>, items: [&[(i32, u32)]; 2],
         }
         Ok(())
     };
-    if count <= 1 || ordered {
-        // The fast path: the record's own order among the texts, and every
-        // quotation ahead of them — ChessBase's export writes
-        // `{1-0 Chigorin,M-Steinitz,W Cablematch 1890 (the Steinitz Defence)}`
-        // where the record holds the text first (27 of the Mega's 57 mixed
-        // groups; the other 30 hold the quotation first anyway).
+    let fast = count <= 1 || (record && !any_first) || (!record && ordered);
+    if fast && !has_quote {
+        // The fast path: the record's own order among the texts, which is
+        // also the sorted order when `ordered` says so.
         for item in items.into_iter().flatten() {
-            if let Some((key, offset)) = key_of(item)?
-                && key == QUOTATION_KEY
-            {
-                write(parts, offset)?;
-            }
-        }
-        for item in items.into_iter().flatten() {
-            if let Some((key, offset)) = key_of(item)?
-                && key != QUOTATION_KEY
+            let (_, offset) = *item;
+            if let Annotation::Text { before: b, .. } = anns.annotation_at(offset)?
+                && b == before
             {
                 write(parts, offset)?;
             }
@@ -546,8 +628,17 @@ fn texts(parts: &mut Parts, anns: AnnotationsRef<'_>, items: [&[(i32, u32)]; 2],
     }
     let mut found: Vec<(i32, u32)> = Vec::with_capacity(count);
     for item in items.into_iter().flatten() {
-        if let Some(hit) = key_of(item)? {
-            found.push(hit);
+        let (_, offset) = *item;
+        match anns.annotation_at(offset)? {
+            Annotation::Text { before: b, language, .. } if b == before => {
+                let key = write_key(language);
+                found.push((if record { key.min(0) } else { key }, offset));
+            }
+            // A quoted game comes before every text, whatever its language
+            // (the only mixed-language groups the Mega has hold no quotation,
+            // so this is the one place the two could differ).
+            Annotation::Other { code: 0x13, .. } if !before => found.push((QUOTATION_KEY, offset)),
+            _ => {}
         }
     }
     found.sort_by_key(|&(key, _)| key);
@@ -558,8 +649,7 @@ fn texts(parts: &mut Parts, anns: AnnotationsRef<'_>, items: [&[(i32, u32)]; 2],
 }
 
 /// The order key of a quoted game among the texts of one comment: before
-/// every text, whatever its language (the only mixed-language groups the Mega
-/// has hold no quotation, so this is the one place the two could differ).
+/// every text, whatever its language.
 const QUOTATION_KEY: i32 = i32::MIN;
 
 /// The order key of a text's language: any language first, then the language
@@ -591,33 +681,111 @@ fn past_texts(parts: &mut Parts, anns: AnnotationsRef<'_>, past: &[(i32, u32)]) 
 /// non-empty part: each part after the first follows with its own separator
 /// ([`Sep`]), and empty parts are dropped — a text that cleans to nothing
 /// writes no comment (ChessBase writes none). Nothing is written when every
-/// part is empty. Zero-allocation: the parts go straight into `out`.
+/// part is empty. Whitespace runs are assembled across part boundaries and
+/// halved, as ChessBase's export writes them: two stored spaces (or CR, LF,
+/// CRLF) become one, three become two, and so on (`1932 \r\n 1.` stores four
+/// and exports two; game 29508 stores five before a text separator and exports
+/// three). Leading and trailing whitespace is dropped. A quoted game keeps its
+/// own runs (its site field can end with the space before the year). Zero
+/// allocation: the parts go straight into `out`.
 fn comment(out: &mut String, parts: &Parts, pre: &str, post: &str) -> bool {
-    if parts.as_slice().iter().all(|p| p.text.is_empty()) {
+    if parts.as_slice().iter().all(|p| blank(&p.text)) {
         return false;
     }
+    let start_len = out.len();
     out.push_str(pre);
     out.push('{');
+    let mut pending = 0usize;
+    let mut emitted = false;
     let mut first = true;
+    let mut prev_token = false;
     for part in parts.as_slice() {
-        if part.text.is_empty() {
+        if blank(&part.text) {
             continue;
         }
         if !first {
-            // A one-byte separator as a `push`, not a `push_str`: a `memcpy`
-            // call per separator, once per comment part of every comment.
             match part.sep {
                 Sep::None => {}
-                Sep::Space => out.push(' '),
-                Sep::Semicolon => out.push(';'),
+                Sep::Space => {
+                    if prev_token {
+                        pending = 1;
+                    } else {
+                        pending += 1;
+                    }
+                }
+                Sep::Semicolon => {
+                    flush_spaces(out, &mut pending);
+                    out.push(';');
+                }
             }
         }
-        out.push_str(&part.text);
         first = false;
+        let was_token = prev_token;
+        prev_token = part.token;
+        if part.raw {
+            flush_spaces(out, &mut pending);
+            if emitted {
+                out.push_str(&part.text);
+            } else {
+                let text = part.text.trim_start();
+                out.push_str(text);
+                emitted = !text.is_empty();
+            }
+            pending = 0;
+            continue;
+        }
+        let mut chars = part.text.chars();
+        if was_token {
+            while let Some(' ') = chars.clone().next() {
+                chars.next();
+            }
+        }
+        for ch in chars {
+            if ch == ' ' {
+                pending += 1;
+                continue;
+            }
+            if !emitted {
+                pending = 0;
+                emitted = true;
+            }
+            flush_spaces(out, &mut pending);
+            out.push(ch);
+        }
+    }
+    if !emitted {
+        out.truncate(start_len);
+        return false;
+    }
+    while out.ends_with(' ') {
+        out.pop();
     }
     out.push('}');
     out.push_str(post);
     true
+}
+
+/// Writes `pending` stored whitespace bytes as ChessBase's export does: half
+/// the run, rounded up.
+#[inline]
+fn flush_spaces(out: &mut String, pending: &mut usize) {
+    let n = *pending;
+    *pending = 0;
+    for _ in 0..n.div_ceil(2) {
+        out.push(' ');
+    }
+}
+
+fn raw_mixed_text(bytes: &[u8], language: u16, is_classic: bool) -> bool {
+    if is_classic || language != language::ANY {
+        return false;
+    }
+    let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+    let bytes = &bytes[..end];
+    let Err(error) = std::str::from_utf8(bytes) else {
+        return false;
+    };
+    bytes.iter().position(|&b| b >= 0x80).is_some_and(|at| error.valid_up_to() > at)
 }
 
 /// A text fit for a PGN comment, into `out` (which it empties first): UTF-8
@@ -629,12 +797,12 @@ fn comment(out: &mut String, parts: &Parts, pre: &str, post: &str) -> bool {
 /// text, and to the valid UTF-8 bytes of a text without a language of its own
 /// (`own_language` false) — a text the record stores as UTF-8 with a language
 /// of its own is written as it stands, its curly quotes and dashes included.
-fn clean_into(out: &mut String, bytes: &[u8], own_language: bool, is_classic: bool) {
+fn clean_into(out: &mut String, bytes: &[u8], own_language: bool, is_classic: bool, raw_mixed: bool) {
     out.clear();
     let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
     let bytes = &bytes[..end];
     match std::str::from_utf8(bytes) {
-        Ok(text) => push_clean_text(out, text, own_language, false, is_classic),
+        Ok(text) => push_clean_text(out, text, own_language, false, is_classic, raw_mixed),
         Err(_) => {
             // A damaged or code-page text: its valid UTF-8 parts are kept as
             // UTF-8 and every byte UTF-8 cannot read is decoded as Windows-1252
@@ -661,38 +829,58 @@ fn clean_into(out: &mut String, bytes: &[u8], own_language: bool, is_classic: bo
                     }
                 }
             }
-            push_clean_text(out, &text, own_language, true, is_classic);
+            // A text whose first non-ASCII character is valid UTF-8 but which
+            // also holds stray code-page bytes is written as its two decodings
+            // stand (games 324683, 426791); one that turns to CP1252 at its
+            // first non-ASCII byte still takes ChessBase's export table
+            // (games 11204, 16995).
+            let (own_language, code_page) = if raw_mixed { (false, false) } else { (own_language, true) };
+            push_clean_text(out, &text, own_language, code_page, is_classic, raw_mixed);
         }
     }
-    while out.ends_with(' ') {
-        out.pop();
-    }
+}
+
+/// Whether a text holds nothing the export writes: only the layout
+/// whitespace it halves away. A tab is content (gold writes a lone tab as
+/// `{\t}` in game 51383), and so is any other Unicode space.
+#[inline]
+fn blank(text: &str) -> bool {
+    text.chars().all(|c| matches!(c, ' ' | '\r' | '\n'))
 }
 
 /// One comment's characters: the diagram first ([`DIAGRAM`]), then
 /// [`export_char`] when `code_page` (the text was decoded as Windows-1252), then
-/// its shape — braces as parentheses, every space the stored text holds kept
-/// (ChessBase's export does not collapse runs), a line break as one space (CRLF
-/// as one), none leading. `own_language` is whether the text carries a language
-/// of its own: the export's control-byte table (the `04` diagram, mapped to
-/// `[#]` for such a text) applies to those; an `any language` text is written
-/// as it stands, its `04` bytes, curly quotes and dashes included (probe games
-/// 10474, 13058: `any` → raw; 4566, 12579: English → `[#]`), while a code-page
-/// byte takes the private-use character the export writes for it.
-fn push_clean_text(out: &mut String, text: &str, own_language: bool, code_page: bool, is_classic: bool) {
+/// its shape — braces as parentheses and every whitespace byte as one space,
+/// with no runs collapsed here: [`comment`] halves the runs it assembles, as
+/// ChessBase's export does. A tab is kept as a tab (the Mega's `A\tin` names
+/// ship with it); other Unicode spaces are data, not layout. `own_language` is
+/// whether the text carries a language of its own: the export's control-byte
+/// table (the `04` diagram, mapped to `[#]` for such a text) applies to those;
+/// an `any language` text is written as it stands, its `04` bytes, curly quotes
+/// and dashes included (probe games 10474, 13058: `any` → raw; 4566, 12579:
+/// English → `[#]`), while a code-page byte takes the private-use character the
+/// export writes for it.
+fn push_clean_text(
+    out: &mut String,
+    text: &str,
+    own_language: bool,
+    code_page: bool,
+    is_classic: bool,
+    _raw_mixed: bool,
+) {
+    if blank(text) {
+        return;
+    }
     // A text that is nothing but the control byte `04`: the export keeps it as
     // it stands, a language of its own or not (probe games 13058, 4259, 6774).
-    let bare = text.chars().count() == 1;
-    let mut cr = false;
+    let bare = text.trim() == "\u{4}";
     let bytes = text.as_bytes();
     let mut at = 0;
     while at < bytes.len() {
         // The bulk of a comment is plain ASCII: copy it whole, and take the
         // per-character path only for a brace, a space, a control byte, a
         // diagram byte, a private-use code or any byte of a multi-byte
-        // character. Plain bytes are never remapped, never whitespace-leading
-        // (a space is not plain) and never a carriage return, so the run leaves
-        // the state below untouched.
+        // character. Plain bytes are never remapped and never whitespace.
         let run = at;
         while at < bytes.len() && plain(bytes[at]) {
             at += 1;
@@ -712,58 +900,14 @@ fn push_clean_text(out: &mut String, text: &str, own_language: bool, code_page: 
         // export writes `[#]` for each of those.
         if (code_page && c == DIAGRAM) || c == '\u{e005}' || (own_language && !bare && c == '\u{4}') {
             out.push_str("[#]");
-            cr = false;
             continue;
         }
-        let c = if code_page { export_char(c) } else { c };
-        let c = if !is_classic {
-            match c {
-                '\u{e024}' => '\u{2654}', // king
-                '\u{e025}' => '\u{2655}', // queen
-                '\u{e026}' => '\u{2656}', // rook
-                '\u{e027}' => '\u{2657}', // bishop
-                '\u{e028}' => '\u{2658}', // knight
-                '\u{e029}' => '\u{2659}', // pawn
-                '\u{e000}' => '\u{2bf9}', // ⯹ novelty
-                '\u{e001}' => '\u{2bba}', // ⮺
-                '\u{e002}' => '\u{2bbb}', // ⮻
-                '\u{e008}' => '\u{2bfd}', // ⯽ time trouble
-                '\u{e009}' => '\u{221e}', // ∞ unclear
-                '\u{e00a}' => '\u{00b1}', // ±
-                '\u{e00d}' => '\u{25b3}', // △ with idea
-                '\u{e00e}' => '\u{27fa}', // ⟺
-                '\u{e00f}' => '\u{27fb}', // ⟻
-                '\u{e010}' => '\u{00d7}', // ×
-                '\u{e012}' => '\u{2191}', // ↑ initiative
-                '\u{e013}' => '\u{2192}', // → attack
-                '\u{e017}' => '\u{21c4}', // ⇄ with counterplay
-                '\u{e018}' => '\u{21d4}', // ⇔ counterplay
-                '\u{e019}' => '\u{21d7}', // ⇗
-                '\u{e01a}' => '\u{2213}', // ∓ black advantage
-                '\u{e01d}' => '\u{2a00}', // ⨀
-                '\u{e01e}' => '\u{229e}', // ⊞ better is
-                '\u{e01f}' => '\u{22a5}', // ⊥ compensation
-                '\u{e021}' => '\u{25a1}', // □ only move
-                '\u{e023}' => '\u{25cb}', // ○ zugzwang
-                '\u{e02e}' => '\u{2a71}', // ⩱ black upper hand
-                '\u{e02f}' => '\u{2a72}', // ⩲ upper hand
-                c => c,
-            }
-        } else {
-            c
-        };
-        if c == '\n' && cr {
-            continue;
-        }
-        cr = c == '\r';
+        let c = if code_page && (is_classic || own_language) { export_char(c) } else { c };
         match c {
             '{' => out.push('('),
             '}' => out.push(')'),
-            c if c.is_whitespace() => {
-                if !out.is_empty() {
-                    out.push(' ');
-                }
-            }
+            '\t' => out.push('\t'),
+            ' ' | '\r' | '\n' => out.push(' '),
             c => out.push(c),
         }
     }
@@ -811,7 +955,9 @@ fn export_char(c: char) -> char {
         '\u{b3}' => '\u{e02e}',   // ³
         '\u{b5}' => '\u{e01a}',   // µ
         '\u{b9}' => '\u{e020}',   // ¹
+        '\u{ba}' => '\u{e004}',   // º
         '\u{bb}' => '\u{e00f}',   // »
+        '\u{de}' => '\u{e007}',   // Þ
         '\u{201a}' => '\u{e013}', // ‚
         '\u{201c}' => '\u{e01c}', // “
         '\u{201d}' => '\u{e01e}', // ”
@@ -822,6 +968,7 @@ fn export_char(c: char) -> char {
         '\u{2021}' => '\u{e01d}', // ‡
         '\u{2026}' => '\u{e00d}', // …
         '\u{2030}' => '\u{e02d}', // ‰
+        '\u{2039}' => '\u{e00b}', // ‹
         '\u{203a}' => '\u{e00c}', // ›
         '\u{2122}' => '\u{e021}', // ™
         '\u{192}' => '\u{e012}',  // ƒ

@@ -463,13 +463,10 @@ fn write_tags_v2(
     names: &mut Names,
 ) -> Result<()> {
     let (event, place) = if header.kind() == RecordKind::Analysis {
-        let title = if header.analysis_title() >= 0 {
-            entities.title(header.analysis_title())?.unwrap_or_default()
-        } else {
-            String::new()
-        };
-        names.title.set(title.as_bytes());
-        (if names.title.as_str().is_empty() { "?" } else { names.title.as_str() }, "?")
+        // ChessBase writes an analysis record's Event as `?`: the stored
+        // analysis title is a variation path (`8.Qxc4/ 10.Bf4 Nd5/ …`), not an
+        // event, and the export never copies it into the tags.
+        ("?", "?")
     } else if header.tournament() >= 0 {
         if let Some(t) = entities.tournament(header.tournament())? {
             names.title.set(t.title.as_bytes());
@@ -611,9 +608,13 @@ fn push_escaped_player(out: &mut String, head: &str, player: Option<(&str, &str)
             if !first.is_empty() {
                 out.push_str(", ");
                 escape_into(out, first);
-                // A first name of one or two uppercase letters or digits is
-                // initials and takes a period (`Delaire, H.`, `Ward, JH.`).
-                if (1..=2).contains(&first.len()) && first.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+                // A first name of one or two characters whose non-whitespace
+                // bytes are uppercase letters or digits is initials and takes a
+                // period (`Delaire, H.`, `Ward, JH.`, `Diermen, H .`).
+                let trimmed = first.trim();
+                if (1..=2).contains(&first.len())
+                    && !trimmed.is_empty()
+                    && trimmed.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
                 {
                     out.push('.');
                 }

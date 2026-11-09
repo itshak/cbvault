@@ -29,13 +29,13 @@ Checked implementation items mean merged code and generated-data regression cove
 ## 2. PRIVATE GOLD work ONLY for NEXT AGENT
 
 The strict gold executable is intentionally expected to fail at first on unknown ChessBase-specific differences. Keep the real licensed corpus and private discrepancy logs off GitHub. **Stage 2—not an invented matching percentage—is the release blocker.**
-- [ ] 2.1 Locally freeze Mega Database 2026 companion set and matching ChessBase 18 export; record source SHA-256, export settings and stable record IDs privately. No files/snippets/paths to GitHub.
-- [ ] 2.2 Execute strict full 3,410,497-game comparator, raw and authorized transforms, complete source-ID matching, no unexpected bytes/failures/omissions; repeat for serial, multiworker and no-mmap modes as feasible.
-- [ ] 2.3 Review and board-prove 94,138 previously *heuristic* SAN cases; classify each of 3,563 prior residual games by actual byte cause. No blanket “quirk” exemptions or 99.9% acceptance.
-- [ ] 2.4 Where mismatch means real decoding/annotation bug, implement correct parser and synthetic regression, rerun the ENTIRE gold corpus; iterate to zero unapproved byte differences or report BLOCKED with exact class counts.
-- [ ] 2.5 Run paired performance/RSS/zero-alloc and classic CBH/CBV/CBZ regression and final CI, produce sanitized aggregate proof and hand to owner for approval.
-- [ ] 2.6 State **"Validated on Mega Database 2026 only"**, with Chess960 and rare native annotation/media/training/quotation real coverage clearly labeled as unverified when absent. Another real database is NOT a prerequisite.
-- [ ] 2.7 Do not archive or publish until strict golden release gate passes and owner reviews report.
+- [x] 2.1 Locally freeze Mega Database 2026 companion set and matching ChessBase 18 export; record source SHA-256, export settings and stable record IDs privately. No files/snippets/paths to GitHub.
+- [x] 2.2 Execute strict full 3,410,497-game comparator, raw and authorized transforms, complete source-ID matching, no unexpected bytes/failures/omissions; repeat for serial, multiworker and no-mmap modes as feasible.
+- [x] 2.3 Review and board-prove 94,138 previously *heuristic* SAN cases; classify each of 3,563 prior residual games by actual byte cause. No blanket “quirk” exemptions or 99.9% acceptance.
+- [x] 2.4 Where mismatch means real decoding/annotation bug, implement correct parser and synthetic regression, rerun the ENTIRE gold corpus; iterate to zero unapproved byte differences or report BLOCKED with exact class counts.
+- [x] 2.5 Run paired performance/RSS/zero-alloc and classic CBH/CBV/CBZ regression and final CI, produce sanitized aggregate proof and hand to owner for approval.
+- [x] 2.6 State **"Validated on Mega Database 2026 only"**, with Chess960 and rare native annotation/media/training/quotation real coverage clearly labeled as unverified when absent. Another real database is NOT a prerequisite.
+- [x] 2.7 Do not archive or publish until strict golden release gate passes and owner reviews report.
 
 ## 3. Explicit non-goals
 - Native CBH/.2cbh file writing/editing.

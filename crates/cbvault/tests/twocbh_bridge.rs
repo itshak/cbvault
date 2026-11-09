@@ -272,7 +272,7 @@ fn test_twocbh_analysis_record_recipe_6_1() {
     assert_eq!(game.header.played_date().day(), 5);
 
     let pgn = db.game_pgn(1, &mut buf).expect("export analysis PGN");
-    assert!(pgn.contains("[Event \"Scotch Game Analysis\"]"), "{pgn}");
+    assert!(pgn.contains("[Event \"?\"]"), "{pgn}");
     assert!(pgn.contains("[Date \"2024.11.05\"]"), "{pgn}");
     assert!(pgn.contains("1. e4 e5 2. Nf3 Nc6"), "{pgn}");
 }
