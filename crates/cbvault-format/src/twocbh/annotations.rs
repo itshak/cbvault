@@ -393,7 +393,9 @@ fn parse_annotation<'a>(content: &'a [u8], offset: &mut usize, t: u16) -> Result
                 r.take(sl)?;
                 r.take(3)?;
                 let move_count = r.len_val()?;
-                let bytes = move_count.checked_mul(5).ok_or_else(|| r.bad("quoted-game move count overflow"))?;
+                let bytes = move_count
+                    .checked_mul(5)
+                    .ok_or_else(|| r.bad("quoted-game move count overflow"))?;
                 r.take(bytes)?;
                 if r.offset + 4 <= r.content.len() && r.content[r.offset..r.offset + 4] == [0, 0, 0, 0] {
                     r.take(4)?;
@@ -501,7 +503,10 @@ mod tests {
         assert_eq!(items.stopped_at, Some((0, 0x7777)));
         assert!(items.next().is_none());
         assert!(ann.check_positions(5).is_err());
-        assert!(ann.try_texts().is_err(), "strict text extraction must not hide unknown annotations");
+        assert!(
+            ann.try_texts().is_err(),
+            "strict text extraction must not hide unknown annotations"
+        );
     }
 
     #[test]
