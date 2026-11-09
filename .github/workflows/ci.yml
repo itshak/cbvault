@@ -105,7 +105,7 @@ jobs:
       - name: Benchmark compilation check
         run: cargo check --benches --all-features
 
-      # Validate the active hardening spec as part of the five-job public CI.
+      # Validate all durable specs and any remaining active changes after archival.
       # Run only once on Linux rather than installing Node on all Rust runners.
       - name: Set up Node for OpenSpec
         if: matrix.os == 'ubuntu-latest'
@@ -113,9 +113,9 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Strict active OpenSpec validation
+      - name: Strict OpenSpec validation
         if: matrix.os == 'ubuntu-latest'
-        run: npx --yes @fission-ai/openspec@1.16.0 validate native-2cbh-release-hardening --strict --no-interactive
+        run: npx --yes @fission-ai/openspec@1.16.0 validate --all --strict --no-interactive
 
   fuzz:
     name: cargo-fuzz (nightly)
