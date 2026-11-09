@@ -60,3 +60,11 @@ Group by source-grounded specific cause, record first differing game/offset **on
 Provide total source slots, eligible/matched/raw-identical/transformed-identical counts, SHA-256 (safe only if not identifying private filenames), every named exception count and proof method, illegality/unknown/unsupported/unreadable/native-only coverage counts, 1/2/4 thread byte hashes, peak RSS and throughput, classic golden regression, Git commit SHA, five CI results and acknowledged limitations. Do not claim 100% of all possible 2CBH files. Explicitly state **Mega Database 2026 is the only real corpus** and that Chess960/rare annotation/media/training/embedded quotes may be absent and not fully field-verified.
 
 Stop for owner review. The next release/tag/BlindBase integration is an independent approved action.
+
+## Independent revalidation after commit 97de8c3 (2026-11-09)
+
+The former strict oracle produced a reported `unexplained_games=0` result, but subsequent code review identified additional gate problems. Its full run stopped as soon as the expected game count was reached without scanning the remaining source slots, and comment-order equality was determined by sorting individual characters (which can hide changed words). Review changes now fail closed on those cases, duplicate tags, unsafe FEN castling equivalence, 2CBA trailing bytes and suppressed native text decode errors.
+
+**Do not carry the previous PASS forward** to a new SHA without a fresh, complete private run. The new complete-run acceptance must show `source_slots == games + non_game_slots`, no extra eligible records after the expected ordinal, `unexplained_games=0` under hardened equivalences, and the same full annotated PGN across one/few workers and with mmap disabled. Do not interpret the source-header slot count as a game count.
+
+Before archiving, separately document whether the 51,415,248 counted ChessBase-only GUI tags are truly unrepresented metadata or missing source fields, and account for 2,084 training-question exceptions and 92 previously accepted free-character comment permutations. Compare tag names and source semantics; no blanket tag waiver or anagram equality is a strict byte-parity proof. Keep the previous reported pass as historical evidence, not release certification of the revised checker.
