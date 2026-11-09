@@ -93,14 +93,22 @@ fn run() -> Result<(), String> {
     let mut non_game_slots = 0u64;
     let mut canonical_bytes = 0u64;
 
+    // Only deliberate smoke runs may stop early. The full gold gate must
+    // inspect every source slot, including the trailing non-game records.
+    let smoke_mode = expected < 3_410_497;
     for id in 1..=db.records() {
-        if count >= expected {
+        if smoke_mode && count >= expected {
             break;
         }
         let header: GameHeaderRef<'_> = db.header_ref(id).map_err(|e| format!("header id {id}: {e}"))?;
         if header.is_deleted() || !matches!(header.kind(), RecordKind::Game | RecordKind::Analysis) {
             non_game_slots += 1;
             continue;
+        }
+        if count >= expected {
+            return Err(format!(
+                "extra eligible source game at record {id}: expected only {expected} games"
+            ));
         }
         let gold_game = gold
             .next_game()?
@@ -161,6 +169,12 @@ fn run() -> Result<(), String> {
         if count.is_multiple_of(100_000) {
             eprintln!("strict gold processed {count} games, unexplained mismatching games: {differing_games}");
         }
+    }
+    if !smoke_mode && count + non_game_slots != u64::from(db.records()) {
+        return Err(format!(
+            "incomplete source accounting: games={count} non_game_slots={non_game_slots} source_slots={}",
+            db.records()
+        ));
     }
     if count < expected {
         if gold.next_game()?.is_some() {
@@ -648,31 +662,12 @@ fn is_fen_equivalent(gold: &str, ours: &str) -> bool {
     if gold == ours {
         return true;
     }
-    let g_parts: Vec<&str> = gold.split_whitespace().collect();
-    let o_parts: Vec<&str> = ours.split_whitespace().collect();
-    if g_parts.len() == 6
-        && o_parts.len() == 6
-        && g_parts[0] == o_parts[0]
-        && g_parts[1] == o_parts[1]
-        && g_parts[3] == o_parts[3]
-        && g_parts[4] == o_parts[4]
-        && g_parts[5] == o_parts[5]
-    {
-        if g_parts[2] == o_parts[2] {
-            return true;
-        }
-        // Check castling equivalence (e.g. Chess960 Shredder-FEN vs standard KQkq)
-        if g_parts[2] == "KQkq" || o_parts[2] == "KQkq" {
-            let other = if g_parts[2] == "KQkq" { o_parts[2] } else { g_parts[2] };
-            if other.len() == 4
-                && other.chars().take(2).all(|c| c.is_ascii_uppercase())
-                && other.chars().skip(2).all(|c| c.is_ascii_lowercase())
-            {
-                return true;
-            }
-        }
+    // Never accept arbitrary four-letter castling rights as equivalent to
+    // KQkq. Only a legal FEN parse that reconstructs the same board qualifies.
+    match (gigachess::fen::parse_fen(gold), gigachess::fen::parse_fen(ours)) {
+        (Ok(g), Ok(o)) => g.to_fen() == o.to_fen(),
+        _ => false,
     }
-    false
 }
 
 fn audit_comment(gold: &str, ours: &str, exc: &mut CommentExceptions) -> Option<String> {
@@ -990,13 +985,6 @@ fn audit_comment(gold: &str, ours: &str, exc: &mut CommentExceptions) -> Option<
         exc.whitespace += 1;
         return Some(ours.to_string());
     }
-    // The same units after the semantic maps above, only in another order:
-    // e.g. a language text with a PUA symbol the audit translates, written
-    // before another language's text (game 309614).
-    if same_chars(&s, &o) || same_chars(&s, ours) {
-        exc.order += 1;
-        return Some(ours.to_string());
-    }
     if std::env::var_os("CBVAULT_DEBUG_AUDIT").is_some() {
         eprintln!("AUDIT FAIL gold={:?} ours={:?}", gold, ours);
     }
@@ -1049,30 +1037,18 @@ fn cp1252_byte(c: char) -> Option<u8> {
     None
 }
 
-/// Whether two comments hold exactly the same characters in another order.
-/// Comments are PGN-brace-free here, so a sorted-character comparison proves
-/// the writer wrote the same text units, only permuted. Whitespace runs across
-/// text boundaries are ignored so permutation is detected even if inter-part
-/// space counts vary.
-fn same_chars(a: &str, b: &str) -> bool {
-    if a == b {
-        return false;
-    }
-    // If the words are identical in the exact same sequence, this is not a permutation.
-    if a.split_whitespace().eq(b.split_whitespace()) {
-        return false;
-    }
-    let mut a: Vec<char> = a.chars().filter(|c| !c.is_whitespace()).collect();
-    let mut b: Vec<char> = b.chars().filter(|c| !c.is_whitespace()).collect();
-    if a.len() != b.len() {
-        return false;
-    }
-    a.sort_unstable();
-    b.sort_unstable();
-    a == b
-}
 
 fn compare_game(gold: &Game, ours: &Game) -> Result<Compared, String> {
+    // Duplicate tag names must not be hidden by HashMap's last-value-wins
+    // semantics; otherwise a modified or extra ChessBase tag can disappear.
+    for game in [gold, ours] {
+        let mut names = std::collections::HashSet::new();
+        for (name, _) in &game.tags {
+            if !names.insert(name.as_str()) {
+                return Err(format!("duplicate PGN tag name: {name}"));
+            }
+        }
+    }
     let ours_map: std::collections::HashMap<&str, &str> =
         ours.tags.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
     let gold_map: std::collections::HashMap<&str, &str> =
@@ -1160,13 +1136,6 @@ fn compare_game(gold: &Game, ours: &Game) -> Result<Compared, String> {
                 }
                 if let Some(trans) = audit_comment(ga, ob, &mut comment_exc) {
                     normalized_gold[idx] = Token::Comment(trans);
-                } else if same_chars(ga, ob) {
-                    // A comment whose characters are a permutation of the
-                    // other's: ChessBase and the reader order the same text
-                    // units differently (language texts, a quoted game's
-                    // slot). The content is identical; only the order is not.
-                    comment_exc.order += 1;
-                    normalized_gold[idx] = Token::Comment(ob.clone());
                 } else {
                     return Ok(compared_bytes(
                         &normalized_gold_tags,
@@ -1541,6 +1510,27 @@ mod tests {
         let different =
             parse_game("[Event \"E\"]\n[ZCustom \"a\\\\b\\\"c\"]\n\n1.e4 {exact spacing } *\n".into()).unwrap();
         assert!(!compare_game(&same_a, &different).unwrap().equal, "comment whitespace remains byte-significant");
+    }
+
+    #[test]
+    fn unrelated_character_permutations_must_not_pass_as_order_equivalence() {
+        let gold = parse_game("[Event \"E\"]\\n\\n1. e4 {mate} *\\n".into()).unwrap();
+        let changed = parse_game("[Event \"E\"]\\n\\n1. e4 {team} *\\n".into()).unwrap();
+        assert!(!compare_game(&gold, &changed).unwrap().equal);
+    }
+
+    #[test]
+    fn duplicate_tag_names_are_not_silently_overwritten() {
+        let duplicated = parse_game("[Event \"extra\"]\\n[Event \"E\"]\\n\\n1. e4 *\\n".into()).unwrap();
+        let single = parse_game("[Event \"E\"]\\n\\n1. e4 *\\n".into()).unwrap();
+        assert!(compare_game(&duplicated, &single).is_err());
+    }
+
+    #[test]
+    fn arbitrary_castling_rights_are_not_fen_equivalent() {
+        let fen = "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1";
+        let wrong = "r3k2r/8/8/8/8/8/8/R3K2R w ABab - 0 1";
+        assert!(!is_fen_equivalent(fen, wrong));
     }
 
     #[test]
