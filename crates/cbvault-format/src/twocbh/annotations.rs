@@ -553,10 +553,7 @@ mod tests {
         assert_eq!(items.stopped_at, Some((0, 0x7777)));
         assert!(items.next().is_none());
         assert!(ann.check_positions(5).is_err());
-        assert!(
-            ann.try_texts().is_err(),
-            "strict text extraction must not hide unknown annotations"
-        );
+        assert!(ann.try_texts().is_err(), "strict text extraction must not hide unknown annotations");
     }
 
     #[test]
