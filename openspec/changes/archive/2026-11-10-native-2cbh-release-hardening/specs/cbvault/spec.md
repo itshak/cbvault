@@ -70,7 +70,7 @@ Database::open and generation_of SHALL respect an explicitly supplied classic or
 
 ### Requirement: PGN parity is proved against real local ChessBase export
 
-The strict local gold gate SHALL enforce **byte-for-byte equality** for all compared PGN bytes after ONLY documented, individually justified and counted nonsemantic formatting/ChessBase-specific transformations. It SHALL also independently report raw SHA-256, raw byte length and first differing raw byte, without falsely claiming raw equality when transformations were needed. It SHALL compare all tags, SAN, entire nested move tree, comments/literal Unicode, NAGs/results, and any PGN directives; no 13-tag allowlist, dropped annotations or generic similarity threshold is permitted. It SHALL prove exact source-record-to-PGN mapping, counts, duplicates, EOF and absence of illegal moves or unreported annotation failures. Any unapproved difference or unknown valid item exits nonzero.
+The strict local gold gate SHALL enforce **byte-for-byte equality** for compared PGN bytes within the explicitly frozen ChessBase-exported sample (not unexported later games) after ONLY documented, individually justified and counted nonsemantic formatting/ChessBase-specific transformations. It SHALL also independently report raw SHA-256, raw byte length and first differing raw byte, without falsely claiming raw equality when transformations were needed. It SHALL compare every PGN tag shared by both exporters, SAN, the entire nested move tree, comments/literal Unicode, NAGs/results and comparable directives. Absent ChessBase GUI-only metadata and proprietary training directives SHALL be named and counted as **coverage exclusions**, not falsely described as byte-identical exported content; no generic similarity threshold is permitted. It SHALL prove exact source-record-to-PGN mapping, counts, duplicates, EOF and absence of illegal moves or unreported annotation failures. Any unapproved difference or unknown valid item exits nonzero.
 
 #### Scenario: One unexpected byte
 - **GIVEN** matched games differing by one nonapproved tag, comment, NAG, variation, result or Unicode byte
@@ -159,10 +159,10 @@ The same public Database capabilities SHALL work correctly on v2: metadata/heade
 
 ### Requirement: Real-data scope is accurately reported
 
-Mega Database 2026 with ChessBase 18 PGN is the only available real 2CBH corpus; no second licensed database is required. A full gold pass SHALL be reported as **validated on Mega Database 2026 only**, never universal compatibility. Rare or absent features (Chess960, unusual annotations, embedded quotations, native-only content omitted from PGN) SHALL each be labeled real-verified, synthetic-only, unverified, or unsupported.
+Mega Database 2026 with ChessBase 18 PGN is the only available real 2CBH corpus; no second licensed database is required. A complete frozen 3,410,497-game sample pass SHALL be reported as **validated on the ChessBase 18 exported sample from Mega Database 2026 only**, never universal compatibility or full-db parity for later unexported games. Rare or absent features (Chess960, unusual annotations, embedded quotations, native-only content omitted from PGN) SHALL each be labeled real-verified, synthetic-only, unverified, or unsupported.
 
-#### Scenario: Mega has zero Chess960 games
+#### Scenario: Exported sample lacks Chess960 games
 - **GIVEN** the Mega source corpus does not contain a particular rare valid 2CBH feature
-- **WHEN** full-corpus gold passes
+- **WHEN** the exported-sample gold comparison passes
 - **THEN** the documentation explicitly reports that the feature was not covered by real data and may still have defects
 - **AND** original synthetic fixtures exercise the known legal shape without claiming universal field validation.

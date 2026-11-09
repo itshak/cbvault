@@ -1,6 +1,6 @@
-# Handoff to the NEXT agent — private Mega 2026 golden run
+# Archived private Mega Database 2026 sample gold runbook
 
-The current agent owns **implementation, synthetic tests and main-branch CI**. The next agent owns the **real private-data run, discrepancy fixes and report**. Do not treat unchecked tasks as complete; consult tasks.md and actual Git tree first.
+The previous private agent reported a PASS on the frozen 3,410,497-game ChessBase 18 PGN export against cbvault `70b61c8`, with zero unexplained canonical-byte differences. The later 8,330,763 eligible source games were only header-classified and are not claimed to match ChessBase. This remains a reproducible **local-only** acceptance procedure; rerun the sample after material parser or oracle changes. See `closeout.md`.
 
 ## 1. Inputs, immutability, privacy
 On the license holder's local computer, acquire the same licensed Mega Database 2026 complete .2cbh/.2cbg/.2lid/.2cba (plus optional relevant companions) and its *matching* ChessBase 18 PGN of 3,410,497 games. Preserve source unchanged; hash every companion before and after with SHA-256 and record size/mtime/ChessBase version, export options, charset, annotations and sorting in an UNTRACKED private manifest. Never upload source files, raw PGN, snippets, filenames/paths, detailed per-game diff or private manifest to GitHub, chat or remote services.
@@ -17,7 +17,7 @@ cargo test -p cbvault --example strict_gold_2cbh
 cargo run -p cbvault --release --example strict_gold_2cbh
 ```
 
-**This first run is expected to FAIL** until the ChessBase-only tag/comment/figurine/diagram/clock/codepage deviations and source↔PGN record mapping are reconciled with strict, audited policies. No one should mark it as successfully golden-verified before it actually exits zero. The code must only authorize SAN qualification when the two moves parse into the same legal move on the actual position, and a Z0/-- substitution only on a legal null-move node. The current checker has no blanket Unicode or annotation waiver and therefore fails rather than guessing.
+**The prior frozen sample passed at `70b61c8`** with `raw_equal=false`. The comparator reports both raw hashes and counted permitted canonical transformations. ChessBase-only GUI tags and proprietary training directives are separately accounted for as metadata not present in cbvault's comparable PGN, not asserted to be byte-identical. This runbook is retained for repeat verification.
 
 The default denominator is exactly **3,410,497**; a partial export must fail. An explicit variable may be used for generated fixtures or legitimately different local corpus sizes, but every production acceptance report must keep the 3,410,497 Mega denominator. Raw SHA-256 equality and canonical token-byte equality are independently reported; raw differences are not silently normalized.
 
@@ -49,7 +49,7 @@ canonical comparison; passing these `cmp` commands alone is never proof of
 ChessBase gold parity.
 
 ## 2. Run exact strict comparison
-Set CBVAULT_TEST_DB_2CBH and CBVAULT_2CBH_GOLD_PGN to local paths and follow the **new strict executable's documented CLI**, not the old non-failing gold_pgn diagnostic. Run all eligible source slots, mapping IDs to PGN and asserting full 3,410,497 matching games, no unknown valid annotation, no missing/extra/reordered/duplicate games, no malformed Unicode, no untallied record errors and full EOF. Keep two distinct verdicts: raw PGN byte length/SHA-256/first differing offset, and strict byte equality after only approved, proof-backed transforms. Verify each SAN over-disambiguation at the actual legal board using gigachess; verify each null token at its actual position. All other deviations, including Unicode/diagram/GUI clock/encoding, must be *contextually* transformed with per-byte occurrence accounting and exact test.
+Set CBVAULT_TEST_DB_2CBH and CBVAULT_2CBH_GOLD_PGN to local paths and follow the **new strict executable's documented CLI**, not the old non-failing gold_pgn diagnostic. Compare all 3,410,497 eligible sample games, classify remaining source headers, map the sampled IDs to PGN and assert 3,410,497 matched games, no unknown valid annotation, no missing/extra/reordered/duplicate games, no malformed Unicode, no untallied record errors and full EOF. Keep two distinct verdicts: raw PGN byte length/SHA-256/first differing offset, and strict byte equality after only approved, proof-backed transforms. Verify each SAN over-disambiguation at the actual legal board using gigachess; verify each null token at its actual position. All other deviations, including Unicode/diagram/GUI clock/encoding, must be *contextually* transformed with per-byte occurrence accounting and exact test.
 
 Check serial vs real multiworker export in 1/2/4 workers and mmap/no-mmap; compare complete bytes and counters. Check source hashes unchanged after each run. If no strict executable has been implemented or any counters are unverified, report BLOCKED rather than falling back to the old 99.895% statistic.
 
