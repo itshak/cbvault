@@ -12,6 +12,12 @@ The library SHALL preserve all valid 2CBH move and annotation data through a gen
 - **THEN** the error propagates, source ID is counted as failed, and complete export cannot be reported as successful
 - **AND** the iterator does NOT silently terminate and the PGN writer does NOT emit the bare game instead.
 
+#### Scenario: Native text helper must not conceal annotation decode errors
+- **GIVEN** a 2CBA record with text followed by an unknown or malformed annotation kind
+- **WHEN** a caller invokes strict text extraction (`try_texts`)
+- **THEN** extraction returns the typed decode error instead of silently flattening and dropping the damaged item
+- **AND** the legacy best-effort diagnostic `texts` method is not used as proof of full annotation decoding.
+
 #### Scenario: Missing optional .2cba with actual annotation references
 - **GIVEN** a valid v2 header references an annotation record but the .2cba companion is absent or corrupt
 - **WHEN** the user requests annotations, exports complete annotated PGN or verifies annotations
