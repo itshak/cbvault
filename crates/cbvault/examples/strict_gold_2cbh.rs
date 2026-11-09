@@ -15,6 +15,9 @@
 //!
 //! This is intentionally stricter than the legacy gold_pgn diagnostic. An
 //! initial failure is useful evidence, not permission to widen normalization.
+//! Only the exported first N eligible games are gold-compared. Later header
+//! slots are classified, but their move/annotation records are NOT checked
+//! against ChessBase PGN; the frozen 3.41M sample is the accepted gold scope.
 //! Mapping uses source record order and complete comparable game content; any
 //! order/identity discrepancy fails. Exact duplicate-game source identity
 //! cannot be proven from PGN alone and needs a local ChessBase export manifest.
@@ -255,7 +258,7 @@ fn run() -> Result<(), String> {
         return Err(format!("{differing_games} games have unapproved canonical-byte differences"));
     }
     eprintln!(
-        "strict 2CBH gold: PASS only for the current Mega Database corpus; this does not prove unobserved Chess960, training, multimedia or rare annotation layouts"
+        "strict 2CBH gold: PASS for the frozen ChessBase-exported sample only; remaining source headers were classified but not PGN-compared; rare formats and annotations remain limited"
     );
     Ok(())
 }
