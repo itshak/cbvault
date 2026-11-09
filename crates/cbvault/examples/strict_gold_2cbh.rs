@@ -106,9 +106,7 @@ fn run() -> Result<(), String> {
             continue;
         }
         if count >= expected {
-            return Err(format!(
-                "extra eligible source game at record {id}: expected only {expected} games"
-            ));
+            return Err(format!("extra eligible source game at record {id}: expected only {expected} games"));
         }
         let gold_game = gold
             .next_game()?
@@ -1036,7 +1034,6 @@ fn cp1252_byte(c: char) -> Option<u8> {
     }
     None
 }
-
 
 fn compare_game(gold: &Game, ours: &Game) -> Result<Compared, String> {
     // Duplicate tag names must not be hidden by HashMap's last-value-wins
