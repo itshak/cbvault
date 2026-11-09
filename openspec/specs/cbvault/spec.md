@@ -8,7 +8,13 @@ Define what `cbvault` must do: read ChessBase databases (classic `.cbh` family, 
 
 ### Requirement: Database sets are opened and validated
 
-The library SHALL open a ChessBase database from its base name or any member file and MUST validate the file set before decoding: identify the format generation (classic or 2CBH), check header magic and version fields, and report missing optional files as warnings while requiring the mandatory set (`.cbh .cbg .cba .cbp .cbt .cbc .cbs`). Optional members (`.cbj .cbe .cbl .cbtt .flags .cbgi .cbb .cko .cpo` and asset folders) SHALL be tolerated as absent, and derived search boosters or accelerators MUST NOT be required for decoding.
+Database::open and generation_of SHALL respect an explicitly supplied classic or 2CBH member extension, including .2cbh, .2cbg, .2cba and .2lid; they SHALL NOT select the wrong generation merely because another generation's companion has the same basename. An extensionless ambiguous stem SHALL report a typed ambiguity or require explicit selection.
+
+#### Scenario: Both generations share a stem
+- **GIVEN** the same directory contains Mega.cbh and Mega.2cbh with complete companions
+- **WHEN** the user opens Mega.2cbh
+- **THEN** generation and parsed files are TwoCbh, not Classic
+- **AND** opening Mega.cbh remains Classic and an ambiguous bare Mega path does not silently pick one.
 
 #### Scenario: Classic database
 
@@ -1093,7 +1099,25 @@ The library's public documentation, README, crate root headers, module comments,
 
 ### Requirement: Native versioned 2CBH read-only decoding
 
-The library SHALL open supported `.2cbh` database sets with `.2cbg`, `.2cba` and required `.2lid` entities using verified little-endian fields and record tags, SHALL reconstruct complete legal chess moves and main/side variations using **gigachess only**, and SHALL never write to any original ChessBase companion file. Unsupported/corrupt/changed records SHALL return explicit typed errors, not fabricated chess data.
+The library SHALL preserve all valid 2CBH move and annotation data through a generation-aware public reader and SHALL never silently omit requested, valid annotations or reinterpret a malformed record as a successful unannotated game. When a valid type is not yet supported, it SHALL report a typed unsupported-feature error with record ID, offset and kind; that error SHALL fail the complete parity gate. Corruption SHALL also fail with a distinct typed error and SHALL not panic.
+
+#### Scenario: Unknown typed annotation
+- **GIVEN** a v2 annotated game containing an unknown annotation type or invalid length
+- **WHEN** an item iterator, PGN writer, verification, public game API or conversion sink processes the game
+- **THEN** the error propagates, source ID is counted as failed, and complete export cannot be reported as successful
+- **AND** the iterator does NOT silently terminate and the PGN writer does NOT emit the bare game instead.
+
+#### Scenario: Invalid 2CBA trailer is not accepted as an empty annotation tail
+- **GIVEN** a 2CBA record with a valid end marker followed by bytes not accounted for in the frame
+- **WHEN** a caller iterates annotations or requests lossless checked text extraction
+- **THEN** the decoder raises an error rather than silently treating the remaining bytes as absent
+- **AND** the diagnostic-only `texts()` helper is not used as a validation oracle; `try_texts()` returns annotation errors.
+
+#### Scenario: Missing optional .2cba with actual annotation references
+- **GIVEN** a valid v2 header references an annotation record but the .2cba companion is absent or corrupt
+- **WHEN** the user requests annotations, exports complete annotated PGN or verifies annotations
+- **THEN** a typed error reports missing/corrupt source data instead of treating the game as intentionally unannotated
+- **AND** all success/failure counters represent the actual result.
 
 #### Scenario: User opens a current personal 2CBH file
 - **GIVEN** a complete supported 2CBH set with known games and variations, opened read-only
@@ -1118,7 +1142,37 @@ Any ported 2CBH implementation SHALL originate only from the verified MIT osches
 
 ### Requirement: PGN parity is proved against real local ChessBase export
 
-Before claiming production-ready 2CBH support, the change MUST compare the same explicitly mapped game IDs from a real, user-owned local 2CBH database against **ChessBase-generated PGN**, preferably a complete database or at least a substantial 400,000-game contiguous sample where available plus rare-case sampling. The canonical PGN representation used by the existing classic comparator SHALL be compared **byte-for-byte** across comparable tags, full game trees, variations, comments and NAGs, with raw byte diagnostics retained. Every difference SHALL be explained and classified; **zero unexplained canonical bytes, zero illegal moves and zero silently omitted supported records** are required.
+The strict local gold gate SHALL enforce **byte-for-byte equality** for compared PGN bytes within the explicitly frozen ChessBase-exported sample (not unexported later games) after ONLY documented, individually justified and counted nonsemantic formatting/ChessBase-specific transformations. It SHALL also independently report raw SHA-256, raw byte length and first differing raw byte, without falsely claiming raw equality when transformations were needed. It SHALL compare every PGN tag shared by both exporters, SAN, the entire nested move tree, comments/literal Unicode, NAGs/results and comparable directives. Absent ChessBase GUI-only metadata and proprietary training directives SHALL be named and counted as **coverage exclusions**, not falsely described as byte-identical exported content; no generic similarity threshold is permitted. It SHALL prove exact source-record-to-PGN mapping, counts, duplicates, EOF and absence of illegal moves or unreported annotation failures. Any unapproved difference or unknown valid item exits nonzero.
+
+#### Scenario: One unexpected byte
+- **GIVEN** matched games differing by one nonapproved tag, comment, NAG, variation, result or Unicode byte
+- **WHEN** strict gold compares them
+- **THEN** it exits with failure and reports the first differing byte/category privately and aggregate safely
+- **AND** a 99.9999% match rate never overrides that failure.
+
+#### Scenario: ChessBase SAN qualification difference
+- **GIVEN** ChessBase emits an extra SAN file/rank qualifier absent from standard gigachess SAN
+- **WHEN** strict gold classifies a deliberate exception
+- **THEN** it replays the actual board and source move, proves both notation forms denote the SAME legal move and next board and proves alternative same-type candidate moves illegal
+- **AND** text-prefix differences alone cannot be accepted.
+
+#### Scenario: Null, encoding, diagram and graphical differences
+- **GIVEN** an actual null-move node and ChessBase-only output glyph, control byte, codepage or GUI clock text
+- **WHEN** an exception is applied
+- **THEN** it uses a separately tested context-specific transformation with exact input/output bytes and a named count, and the final transformed PGN is byte-identical
+- **AND** arbitrary comment text or unrelated tokens remain unchanged.
+
+#### Scenario: Full source-slot accounting and exact footer validation
+- **GIVEN** a 2CBH source with more allocated header slots than exported games, including non-game and trailing records
+- **WHEN** the production strict gold gate has compared the expected game count
+- **THEN** it SHALL continue inspecting the entire source header range, fail on any additional eligible game and prove `compared_games + non_game_slots == source_slots`
+- **AND** only an explicitly marked smoke test may stop after a sample without claiming full-corpus acceptance.
+
+#### Scenario: Adversarial equivalence cannot mask content changes
+- **GIVEN** two different comments with the same unordered characters, a duplicate PGN tag, or different FEN castling semantics
+- **WHEN** the strict gold comparator evaluates them
+- **THEN** it SHALL reject arbitrary character permutations and duplicate tags, and SHALL prove any FEN representation equivalence by reconstructing identical chess boards
+- **AND** presentation exceptions never turn changed moves, annotations, or header values into success.
 
 #### Scenario: Golden PGNs disagree by one move letter
 - **GIVEN** a locally exported ChessBase PGN and the corresponding cbvault PGN
@@ -1144,10 +1198,52 @@ Real `.2cbh` companions, ChessBase PGN exports, user metadata, per-game diffs an
 
 ### Requirement: Existing classic output and performance guarantees remain intact
 
-The 2CBH implementation SHALL reuse `gigachess` SAN/legality and the existing PGN writer, source reader and ordered export interfaces. Classic .cbh, .cbv and .cbz correctness/byte parity SHALL not regress; a 2CBH sequential/parallel export of the same source revision SHALL be byte-identical. Performance claims SHALL be supported by ADR-001/002's paired benchmarks and whole-database profile.
+The library SHALL keep all classic CBH and CBV/CBZ golden behavior, one gigachess chess core, strictly read-only source access, correct no-mmap/regular path, deterministic parallel output, bounded memory and established hot-path allocation budgets. Private ChessBase files, PGN, game excerpts and full per-game diffs SHALL stay on the owner's local machine.
+
+#### Scenario: No real Mega present in GitHub Actions
+- **WHEN** normal public CI runs without the private Mega corpus
+- **THEN** comprehensive generated synthetic and adversarial tests, Clippy/fmt/fuzz/bench compilation execute
+- **AND** the private gold gate reports NOT RUN and cannot mark real-data acceptance complete.
 
 #### Scenario: Parallel 2CBH export
 - **GIVEN** one stable 2CBH source with 400,000 or more games
 - **WHEN** the library exports the same exact games sequentially and with multiple workers
 - **THEN** their output bytes and game counts are identical
 - **AND** existing classic gold output and archive extraction hashes are unchanged.
+
+### Requirement: Native 2CBH annotations are accessible in consumer APIs
+
+A caller requesting game annotations SHALL receive a typed, borrowed and lossless representation of v2-native items with exact ply/variation association, raw payload where applicable and source provenance. GameSink, Database::game_with, single-game PGN, and serial/parallel conversion SHALL produce equivalent annotation availability; no classic-only type punning or silent None. A genuinely unrepresentable PGN-native object SHALL remain accessible through the structured reader.
+
+#### Scenario: Annotation-requesting sink over v2
+- **GIVEN** a v2 game with comments, NAGs and native-only typed objects
+- **WHEN** GameSink::wants_annotations returns true
+- **THEN** the delivered view carries the actual requested v2 annotations with same bytes, positions and types as the source
+- **AND** disabled annotation access may skip reading for performance, with no incorrect loss claim.
+
+### Requirement: All public reader and search operations are generation-aware
+
+The same public Database capabilities SHALL work correctly on v2: metadata/headers, entity/name lookup, tag filters/scan and scan_range, legal move walk, position search/range/early-stop/cancellation, per-game PGN, annotations, streaming GameSink, deterministic bounded parallel GameSink conversion, and CLI information/verify/export. A v2 operation SHALL NOT call a panicking classic-only accessor or decode a 2CBG record using classic CBG framing.
+
+#### Scenario: v2 tag and position search
+- **GIVEN** a generated v2 database with known player, event, date, ECO and a known target Polyglot key in a Chess960/custom-start or ordinary game
+- **WHEN** a user performs tag scan or unindexed position-key search, serial or parallel
+- **THEN** the same game IDs and legal position hits are returned as the independent expected oracle, including correct record-kind exclusion
+- **AND** cancellation and early-stop semantics are correct without panics.
+
+#### Scenario: Parallel v2 sink conversion
+- **GIVEN** a database with game/text/deleted/analysis and corrupt-record fixtures
+- **WHEN** conversion uses 1, 2 or 4 worker threads
+- **THEN** decoded games, positions, keys, requested annotations, failures and record order are exactly the same
+- **AND** work actually occurs across workers when more than one is requested, with memory bounded by worker count.
+
+### Requirement: Real-data scope is accurately reported
+
+Mega Database 2026 with ChessBase 18 PGN is the only available real 2CBH corpus; no second licensed database is required. A complete frozen 3,410,497-game sample pass SHALL be reported as **validated on the ChessBase 18 exported sample from Mega Database 2026 only**, never universal compatibility or full-db parity for later unexported games. Rare or absent features (Chess960, unusual annotations, embedded quotations, native-only content omitted from PGN) SHALL each be labeled real-verified, synthetic-only, unverified, or unsupported.
+
+#### Scenario: Exported sample lacks Chess960 games
+- **GIVEN** the Mega source corpus does not contain a particular rare valid 2CBH feature
+- **WHEN** the exported-sample gold comparison passes
+- **THEN** the documentation explicitly reports that the feature was not covered by real data and may still have defects
+- **AND** original synthetic fixtures exercise the known legal shape without claiming universal field validation.
+
