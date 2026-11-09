@@ -146,11 +146,11 @@ fn run() -> Result<(), String> {
                 first_diff = Some((id, count, compare.first_byte));
             }
             if sample_diffs.len() < 10 {
+                // Safe for sanitized status reports: no licensed PGN excerpt.
+                // Full local diffs require explicit CBVAULT_STRICT_GOLD_DUMP_DIR.
                 sample_diffs.push(format!(
-                    "game record id={id} ordinal={count}: diff {}\nGOLD:\n{}\nOURS:\n{}",
-                    compare.diff_snippet.as_deref().unwrap_or("none"),
-                    gold_game.raw.trim_end(),
-                    our_text.trim_end()
+                    "game record id={id} ordinal={count}: first differing canonical byte {}",
+                    compare.first_byte
                 ));
             }
             if let Some(dir) = std::env::var_os("CBVAULT_STRICT_GOLD_DUMP_DIR") {
