@@ -1514,15 +1514,15 @@ mod tests {
 
     #[test]
     fn unrelated_character_permutations_must_not_pass_as_order_equivalence() {
-        let gold = parse_game("[Event \"E\"]\\n\\n1. e4 {mate} *\\n".into()).unwrap();
-        let changed = parse_game("[Event \"E\"]\\n\\n1. e4 {team} *\\n".into()).unwrap();
+        let gold = parse_game("[Event \"E\"]\n\n1. e4 {mate} *\n".into()).unwrap();
+        let changed = parse_game("[Event \"E\"]\n\n1. e4 {team} *\n".into()).unwrap();
         assert!(!compare_game(&gold, &changed).unwrap().equal);
     }
 
     #[test]
     fn duplicate_tag_names_are_not_silently_overwritten() {
-        let duplicated = parse_game("[Event \"extra\"]\\n[Event \"E\"]\\n\\n1. e4 *\\n".into()).unwrap();
-        let single = parse_game("[Event \"E\"]\\n\\n1. e4 *\\n".into()).unwrap();
+        let duplicated = parse_game("[Event \"extra\"]\n[Event \"E\"]\n\n1. e4 *\n".into()).unwrap();
+        let single = parse_game("[Event \"E\"]\n\n1. e4 *\n".into()).unwrap();
         assert!(compare_game(&duplicated, &single).is_err());
     }
 
