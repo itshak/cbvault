@@ -37,6 +37,17 @@ The strict gold executable is intentionally expected to fail at first on unknown
 - [x] 2.6 State **"Validated on Mega Database 2026 only"**, with Chess960 and rare native annotation/media/training/quotation real coverage clearly labeled as unverified when absent. Another real database is NOT a prerequisite.
 - [x] 2.7 Do not archive or publish until strict golden release gate passes and owner reviews report.
 
+## 2A. Independent closeout review — 2026-11-09 (OPEN, release gate)
+
+The previous local gold report and commit `97de8c3` establish an important **reported** 3,410,497-game canonical comparison with zero unexplained mismatches. They do **not** close the following discovered strict-oracle correctness gaps. The previous checked stage-2 entries record what the prior agent reported; they are not a replacement for a passing new gold run after the review patches.
+
+- [ ] 2A.1 Review branch `review/2cbh-final-gold-gate-2026-11-09` passes all five CI jobs, is merged, and the *merged SHA* is used for any final release verification.
+- [ ] 2A.2 Rerun private complete Mega Database 2026 gold on the hardened comparator. The old checker stopped at the expected 3,410,497 games, reporting `source_slots=11,743,083` but only `non_game_slots=1,439` — leaving 8,331,147 tail slots unexamined. The fixed checker must inspect and account for *all* slots and prove no further eligible games occur.
+- [ ] 2A.3 Diagnose formerly accepted comment permutations (the prior report counted `verified_order=92`); arbitrary equal-character histograms no longer qualify as an exception. Preserve the actual language/text associations or classify these as unresolved parity failures.
+- [ ] 2A.4 Review the giant `CHESSBASE_GUI_TAGS` exclusion (`cb_gui_tags=51,415,248` reported) against the requirement to compare all tags. In particular, `GameId`, `TimeControl`, source metadata and other semantic attributes are not automatically presentation-only. Provide individually justified/verified exceptions or implement missing metadata; ensure duplicate tag names cannot disappear in last-value-wins maps.
+- [ ] 2A.5 Explicitly validate the `[%tqu ...]` training-question omission (prior `verified_training=2,084`) against the no-silent-loss native annotation contract. Structured native data must remain available even when a deliberately nonstandard ChessBase GUI PGN directive is outside the supported PGN representation.
+- [ ] 2A.6 Verify raw PGN remains labeled `raw_equal=false` when it differs; confirm 1/2/4-worker byte-identical export, no-mmap, classic regression, hash snapshots, peak memory/performance and limitations at the final SHA. Then obtain owner acceptance, update the permanent spec/README, and archive this change.
+
 ## 3. Explicit non-goals
 - Native CBH/.2cbh file writing/editing.
 - Requiring another licensed real v2 database.
