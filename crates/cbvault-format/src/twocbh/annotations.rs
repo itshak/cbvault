@@ -486,6 +486,7 @@ mod tests {
         }
 
         assert_eq!(ann.texts(), vec!["A strong novelty!".to_string()]);
+        assert_eq!(ann.try_texts().unwrap(), vec!["A strong novelty!".to_string()]);
     }
 
     #[test]
