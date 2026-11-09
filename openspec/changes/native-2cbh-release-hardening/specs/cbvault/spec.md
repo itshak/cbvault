@@ -12,6 +12,12 @@ The library SHALL preserve all valid 2CBH move and annotation data through a gen
 - **THEN** the error propagates, source ID is counted as failed, and complete export cannot be reported as successful
 - **AND** the iterator does NOT silently terminate and the PGN writer does NOT emit the bare game instead.
 
+#### Scenario: Invalid 2CBA trailer is not accepted as an empty annotation tail
+- **GIVEN** a 2CBA record with a valid end marker followed by bytes not accounted for in the frame
+- **WHEN** a caller iterates annotations or requests lossless checked text extraction
+- **THEN** the decoder raises an error rather than silently treating the remaining bytes as absent
+- **AND** the diagnostic-only `texts()` helper is not used as a validation oracle; `try_texts()` returns annotation errors.
+
 #### Scenario: Missing optional .2cba with actual annotation references
 - **GIVEN** a valid v2 header references an annotation record but the .2cba companion is absent or corrupt
 - **WHEN** the user requests annotations, exports complete annotated PGN or verifies annotations
@@ -83,6 +89,18 @@ The strict local gold gate SHALL enforce **byte-for-byte equality** for all comp
 - **WHEN** an exception is applied
 - **THEN** it uses a separately tested context-specific transformation with exact input/output bytes and a named count, and the final transformed PGN is byte-identical
 - **AND** arbitrary comment text or unrelated tokens remain unchanged.
+
+#### Scenario: Full source-slot accounting and exact footer validation
+- **GIVEN** a 2CBH source with more allocated header slots than exported games, including non-game and trailing records
+- **WHEN** the production strict gold gate has compared the expected game count
+- **THEN** it SHALL continue inspecting the entire source header range, fail on any additional eligible game and prove `compared_games + non_game_slots == source_slots`
+- **AND** only an explicitly marked smoke test may stop after a sample without claiming full-corpus acceptance.
+
+#### Scenario: Adversarial equivalence cannot mask content changes
+- **GIVEN** two different comments with the same unordered characters, a duplicate PGN tag, or different FEN castling semantics
+- **WHEN** the strict gold comparator evaluates them
+- **THEN** it SHALL reject arbitrary character permutations and duplicate tags, and SHALL prove any FEN representation equivalence by reconstructing identical chess boards
+- **AND** presentation exceptions never turn changed moves, annotations, or header values into success.
 
 #### Scenario: Golden PGNs disagree by one move letter
 - **GIVEN** a locally exported ChessBase PGN and the corresponding cbvault PGN
