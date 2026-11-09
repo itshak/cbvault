@@ -521,14 +521,14 @@ fn texts(parts: &mut Parts, anns: AnnotationsRef<'_>, items: [&[(i32, u32)]; 2],
                         after_languages |= bit;
                     }
                 }
-                if b != before {
-                    other = true;
-                    continue;
-                }
                 if language != last_language {
                     interleaved |= seen_languages & bit != 0;
                     seen_languages |= bit;
                     last_language = language;
+                }
+                if b != before {
+                    other = true;
+                    continue;
                 }
                 let key = write_key(language);
                 has_any |= key == -1;
