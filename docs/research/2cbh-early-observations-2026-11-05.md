@@ -7,7 +7,7 @@
 > reportedly matched canonical cbvault output with **zero unexplained byte
 > differences**, after audited transformations. The raw streams differ.
 > The later **8,330,763 eligible games** were header-classified but not
-> independently compared. See [archived acceptance evidence](../openspec/changes/archive/2026-11-10-native-2cbh-release-hardening/closeout.md).
+> independently compared. See [archived acceptance evidence](../../openspec/changes/archive/2026-11-10-native-2cbh-release-hardening/closeout.md).
 >
 > **Historical research warning:** This document preserves November 5 hypotheses,
 > **some of which are superseded**. The older claims that 2CBG move words are
