@@ -1,10 +1,10 @@
-//! The consumer-facing façade: a read-only [`Database`] over a validated
-//! classic `.cbh` file set, and the sink-based conversion API a consumer
-//! writes its target database against.
+//! Generation-aware, read-only [`Database`] access to classic `.cbh` and
+//! native `.2cbh` file sets, plus the streaming conversion and search APIs
+//! for independent Rust consumers.
 //!
 //! # What this module is for
 //!
-//! A consumer's job with a `.cbh` set is two jobs. *Convert* it — stream every
+//! Consumers work directly with classic `.cbh` or native `.2cbh` sets: *convert* — stream every
 //! game into a target reference base or user database, as fast as
 //! the source can be read. And *serve* it read-only: list games, show one,
 //! search by tag, search by position. Both are here, and both are read-only:
@@ -74,11 +74,10 @@ use cbvault_format::game::RecordKind;
 /// Which generation of the format a file set is written in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Generation {
-    /// The classic `.cbh` family, which is what this module reads.
+    /// The classic `.cbh` family, supported by the native read-only database API.
     Classic,
-    /// The 2CBH `.2cbh` family, which ChessBase 17 and later writes for a
-    /// working database. Recognised so a caller can be told before it tries to
-    /// open one; reading it is a later change, behind this same façade.
+    /// The modern 2CBH `.2cbh` family. Headers, moves, native annotations,
+    /// entity names, search and PGN share the same read-only database façade.
     TwoCbh,
     /// Neither: the directory holds no member of a known generation.
     Unknown,
@@ -165,10 +164,9 @@ pub fn stem_of(path: &Path) -> PathBuf {
 /// opening any of them: a `.cbh` or `.cbg` makes the set classic, a `.2cbh` or
 /// `.2cbg` makes it 2CBH, and a directory with neither is [`Generation::Unknown`].
 ///
-/// Cheap enough to call before every open, and the honest way for a consumer to
-/// find out that a set is 2CBH — which [`Database::open`] cannot read yet —
-/// rather than reading a [`Error::MissingFile`] for a `.cbh` that will never be
-/// there.
+/// Cheap enough to call before every open. The resolved generation directs
+/// [`Database::open`] to the correct native classic or 2CBH reader, instead
+/// of assuming every database is a classic `.cbh` file set.
 pub fn generation_of(path: impl AsRef<Path>) -> Generation {
     let path = path.as_ref();
     // The caller's explicit extension wins even when both generations share
