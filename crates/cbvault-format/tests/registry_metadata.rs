@@ -131,7 +131,9 @@ fn every_crate_readme_path_exists() {
             assert!(!workspace_readme.is_empty(), "{} inherits a missing workspace readme", manifest.display());
             assert!(
                 root.join(&workspace_readme).is_file(),
-                "{} inherits missing workspace README {:?}", manifest.display(), workspace_readme
+                "{} inherits missing workspace README {:?}",
+                manifest.display(),
+                workspace_readme
             );
             continue;
         }
@@ -140,7 +142,11 @@ fn every_crate_readme_path_exists() {
             continue; // Cargo can also auto-detect a crate-local README.
         }
         let dir = manifest.parent().unwrap();
-        assert!(dir.join(&readme).is_file(), "{} points readme at {readme:?}, which does not exist", manifest.display());
+        assert!(
+            dir.join(&readme).is_file(),
+            "{} points readme at {readme:?}, which does not exist",
+            manifest.display()
+        );
     }
 }
 
