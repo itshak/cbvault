@@ -4,20 +4,20 @@ Measurements on Mega Database 2025 demonstrate that:
 1. `gigachess::Board::play` is thoroughly legal and exact, but computes 64-bit Polyglot Zobrist incremental hash and checkers cache on every move. In verification and game traversal, the hash is immediately thrown away.
 2. `cbh-parser` was reading individual games by calling `DbFile::read_into(offset, ...)` once or twice per record. Across 11.15 million games, this generates 22.3 million OS system calls.
 3. Upstream `cbtool` implements `batch()` with `span_at` / `span_end` of up to 256 MiB and uses thread workers.
-4. BlindBase (`../blind-base`) and gigachess (`../turbochess-rs`) standardized on `rayon` (1.10 / 1.12) for parallel chess computation and bulk replay (`ADR-002`).
+4. downstream software (`../downstream-client`) and gigachess (`../turbochess-rs`) standardized on `rayon` (1.10 / 1.12) for parallel chess computation and bulk replay (`ADR-002`).
 
 ## Goals / Non-Goals
 
 **Goals:**
 - Provide `play_unchecked_fast` / `play_fast` in `gigachess` preserving exact piece placement, castling rights, en-passant state, fullmove numbering, and legality/safety checking, while bypassing unused Zobrist updates.
 - Introduce `Batch` contiguous span reader in `cbh-format` to turn millions of individual `pread` calls into a few hundred large block reads.
-- Introduce Rayon parallel replay in `cbh-parser` and `cbh-cli`, matching BlindBase's architecture.
+- Introduce Rayon parallel replay in `cbh-parser` and `cbh-cli`, matching downstream software's architecture.
 - Single-thread throughput > 230,000 rec/s (exceeding upstream's 209,357 rec/s).
 - Multi-thread throughput > 1,500,000 rec/s on 8+ cores with peak RSS < 50 MiB.
 
 **Non-Goals:**
 - Removing Zobrist from `gigachess::Board::play`: standard `play` must continue updating Zobrist hashes for position indexing and engines.
-- Asynchronous runtime like Tokio: database verification is CPU- and page-cache-bound; Rayon's work-stealing thread pool is already the canonical choice across BlindBase and gigachess.
+- Asynchronous runtime like Tokio: database verification is CPU- and page-cache-bound; Rayon's work-stealing thread pool is already the canonical choice across downstream software and gigachess.
 
 ## Decisions
 

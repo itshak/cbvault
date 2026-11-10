@@ -6,7 +6,7 @@ See `proposal.md`. The position replay already solved this problem once:
 `PositionQuery::cancelled` is asked after every chunk and
 `PositionSearch::complete` marks a prefix answer. The conversion walk
 (`for_each_game` / `convert_parallel`) never got the same shape because its
-original consumer always wanted the whole database. BlindBase's live-set
+original consumer always wanted the whole database. downstream software's live-set
 position search is the consumer that does not, and it currently pays a full
 11M-game decode for a 50-game answer.
 
@@ -14,15 +14,15 @@ position search is the consumer that does not, and it currently pays a full
 
 **Goals:**
 - A sink can stop either walk early, cooperatively, with stats that say so.
-- A PGN splitter lives in exactly one place (cbvault), with BlindBase's test
+- A PGN splitter lives in exactly one place (cbvault), with downstream software's test
   vectors moved, not re-derived.
 - Additive only: no signature changes, no behaviour change at `cancelled = false`.
 
 **Non-Goals:**
 - Pre-emption or cross-thread signalling: the predicate is polled, not pushed.
-- Moving BlindBase's call sites in this change (that is the adoption commit).
+- Moving downstream software's call sites in this change (that is the adoption commit).
 - Changing the splitter rule: byte-based, comment/RAV aware, as documented in
-  BlindBase `src-tauri/src/pgn.rs`.
+  downstream software `src-tauri/src/pgn.rs`.
 
 ## Decisions
 
@@ -46,7 +46,7 @@ position search is the consumer that does not, and it currently pays a full
 
 ### 3. Splitter placement: `cbvault::pgn::split`
 - **Decision**: new `split.rs` under the existing `pgn` module (`split_games`
-  + `split_game_ranges`), re-exported in `pgn/mod.rs`; BlindBase deletes
+  + `split_game_ranges`), re-exported in `pgn/mod.rs`; downstream software deletes
   `src-tauri/src/pgn.rs` and re-exports or calls through.
 - **Rationale**: PGN in/out in one module; the rule's documentation (blank line
   outside comment + next-line-is-tag) moves with the code.

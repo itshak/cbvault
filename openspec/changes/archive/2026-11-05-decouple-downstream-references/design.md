@@ -1,6 +1,6 @@
 ## Context
 
-`cbvault`'s architecture is already strictly decoupled from any target database or consumer engine (formalized in ADR-005): it provides a read-only `Database` façade, a generic `GameSink` streaming callback, and zero SQLite or embedded database dependencies. However, because it was developed in tandem with an unreleased downstream application ("BlindBase"), public documents, doc comments, examples, and the GitHub repository description still contain direct references to this project and its internal formats (`.bbdb`/`.bbrb`).
+`cbvault`'s architecture is already strictly decoupled from any target database or consumer engine (formalized in ADR-005): it provides a read-only `Database` façade, a generic `GameSink` streaming callback, and zero SQLite or embedded database dependencies. However, because it was developed in tandem with an unreleased downstream application ("downstream software"), public documents, doc comments, examples, and the GitHub repository description still contain direct references to this project and its internal formats (`.db`/`.db`).
 
 See `proposal.md` for motivation.
 
@@ -21,8 +21,8 @@ See `proposal.md` for motivation.
 
 ### 1. Standardize on Generic Downstream Terminology
 In all current-facing documentation, doc comments, and examples:
-- Replace "BlindBase" with "downstream application", "consumer engine", "caller", or "client pipeline".
-- Replace `.bbdb` / `.bbrb` with "target database", "custom storage", or "application format".
+- Replace "downstream software" with "downstream application", "consumer engine", "caller", or "client pipeline".
+- Replace `.db` / `.db` with "target database", "custom storage", or "application format".
 - *Alternative considered:* Leaving comments as-is. *Rejected* because doc comments are published to `docs.rs` and distributed with crates published to `crates.io`.
 
 ### 2. Update GitHub Repository Metadata via `gh`

@@ -2,22 +2,22 @@
 
 ## Why
 
-Two gaps sit on either side of the BlindBase bridge, and both force a full
+Two gaps sit on either side of the downstream software bridge, and both force a full
 pass where a prefix would do:
 
 1. **No early stop on the conversion walk.** `for_each_game`,
    `for_each_range` and `convert_parallel` run to the last record whatever the
-   sink wants. BlindBase's position search (`KeyCollectSink`, 50-game answer
+   sink wants. downstream software's position search (`KeyCollectSink`, 50-game answer
    over an 11M-game set) therefore decodes the whole set and throws most of it
    away — documented in `search.rs` as "requested upstream". The position
    replay (`for_each_position_key`) already has the shape: `PositionQuery`
    carries an optional `cancelled` predicate, asked after every chunk, with
    `PositionSearch::complete = false` marking a prefix answer.
-2. **No PGN game splitter in cbvault.** BlindBase carries the one canonical
+2. **No PGN game splitter in cbvault.** downstream software carries the one canonical
    splitter (`pgn::split_games`, byte-based, comment/RAV aware) and cbvault
    has none — its `pgn` module only *writes* PGN. Any cbvault-side PGN intake
    (fixtures, oracle comparisons, CLI input) re-derives the boundary rule and
-   risks the same 7-copies-4-algorithms divergence BlindBase just unified.
+   risks the same 7-copies-4-algorithms divergence downstream software just unified.
 
 ## What Changes
 
@@ -28,10 +28,10 @@ pass where a prefix would do:
   `PositionSearch::complete` — a prefix is never mistaken for a whole answer.
 - **PGN splitter** (`cbvault::pgn::split`): the blank-line-outside-comment +
   next-line-is-tag rule, byte-based (`&[u8]`, lossy UTF-8), ported from
-  BlindBase's `pgn::split_games` with its test vectors. One rule, one owner:
-  BlindBase's call sites adopt it and delete the local copy.
+  downstream software's `pgn::split_games` with its test vectors. One rule, one owner:
+  downstream software's call sites adopt it and delete the local copy.
 - **Version 0.1.4** (additive only: a defaulted trait method, a new module,
-  a new stats field) with CHANGELOG entry; BlindBase bumps both pins.
+  a new stats field) with CHANGELOG entry; downstream software bumps both pins.
 
 ## Capabilities
 

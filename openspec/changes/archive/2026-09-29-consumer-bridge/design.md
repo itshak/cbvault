@@ -1,8 +1,8 @@
-# Design — blindbase-bridge
+# Design — consumer-bridge
 
 ## 1. What the consumer actually needs
 
-Read from the BlindBase side (its `move2-zobrist-unified` and
+Read from the downstream software side (its `move2-zobrist-unified` and
 `turbo-game-databases` specs, ADR-013/015/030, and
 `docs/research/cbh-vs-bbdb-comparison.md` §10), a converted game is a
 `Games` row:
@@ -51,7 +51,7 @@ pub trait GameSink {
 into 8,192-record chunks, each worker decodes its whole chunk into its own
 buffers, and one writer stage delivers the chunks **in game-number order**.
 
-Ordering is not a nicety here, it is a requirement of the target: `.bbrb` ids
+Ordering is not a nicety here, it is a requirement of the target: `.db` ids
 are monotonic, the fingerprint deduplication compares against indexed games,
 and the sidecar's postings are `(hash, game_id)` — all three want a single
 ordered write. A parallel sink that delivered chunks in completion order would
@@ -172,7 +172,7 @@ the same contract as ADR-003, one level up. `wants_annotations` matters
 because `.cba` is 209 MB on the reference set: a conversion that ignores
 annotations should not read it.
 
-Variations are deliberately **not** in `GameRef`: `.bbdb` stores one line per
+Variations are deliberately **not** in `GameRef`: `.db` stores one line per
 game, and a tree walk per game would cost a second buffer and a second code
 path for data the target cannot hold. `decode_tree_into` remains available for
 callers that want the full tree (the PGN writer is one).

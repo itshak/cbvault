@@ -2,9 +2,9 @@
 
 ## Why
 
-ChessBase databases are the de-facto standard for tournament players (Mega Database, personal databases, magazine archives) and the anchor of BlindBase's BYOD strategy (`strategy/decisions/013-gigabase-licensing-and-byod.md` in the BlindBase repo). BlindBase today reads `.pgn`, `.bbdb` and `.bbgb`; `cbvault` closes the gap with an MIT-licensed Rust reader for the classic `.cbh` family, the 2CBH family and `.cbv`/`.cbz` archives.
+ChessBase databases are the de-facto standard for tournament players (Mega Database, personal databases, magazine archives) and the anchor of downstream software's BYOD strategy (`strategy/decisions/013-gigabase-licensing-and-byod.md` in the downstream software repo). downstream software today reads `.pgn`, `.db` and `.db`; `cbvault` closes the gap with an MIT-licensed Rust reader for the classic `.cbh` family, the 2CBH family and `.cbv`/`.cbz` archives.
 
-A working MIT implementation exists to build on — `cbformat` in `oschess-cb-bridge` — but its chess layer is a hand-rolled core (`chesscore`). BlindBase standardizes on `gigachess` (ADR-013/015): one chess core, 16-bit `moves2`, incremental Polyglot Zobrist, zero-allocation replay. Two chess implementations in one stack is neither fast nor maintainable, so this project ports `cbformat` and re-bases it on `gigachess`.
+A working MIT implementation exists to build on — `cbformat` in `oschess-cb-bridge` — but its chess layer is a hand-rolled core (`chesscore`). downstream software standardizes on `gigachess` (ADR-013/015): one chess core, 16-bit `moves2`, incremental Polyglot Zobrist, zero-allocation replay. Two chess implementations in one stack is neither fast nor maintainable, so this project ports `cbformat` and re-bases it on `gigachess`.
 
 No CBH reader for macOS/Linux with accessibility ambitions exists today. The fastest, cleanest open implementation wins this niche — and it is what finally lets ChessBase database owners (Mega users included) study on a Mac.
 
@@ -15,13 +15,13 @@ No CBH reader for macOS/Linux with accessibility ambitions exists today. The fas
 3. **Port of `cbformat` onto `gigachess`**: index, namebase, game-decode, annotation, replay and PGN modules, with `chesscore` deleted everywhere — `moves2` as the move currency, gigachess for legality/FEN/SAN/Chess960/Polyglot keys, zero-allocation streaming.
 4. **`.cbv` / `.cbz` container reader** (clean-room; `uncbv` as a test oracle only).
 5. **Fixtures and benchmarks**: generated CBH fixtures for public CI; env-gated real-database tests; Criterion benchmarks with published numbers.
-6. **BlindBase façade**: read-only reference-database access and `.bbdb`-feedable streams (consumed by the later BlindBase change `byod-database-import`).
+6. **downstream software façade**: read-only reference-database access and `.db`-feedable streams (consumed by the later downstream software change `byod-database-import`).
 
 ## Non-goals
 
 - **Writing** CBH/2CBH data — read-only by design, permanently.
 - Multimedia payload extraction (sound/video/picture annotations, media folders) in v1.
-- GUI or desktop features — this is a library and CLI; BlindBase consumes it.
+- GUI or desktop features — this is a library and CLI; downstream software consumes it.
 - Contacting third-party authors — attribution-only policy at this stage.
 
 ## Licensing & provenance
@@ -37,5 +37,5 @@ No CBH reader for macOS/Linux with accessibility ambitions exists today. The fas
 
 ## Impact
 
-- New repository; **no changes to BlindBase code** in this change. The BlindBase integration is a later change (`byod-database-import`) that depends on this one.
+- New repository; **no changes to downstream software code** in this change. The downstream software integration is a later change (`byod-database-import`) that depends on this one.
 - Establishes the first fully open, `gigachess`-native CBH reader, reusable by any Rust project.

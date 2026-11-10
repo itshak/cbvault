@@ -4,7 +4,7 @@
 - **Date:** 2026-09-29
 - **Decides:** who answers a search over a raw `.cbh` set
 - **Applies to:** the read-only serving API
-- **Context:** `blindbase-bridge` — ADR-005 §5 deferred the question of whether
+- **Context:** `consumer-bridge` — ADR-005 §5 deferred the question of whether
   cbvault should implement search or only feed it.
 
 ---
@@ -49,7 +49,7 @@ language, ranking, paging and the result UI.
 
 The reason is not that we could not do more. It is that on the converted
 database SQLite's own indexes take over — and the consumer needs the *raw* scan
-precisely because the user has not converted yet. BlindBase's own research
+precisely because the user has not converted yet. downstream software's own research
 (`cbh-vs-bbdb-comparison.md` §10) plans the promotion flow "search took X s —
 Convert now", and X cannot be quoted unless searching the unconverted set works.
 At 8 ms it is not worth quoting.

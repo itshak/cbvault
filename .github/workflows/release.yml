@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+    branches:
+      - "main"
+    # A version bump merged to main releases without a manually pushed tag.
+    # GitHub ignores path filters on tag pushes; manual tags remain supported.
+    paths:
+      - "Cargo.toml"
 
 permissions:
   contents: write
@@ -27,18 +33,33 @@ jobs:
           # in favour of `cargo metadata`). Read the version out of metadata
           # instead, and require every member to agree so a partial version bump
           # cannot ship.
-          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
           CARGO_VERSIONS=$(cargo metadata --no-deps --format-version 1 \
             | jq -r '[.packages[].version] | unique | join(",")')
-          echo "Tag version: $TAG_VERSION"
+          case "$GITHUB_REF" in
+            refs/tags/v*)
+              TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+              PUBLISH=true ;;
+            refs/heads/main)
+              TAG_VERSION="$CARGO_VERSIONS"
+              if git ls-remote --tags origin "refs/tags/v${TAG_VERSION}" | grep -q .; then
+                echo "::notice::v${TAG_VERSION} already tagged; no new version to release."
+                PUBLISH=false
+              else
+                PUBLISH=true
+              fi ;;
+            *) echo "::error::Unexpected release ref $GITHUB_REF"; exit 1 ;;
+          esac
+          echo "Release version: $TAG_VERSION"
           echo "Cargo version: $CARGO_VERSIONS"
           if [ "$TAG_VERSION" != "$CARGO_VERSIONS" ]; then
             echo "::error::Tag version ($TAG_VERSION) does not match Cargo.toml version ($CARGO_VERSIONS)"
             exit 1
           fi
-          echo "VERSION=$TAG_VERSION" >> $GITHUB_OUTPUT
+          echo "VERSION=$TAG_VERSION" >> "$GITHUB_OUTPUT"
+          echo "PUBLISH=$PUBLISH" >> "$GITHUB_OUTPUT"
 
       - name: Resolve publish order
+        if: steps.version.outputs.PUBLISH == 'true'
         id: order
         run: |
           # cbvault is a workspace, so there is no single `cargo publish`. The
@@ -111,6 +132,7 @@ jobs:
           # packaged before anything is published. "Package Check" needs this.
           echo "ORDER_ROOT=${order%% *}" >> $GITHUB_OUTPUT
       - name: Extract changelog for this version
+        if: steps.version.outputs.PUBLISH == 'true'
         id: changelog
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
@@ -124,9 +146,15 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Verify Tests Pass
-        run: cargo test --all-features
+        if: steps.version.outputs.PUBLISH == 'true'
+        run: |
+          cargo fmt --all --check
+          cargo clippy --workspace --all-targets --all-features -- -D warnings
+          cargo test --all-features
+          cargo test --workspace --examples --all-features
 
       - name: Package Check
+        if: steps.version.outputs.PUBLISH == 'true'
         run: |
           # Packaging alone cannot be validated here for every crate, and the
           # reason is worth recording because it broke the v0.1.0 release.
@@ -155,6 +183,7 @@ jobs:
           cargo package -p "${{ steps.order.outputs.ORDER_ROOT }}" --allow-dirty
           echo "::endgroup::"
       - name: Publish to crates.io
+        if: steps.version.outputs.PUBLISH == 'true'
         run: |
           if [ -z "${{ secrets.CARGO_REGISTRY_TOKEN }}" ]; then
             echo "::error::CARGO_REGISTRY_TOKEN secret is not set in GitHub repository settings."
@@ -209,9 +238,32 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
+      - name: Tag the published main-branch revision
+        if: steps.version.outputs.PUBLISH == 'true' && github.ref == 'refs/heads/main'
+        run: |
+          version="${{ steps.version.outputs.VERSION }}"
+          git -c user.name=github-actions -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
+            tag -a "v${version}" -m "cbvault v${version}"
+          git push origin "refs/tags/v${version}"
+
+      # GitHub's standard GITHUB_TOKEN may not have repository-administration
+      # permission. When available, REPO_ADMIN_TOKEN can update the About field;
+      # absence of that permission is nonfatal for crate publication.
+      - name: Refresh GitHub repository description
+        if: steps.version.outputs.PUBLISH == 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.REPO_ADMIN_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}" \
+            -f description="MIT Rust reader and CLI for ChessBase .cbh/.2cbh/.cbv/.cbz: annotated PGN, search and parallel conversion; 2CBH tested on 3.41M games." \
+            -f homepage="https://crates.io/crates/cbvault"
+
       - name: Create GitHub Release
+        if: steps.version.outputs.PUBLISH == 'true'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.version.outputs.VERSION }}
           name: v${{ steps.version.outputs.VERSION }}
           body: ${{ steps.changelog.outputs.CHANGELOG }}
           generate_release_notes: true

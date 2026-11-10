@@ -1,9 +1,10 @@
 [package]
 name = "cbvault"
-description = "Read ChessBase databases as moves2 streams: Database, GameIter, PGN writer, and .cbv/.cbz archives that unarchive in full"
+description = "Read-only ChessBase CBH and native 2CBH databases: moves, annotations, PGN, search, parallel conversion, CBV/CBZ archives"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+readme.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 # On the registry a crate with no keywords and no categories is unsearchable and
@@ -13,7 +14,7 @@ rust-version.workspace = true
 # otherwise, which is a tag-time failure, so this is capped and checked by
 # `cargo test --test registry_metadata`. The dropped "database" is the most
 # generic of the six; the five kept are what actually distinguishes the crate.
-keywords = ["chess", "chessbase", "pgn", "cbh", "cbv"]
+keywords = ["chess", "chessbase", "pgn", "cbh", "2cbh"]
 # crates.io validates `categories` per crate, and it rejects
 # `command-line-utilities` on a crate with no binary target, so it is
 # on `cbvault-cli` alone rather than inherited by the libraries.

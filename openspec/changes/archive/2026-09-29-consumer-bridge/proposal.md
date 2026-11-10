@@ -1,13 +1,13 @@
-# BlindBase bridge: convert and serve `.cbh` at full speed
+# downstream software bridge: convert and serve `.cbh` at full speed
 
 ## Why
 
-cbvault exists to serve BlindBase, and until now it was designed as a format
+cbvault exists to serve downstream software, and until now it was designed as a format
 library with a PGN exporter bolted on. The consumer's actual job is now clear,
 and it is two jobs, not one:
 
-1. **Convert** a `.cbh` set (or a `.cbv`/`.cbz` archive of one) into a `.bbrb`
-   reference base or a `.bbdb` user database, as fast as the source can be read.
+1. **Convert** a `.cbh` set (or a `.cbv`/`.cbz` archive of one) into a `.db`
+   reference base or a `.db` user database, as fast as the source can be read.
 2. **Serve** a `.cbh` set read-only: list games, show one game, search by tags,
    search by position.
 
@@ -17,7 +17,7 @@ export is byte-parity-verified against ChessBase. They are blocked by the
 missing *shapes*: there is no `Database` façade, no streaming record API, no
 ordered parallel conversion, no keyed pass, no archives, and no 2CBH reader.
 
-The cost of not fixing that is concrete: BlindBase cannot register a reference
+The cost of not fixing that is concrete: downstream software cannot register a reference
 database, cannot convert, and cannot search a `.cbh` position without a second
 full pass over the data.
 
@@ -54,8 +54,8 @@ full pass over the data.
 
 - **No writing of ChessBase data.** Still read-only, permanently. Converting
   *out of* a `.cbh` is not writing to it.
-- **No target-database writer in cbvault.** No `.bbdb`/`.bbrb` schema, no
-  `rusqlite`, no sidecar format: BlindBase owns all three.
+- **No target-database writer in cbvault.** No `.db`/`.db` schema, no
+  `rusqlite`, no sidecar format: downstream software owns all three.
 - **No boosters.** `.cbb`, `.cbgi`, `.cit`/`.cib` are not read; the reasons and
   the re-open criterion are in ADR-005 §4.
 - **No multimedia annotation payloads** (sound, video, picture) in this change.

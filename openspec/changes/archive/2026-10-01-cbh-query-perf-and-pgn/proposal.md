@@ -2,11 +2,11 @@
 
 ## Why
 
-Following the initial release of `cbvault 0.1.2`, integration into BlindBase and testing against the full Mega Database 2025 and its official reference export (`test_games.pgn`) surfaced three critical areas for enhancement:
+Following the initial release of `cbvault 0.1.2`, integration into downstream software and testing against the full Mega Database 2025 and its official reference export (`test_games.pgn`) surfaced three critical areas for enhancement:
 
 1. **Move-less Historical Games Contract:**
    An investigation into the "140,941 missing games" during whole-database conversion revealed that these are **not** decode failures or data loss. Cross-referencing against ChessBase's official export of the first ~420k games (`test_games.pgn`) confirms that 40,120 games (9.57%) in that sample — including record 3855 (Staunton vs. Hughes, Birmingham 1858) — have `[PlyCount "0"]` and movetext consisting solely of the result (e.g., `1-0`). In `.cbg`, their record is a 5-byte stub (`00 00 00 05 0c`, where `0x0c` translates via `MODE_0` to `0xff` End-Of-Line). `cbvault` decodes these records with zero moves.
-   However, consumers like BlindBase require an explicit contract and PGN export support for such games so they are not misclassified as corrupt records or dropped during database conversion.
+   However, consumers like downstream software require an explicit contract and PGN export support for such games so they are not misclassified as corrupt records or dropped during database conversion.
 
 2. **First-Class PGN Export on `Database`:**
    Currently, downstream callers have to manually assemble `GameMoves`, `Headers`, `Entities`, and instantiate `PgnWriter` to serialize a game to PGN. `Database` lacks a high-level `db.game_pgn(id, &mut buf) -> Result<String>` and `db.game_pgn_with(...)`.

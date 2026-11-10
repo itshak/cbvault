@@ -1,4 +1,4 @@
-# blindbase-bridge
+# consumer-bridge
 
 ## ADDED Requirements
 
@@ -33,7 +33,7 @@ anything inside the database's directory.
 The library SHALL convert a database by streaming each game to a
 consumer-implemented sink: the borrowed header fields, the resolved entity
 names, the main line as 16-bit `moves2`, and — when the sink asks for them —
-the per-position Polyglot keys. The library SHALL NOT write `.bbdb`, `.bbrb` or
+the per-position Polyglot keys. The library SHALL NOT write `.db`, `.db` or
 any other target database, SHALL NOT depend on a database engine, and SHALL
 allocate no per-game row, string or vector across the sink boundary.
 

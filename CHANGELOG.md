@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 The project is pre-1.0.
 
+## [0.1.7] - 2026-11-10
+
+### Added
+
+- **Native read-only ChessBase 2CBH support.** Open `.2cbh`, `.2cbg`, `.2cba` and `.2lid` via the generation-aware `Database` API, including game trees, variations, annotations, names, legal replay and PGN export.
+- **Unified 2CBH search and conversion.** Entity/tag filters, unindexed position search, cancellation, early-stop, structured native annotations and ordered bounded multiworker conversion.
+- **Strict ChessBase PGN gold verification.** A locally frozen **3,410,497-game** ChessBase 18 export from Mega Database 2026 passed the canonical-byte comparison, reporting zero unexplained differences after counted and tested presentation exceptions.
+
+### Fixed
+
+- Fail-closed validation of unknown, malformed, truncated or trailing 2CBA annotation records rather than silently exporting unannotated games.
+- Corrected multilingual comment and quotation ordering, visual glyphs/diagrams, SAN overqualification and null-move differences.
+- Strengthened golden comparisons: duplicate tags and unsafe comment permutations fail; source record identities and counts are audited; all database header slots are classified.
+
+### Documentation and packaging
+
+- Updated package descriptions, featured README, live crates.io version badge, and all crate-local docs to present a fully independent Rust library with classic and native 2CBH reading.
+- Scrubbed downstream application names from the current source and archived OpenSpec/ADR history, with CI protection against recurrence.
+- Clarified MIT-era `oschess-cb-bridge` v1.0.0/v1.0.3 provenance; no later AGPL-licensed upstream code was used.
+
+### Verification and limitations
+
+- Linux, macOS and Windows builds/tests, generated adversarial tests, fuzzing, Clippy and OpenSpec validation passed in GitHub CI.
+- The **3,410,497-game export is a sample**; the remaining **8,330,763 eligible games** in Mega Database 2026 were header-classified, not independently compared against ChessBase PGN. Raw exporter PGNs are **not identical** (`raw_equal=false`): ChessBase-specific GUI headers, training directives and other individually counted presentation differences are explicitly excluded from canonical parity.
+- Real Chess960, unusual native annotations, multimedia and other 2CBH corpora are not universally verified. Writing/editing native ChessBase databases remains out of scope.
+
+---
+
 ## [0.1.6] - 2026-10-28
 
 ### Fixed

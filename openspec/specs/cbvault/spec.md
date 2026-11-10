@@ -1247,3 +1247,21 @@ Mega Database 2026 with ChessBase 18 PGN is the only available real 2CBH corpus;
 - **THEN** the documentation explicitly reports that the feature was not covered by real data and may still have defects
 - **AND** original synthetic fixtures exercise the known legal shape without claiming universal field validation.
 
+### Requirement: Public artifacts describe a standalone generation-aware library
+
+Public Rustdoc, all crate READMEs, package descriptions and the repository overview SHALL present cbvault as an independent reusable reader for both classic .cbh and modern .2cbh, rather than as an interface owned by a specific downstream application.
+
+#### Scenario: Publishing a public crate
+- **WHEN** a new crate version is prepared and documented
+- **THEN** its README and Rustdoc describe both implemented database generations, the supported API and relevant coverage limits
+- **AND** CI rejects downstream-product names from tracked documents and paths.
+
+### Requirement: MIT-era upstream licensing is accurately attributed
+
+The project SHALL identify the pinned MIT versions of oschess-cb-bridge used for classic (v1.0.0) and native 2CBH (v1.0.3) code, preserving notices while excluding source code introduced after upstream's switch to AGPL-3.0.
+
+#### Scenario: Public provenance is reviewed
+- **WHEN** documentation cites the ancestor implementation
+- **THEN** it names the pinned MIT-era foundation and exact source revisions
+- **AND** later AGPL-era layout facts, if applicable, are described as independently verified format facts only.
+

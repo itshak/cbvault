@@ -28,6 +28,6 @@ Only one real second-generation database is currently available: **Mega Database
 
 ## Non-goals and acceptance
 
-No editing/writing native CBH/2CBH, no second chess core, no copying post-MIT AGPL or unlicensed Morphy code, no uploading private ChessBase databases/PGNs/game excerpts, no premature version bump/tag/publish/BlindBase changes. Version bump and downstream integration need a separate review after passing the real oracle.
+No editing/writing native CBH/2CBH, no second chess core, no copying post-MIT AGPL or unlicensed Morphy code, no uploading private ChessBase databases/PGNs/game excerpts, no premature version bump/tag/publish/downstream software changes. Version bump and downstream integration need a separate review after passing the real oracle.
 
 The change was accepted and archived on 2026-11-10 based on the owner-approved 3,410,497-game ChessBase PGN sample. The sample had **zero unexplained canonical byte differences** after reported audited exceptions. Neither raw PGN identity nor parity for the 8.33M later eligible games is claimed. The original gate required **zero unexplained byte differences**, zero unreported valid-data annotation losses, correct v2 functionality across public APIs, deterministic single/multiworker output, validated classic regressions, synthetic strict negative tests and five green CI jobs. Private gold stage is explicitly deferred for the next agent, never falsely checked by public CI.

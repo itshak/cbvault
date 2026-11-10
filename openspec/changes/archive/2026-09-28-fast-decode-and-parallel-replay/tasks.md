@@ -17,7 +17,7 @@
 
 ## 4. Rayon Parallel Replay in `cbh-parser` & `cbh-cli`
 
-- [x] 4.1 Add `rayon = "1.10"` to workspace dependencies (matching `gigachess` and `blind-base`).
+- [x] 4.1 Add `rayon = "1.10"` to workspace dependencies (matching `gigachess` and `downstream-client`).
 - [x] 4.2 Add parallel database iterator / chunk runner in `cbh-parser` with per-worker thread buffers.
 - [x] 4.3 Add `--threads` support to `cbh-cli` and `megabase.rs`.
 

@@ -14,7 +14,7 @@ The project began as a `.cbh` parser and grew into a reader of three format
 families plus two containers. The old name now understates it and, worse, is
 ambiguous: `cbh` is a *format* name, so a crate called `cbvault` reads as
 "a parser for the .cbh format" while the crate also reads 2CBH, `.cbv` and
-`.cbz`. The consumer (BlindBase) needs to name this dependency in its own
+`.cbz`. The consumer (downstream software) needs to name this dependency in its own
 `Cargo.toml`, in its provenance ledger and in its user-facing attribution, and
 a name that misdescribes the artifact is a cost paid on every mention.
 

@@ -1,9 +1,10 @@
 [package]
 name = "cbvault-format"
-description = "Byte-level ChessBase formats: .cbh headers and records, plus .cbv/.cbz archives with all four block modes decoded"
+description = "Parse classic CBH and native 2CBH binary headers, moves, annotations and CBV/CBZ ChessBase archives"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+readme.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 # On the registry a crate with no keywords and no categories is unsearchable and
@@ -13,7 +14,7 @@ rust-version.workspace = true
 # otherwise, which is a tag-time failure, so this is capped and checked by
 # `cargo test --test registry_metadata`. The dropped "parser" is the least
 # distinctive of the six: it describes half the ecosystem.
-keywords = ["chess", "chessbase", "pgn", "cbv", "archive"]
+keywords = ["chess", "chessbase", "2cbh", "cbv", "archive"]
 # crates.io validates `categories` per crate, and it rejects
 # `command-line-utilities` on a crate with no binary target, so it is
 # on `cbvault-cli` alone rather than inherited by the libraries.

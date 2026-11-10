@@ -18,7 +18,7 @@
 ## 2. PGN splitter
 
 - [x] 2.1 New `crates/cbvault/src/pgn/split.rs`: `split_games(&[u8])`,
-  `split_game_ranges(&[u8])`, ported from BlindBase `src-tauri/src/pgn.rs`
+  `split_game_ranges(&[u8])`, ported from downstream software `src-tauri/src/pgn.rs`
   with its six test vectors (blank-line-between, comment-with-blanks,
   RAV-line, 1MiB-chunk-edge, CRLF, empty/untagged, count-agrees).
 - [x] 2.2 Re-export from `pgn/mod.rs`; document the boundary rule once.
