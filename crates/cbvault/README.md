@@ -18,6 +18,6 @@ With `GameSink`, select only the mainline moves, position keys and annotations y
 
 **Evidence:** a frozen ChessBase 18 PGN export of **3,410,497** Mega Database 2026 games passed the strictly normalized comparison with zero unexplained differences. Raw PGN differs due to ChessBase-specific presentation fields; **8,330,763** later eligible games were not gold-compared. Rare annotations, multimedia and real Chess960 need additional real-corpus coverage.
 
-**MIT provenance:** ported from the pre-GPL MIT versions of [`oschess-cb-bridge`](https://github.com/asavis/oschess-cb-bridge), classic at [v1.0.0](https://github.com/asavis/oschess-cb-bridge/tree/ca9e8f8e4389edd6430f02a14b33ff53552bcadc) and 2CBH at [v1.0.3](https://github.com/asavis/oschess-cb-bridge/tree/bffebfc498d52b4e4631aed32b2f8e8194d125ff). **No later AGPL-licensed upstream source code was reused.** See the [provenance ledger](../../docs/provenance.md).
+**MIT provenance:** ported from the pinned MIT-era versions of [`oschess-cb-bridge`](https://github.com/asavis/oschess-cb-bridge), classic at [v1.0.0](https://github.com/asavis/oschess-cb-bridge/tree/ca9e8f8e4389edd6430f02a14b33ff53552bcadc) and 2CBH at [v1.0.3](https://github.com/asavis/oschess-cb-bridge/tree/bffebfc498d52b4e4631aed32b2f8e8194d125ff). **No later AGPL-licensed upstream source code was reused.** See the [provenance ledger](../../docs/provenance.md).
 
 [Main README](../../README.md) · [API docs](https://docs.rs/cbvault) · [Release notes](../../CHANGELOG.md)

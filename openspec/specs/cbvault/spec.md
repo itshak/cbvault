@@ -1262,6 +1262,6 @@ The project SHALL identify the pinned MIT versions of oschess-cb-bridge used for
 
 #### Scenario: Public provenance is reviewed
 - **WHEN** documentation cites the ancestor implementation
-- **THEN** it names the pre-GPL MIT foundation and exact source revisions
-- **AND** later later AGPL-era layout facts, if applicable, are described as independently verified format facts only.
+- **THEN** it names the pinned MIT-era foundation and exact source revisions
+- **AND** later AGPL-era layout facts, if applicable, are described as independently verified format facts only.
 
