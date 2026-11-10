@@ -1,6 +1,6 @@
 ## Why
 
-A full-database PGN export maps ~3.2 GB into the process (`.cbh` 0.5 GB + `.cbg` 1.25 GB + `.cbj` 1.33 GB + `.cba` 0.2 GB + namebases) while `cbtool` holds ~0.1 GB for the same work. The `.cbj` mapping is pure overhead on any base whose `.cbg`/`.cba` stay below 4 GiB, and there is no way to trade ~20% throughput for ~100x less resident memory. For one-shot conversion this is tolerable; for BlindBase, which serves a `.cbh` base as its main database, it is not.
+A full-database PGN export maps ~3.2 GB into the process (`.cbh` 0.5 GB + `.cbg` 1.25 GB + `.cbj` 1.33 GB + `.cba` 0.2 GB + namebases) while `cbtool` holds ~0.1 GB for the same work. The `.cbj` mapping is pure overhead on any base whose `.cbg`/`.cba` stay below 4 GiB, and there is no way to trade ~20% throughput for ~100x less resident memory. For one-shot conversion this is tolerable; for downstream software, which serves a `.cbh` base as its main database, it is not.
 
 ## What Changes
 

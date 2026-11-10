@@ -6,7 +6,7 @@ See `proposal.md` for background and motivation.
 
 When searching by common surnames or names matching multiple entity IDs across 11.1M games in `cbvault`, the previous implementation constructed a nested binary tree `Filter::AnyOf` for each entity ID. Across 500 entity IDs, this created 500-level recursion on every record evaluation during linear scans.
 
-Additionally, downstream callers (like BlindBase) need a single, unified method to extract a game as PGN text from a `Database` instance, whether the game has standard moves or is a historical move-less (score-only) record.
+Additionally, downstream callers (like downstream software) need a single, unified method to extract a game as PGN text from a `Database` instance, whether the game has standard moves or is a historical move-less (score-only) record.
 
 ## Goals / Non-Goals
 

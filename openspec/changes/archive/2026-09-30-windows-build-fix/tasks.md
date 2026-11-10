@@ -36,7 +36,7 @@
       the CI change. **Done.**
 - [x] 3.2 Workspace version → 0.1.1, `cargo check`/`test`/`fmt`/`clippy` clean on
       the host. **Done.**
-- [x] 3.3 Tag `v0.1.1` and push, so BlindBase can move off the vendored patch it
+- [x] 3.3 Tag `v0.1.1` and push, so downstream software can move off the vendored patch it
       would otherwise have to carry. **Done.**
 
 ## Verification

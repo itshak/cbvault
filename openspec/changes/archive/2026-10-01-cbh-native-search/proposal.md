@@ -3,7 +3,7 @@
 A consumer that wants to search a raw ChessBase database could only express a
 **threshold** on ratings and nothing else. `Filter` had `EloAtLeast` and no
 predicate for a rating *range*, no date, no result, no round and no ECO — while
-the consumer this crate exists for (BlindBase) has a search form that sends
+the consumer this crate exists for (downstream software) has a search form that sends
 `elo_from`/`elo_to`, a date range, a result, a round and an ECO code.
 
 A threshold is not a range. "Rating from 2800" and "rating at least 2800" are
