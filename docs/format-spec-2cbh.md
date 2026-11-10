@@ -1,27 +1,26 @@
-# ChessBase 2CBH format — cbvault format spec
+# ChessBase 2CBH format — historical research notes and implementation status
 
-> **2026-11-05 research reconciliation — important:** This document records the **earlier independent local measurements**, not a current claim that all inferred field meanings were correct. A separately verified **MIT v1.0.3** Rust reader now exists at [oschess-cb-bridge](https://github.com/asavis/oschess-cb-bridge/tree/v1.0.3/crates/cbformat) and a comprehensive facts-only format reference at [Morphy v2](https://github.com/Yarin78/morphy/tree/master/format/v2). Their supported layout contradicts previous interpretations here: +0x10 of .2cbg is a checksum, +0x18 a two-byte tag, +0x1a the payload start; B is spare capacity, not a codec parameter; player names are in .2lid, not directly in .2cbh record fields. The locally verified magic, total sizes, end offsets and A+B+34 geometry remain valuable. **Treat disputed interpretation paragraphs below as historical hypotheses pending recheck and correction, not implementation requirements.** The proposed path is [native-2cbh-readonly](../openspec/changes/native-2cbh-readonly/proposal.md); no support is implied until implementation and a large local ChessBase PGN gold comparison pass. Keep real data local.
-
-> The source of truth for what this library knows about the second-generation
-> ChessBase format (`.2cbh` / `.2cbg` / `.2cba` family), in the same shape as
-> `docs/format-spec.md`.
+> **Current status (2026-11-10): native 2CBH reading is implemented.**
+> The read-only `Database` API supports `.2cbh`, `.2cbg`, `.2cba` and
+> `.2lid` inputs, including legal moves, variations and native annotations.
+> A frozen **3,410,497-game** ChessBase 18 PGN export from Mega Database 2026
+> reportedly matched canonical cbvault output with **zero unexplained byte
+> differences**, after audited transformations. The raw streams differ.
+> The later **8,330,763 eligible games** were header-classified but not
+> independently compared. See [archived acceptance evidence](../openspec/changes/archive/2026-11-10-native-2cbh-release-hardening/closeout.md).
 >
-> **Provenance**: clean-room facts from byte-level inspection of the 2CBH sets
-> on this machine (see §1 for the exact list). Nothing from unlicensed or GPL
-> sources. Nothing here is copied from a reverse-engineering write-up; every
-> row is either reproducible from the commands in §2 or marked **unknown**.
+> **Historical research warning:** This document preserves November 5 hypotheses,
+> **some of which are superseded**. The older claims that 2CBG move words are
+> undecoded or that player names live inline in 2CBH headers are **not true for
+> the implemented reader**. The correction table in §0.1 and the actual source
+> under `crates/cbvault-format/src/twocbh/` take precedence. The move stream
+> uses 16-bit words; entity names live in `.2lid`. Rare native objects and
+> real-world Chess960 are not universally verified. All source reads are
+> non-mutating; cbvault does not write ChessBase databases.
 >
-> **Status legend** — **✓ implemented** (code + tests), **◐ partial**
-> (framing established, contents not decoded), **○ specified, not implemented**,
-> **unknown** (not established; §10 says what would close it).
+> **Provenance:** the code is MIT-licensed. Non-MIT material informed separately
+> verified facts only; none of its source code was copied.
 >
-> **The headline**: the 2CBH *container* is fully reverse-engineered and proven
-> (§4, §5 — four invariants verified on 220,418 records across every 2CBH set
-> on this machine, zero violations). The 2CBG *move codec* is **not** decoded
-> (§6). A 2CBH database therefore yields its game list, its tags and its
-> annotations today, but not its `moves2`. §6.4 states precisely why, and §10
-> says what would close it.
-
 ---
 
 ## 0. Update policy
