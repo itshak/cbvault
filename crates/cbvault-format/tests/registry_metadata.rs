@@ -103,9 +103,16 @@ fn every_crate_has_keywords_categories_and_a_license() {
             "{} has more than {MAX_CATEGORIES} categories",
             manifest.display()
         );
+        let own_license = scalar_field(&text, "license");
+        let workspace_license = if scalar_field(&text, "license.workspace") == "true" {
+            let workspace = std::fs::read_to_string(workspace_root().join("Cargo.toml")).unwrap();
+            scalar_field(&workspace, "license")
+        } else {
+            String::new()
+        };
         assert!(
-            !scalar_field(&text, "license").is_empty(),
-            "{} declares no license; the workspace default is MIT",
+            !own_license.is_empty() || !workspace_license.is_empty(),
+            "{} declares no license or valid inherited workspace license",
             manifest.display()
         );
     }
