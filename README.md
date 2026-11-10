@@ -9,7 +9,7 @@
   <a href="https://crates.io/crates/cbvault"><img alt="cbvault version on crates.io" src="https://img.shields.io/crates/v/cbvault?style=flat-square&logo=rust"></a>
   <a href="https://docs.rs/cbvault"><img alt="docs.rs documentation" src="https://img.shields.io/docsrs/cbvault?style=flat-square"></a>
   <a href="https://github.com/itshak/cbvault/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/itshak/cbvault/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square"></a>
+  <a href="https://github.com/itshak/cbvault/blob/main/LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square"></a>
 </p>
 
 **One Rust API, two ChessBase database generations, no forced conversion.** cbvault is designed for chess software, opening explorers, research tools, batch-processing pipelines and anyone who needs to work with large ChessBase collections **without ChessBase itself**. It is an independent MIT-licensed project, not affiliated with ChessBase.
@@ -77,7 +77,7 @@ The same commands also work with classic `.cbh` databases; archive commands acce
 
 **Archive migration and recovery.** List or extract `.cbv`/`.cbz` members without implementing a ChessBase archive reader yourself. On the tested reference archive, cbvault reproduced **all 3,871 members (3.61 GB extracted) byte-for-byte** against the reference extraction.
 
-See [Rust API documentation](https://docs.rs/cbvault), [CLI crate](https://crates.io/crates/cbvault-cli), and the [consumer API guide](docs/bridge.md).
+See [Rust API documentation](https://docs.rs/cbvault), [CLI crate](https://crates.io/crates/cbvault-cli), and the [consumer API guide](https://github.com/itshak/cbvault/blob/main/docs/bridge.md).
 
 ## Verification: measured, not assumed
 
@@ -88,7 +88,7 @@ See [Rust API documentation](https://docs.rs/cbvault), [CLI crate](https://crate
 | **Classic `.cbh` throughput** | **1.17–1.20× faster** than the MIT `cbformat` reference during like-for-like *verify* benchmarks on a 10-core Apple Silicon machine | A measured classic-CBH workload, **not** a universal speed comparison or a benchmark for 2CBH |
 | **Platform and correctness** | GitHub CI on **Windows, macOS and Linux**, generated malformed-input tests, fuzz targets, Clippy and example tests | Real proprietary ChessBase oracle data stays local; CI cannot rerun it |
 
-**Known limits:** cbvault is read-only and does **not** edit/write ChessBase databases, parse PGN as an input format, or provide a GUI. Other real 2CBH corpora, rare native annotations and multimedia, ChessBase-specific GUI/training metadata and real-world Chess960 need further verification. The project remains pre-1.0. For exact comparisons and exclusions, see the [archived 2CBH acceptance report](openspec/changes/archive/2026-11-10-native-2cbh-release-hardening/closeout.md).
+**Known limits:** cbvault is read-only and does **not** edit/write ChessBase databases, parse PGN as an input format, or provide a GUI. Other real 2CBH corpora, rare native annotations and multimedia, ChessBase-specific GUI/training metadata and real-world Chess960 need further verification. The project remains pre-1.0. For exact comparisons and exclusions, see the [archived 2CBH acceptance report](https://github.com/itshak/cbvault/blob/main/openspec/changes/archive/2026-11-10-native-2cbh-release-hardening/closeout.md).
 
 ## Architecture
 
@@ -108,10 +108,10 @@ No second chess engine is bundled. The library reads source databases without mo
 - **Classic CBH:** MIT [v1.0.0, commit `ca9e8f8e`](https://github.com/asavis/oschess-cb-bridge/tree/ca9e8f8e4389edd6430f02a14b33ff53552bcadc).
 - **Native 2CBH:** MIT [v1.0.3, commit `bffebfc4`](https://github.com/asavis/oschess-cb-bridge/tree/bffebfc498d52b4e4631aed32b2f8e8194d125ff).
 
-**We did not copy, vendor, link or port the upstream code introduced after its switch to AGPL-3.0.** Later format observations were reconciled as independently verified facts, not source-code reuse. The MIT notice and modifications are tracked in the [provenance ledger](docs/provenance.md) and [third-party notices](THIRD_PARTY_NOTICES.md). The archive codecs were independently implemented from format facts. No ChessBase proprietary code or databases are distributed.
+**We did not copy, vendor, link or port the upstream code introduced after its switch to AGPL-3.0.** Later format observations were reconciled as independently verified facts, not source-code reuse. The MIT notice and modifications are tracked in the [provenance ledger](https://github.com/itshak/cbvault/blob/main/docs/provenance.md) and [third-party notices](https://github.com/itshak/cbvault/blob/main/THIRD_PARTY_NOTICES.md). The archive codecs were independently implemented from format facts. No ChessBase proprietary code or databases are distributed.
 
-**License:** [MIT](LICENSE). ChessBase is a trademark of its owner; cbvault is independent and not affiliated with or endorsed by ChessBase.
+**License:** [MIT](https://github.com/itshak/cbvault/blob/main/LICENSE). ChessBase is a trademark of its owner; cbvault is independent and not affiliated with or endorsed by ChessBase.
 
 ## More information
 
-[API guide](docs/bridge.md) · [Format specifications](SPEC.md) · [2CBH research and limitations](docs/format-spec-2cbh.md) · [Performance/codec reference](docs/cbv-reference.md) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md)
+[API guide](https://github.com/itshak/cbvault/blob/main/docs/bridge.md) · [Format specifications](https://github.com/itshak/cbvault/blob/main/SPEC.md) · [2CBH research and limitations](https://github.com/itshak/cbvault/blob/main/docs/format-spec-2cbh.md) · [Performance/codec reference](https://github.com/itshak/cbvault/blob/main/docs/cbv-reference.md) · [Changelog](https://github.com/itshak/cbvault/blob/main/CHANGELOG.md) · [Contributing](https://github.com/itshak/cbvault/blob/main/CONTRIBUTING.md)
