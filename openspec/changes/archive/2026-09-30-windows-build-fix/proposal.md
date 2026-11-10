@@ -3,7 +3,7 @@
 ## Why
 
 `cbvault-format` 0.1.0 — the version published on crates.io on 2026-09-30 and
-linked by BlindBase the same day — **does not compile on Windows.** BlindBase's
+linked by downstream software the same day — **does not compile on Windows.** downstream software's
 `v0.4.3` release build failed on `windows-x64` with `E0433: cannot find Advice in
 memmap2` and `E0599: no method named advise found for &Mmap`; the `macos-arm64`
 job of the same run succeeded. The only consumer of this crate had to discover
@@ -63,7 +63,7 @@ exist on any non-Unix one.
 - **No new dependency, and no version of `memmap2` that avoids the problem.**
   0.9.11 is the latest and `Advice` is Unix-only in it too.
 - **Not a fork.** The fix belongs here, in the crate that has the bug, and it is
-  released as 0.1.1. BlindBase's alternative — vendoring `cbvault-format` under a
+  released as 0.1.1. downstream software's alternative — vendoring `cbvault-format` under a
   `[patch.crates-io]` entry — was rejected: it would have put a 42-file copy of
   this crate and a hand-maintained diff into the consumer to work around a
   one-line defect the maintainer of this crate can fix in one line.

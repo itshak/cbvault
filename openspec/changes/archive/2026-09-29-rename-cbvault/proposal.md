@@ -6,7 +6,7 @@ The project reads three format families and two containers, so the name
 `cbvault` is both an understatement and an ambiguity: `cbh` is a *format*
 name, so the crate name claims a narrower scope than the code has, and it
 collides in search results with the unrelated upstream project of the same
-name. BlindBase — the only consumer — has to write this dependency in its
+name. downstream software — the only consumer — has to write this dependency in its
 `Cargo.toml`, its provenance ledger and its user-facing attribution, so the
 name is a recurring cost, not a one-time label.
 

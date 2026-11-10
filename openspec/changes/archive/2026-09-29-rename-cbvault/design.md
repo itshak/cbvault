@@ -55,5 +55,5 @@ mode is silent, so it gets a test rather than a convention.
 ## What this change deliberately does not do
 
 It does not restructure anything. The bridge API, the archive reader and the
-2CBH reader are separate changes (`blindbase-bridge`), written against the new
+2CBH reader are separate changes (`consumer-bridge`), written against the new
 names, so that the rename stays a reviewable rename.

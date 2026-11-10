@@ -5,13 +5,13 @@
 > below; this change keeps only the library's own release hygiene.
 >
 > - `rename-cbvault` takes over the project rename (ADR-006) and runs first.
-> - `blindbase-bridge` takes over task 6.1 (the BlindBase façade) and tasks
+> - `consumer-bridge` takes over task 6.1 (the downstream software façade) and tasks
 >   5.1–5.3 (the `.cbv`/`.cbz` reader), adds the conversion and read-only
 >   serving APIs, 2CBH, and the CLI consolidation (ADR-005).
 >
 > The open tasks below are kept verbatim for the record. Superseded: **5.1,
-> 5.2, 5.3 → `blindbase-bridge` phase 3; 6.1 → `blindbase-bridge` phases 0–2;
-> 6.2, 6.4 → `blindbase-bridge` task 5.3/5.4.** Still owned here: **6.3**
+> 5.2, 5.3 → `consumer-bridge` phase 3; 6.1 → `consumer-bridge` phases 0–2;
+> 6.2, 6.4 → `consumer-bridge` task 5.3/5.4.** Still owned here: **6.3**
 > (fuzzing) and **6.5** (the gate set for this change's own archive).
 
 ## Phase 0 — Deep research (close every unknown, measure the baseline)
@@ -62,7 +62,7 @@
 
 ## Phase 6 — Façade, benchmarks, docs, release hygiene
 
-- [ ] 6.1 BlindBase façade: `Database::open` on a read-only set, `GameIter`, `decode_game_into(&mut buf)`; document reference-source hooks for the later BlindBase change. Verify: example program decodes N games with bounded memory.
+- [ ] 6.1 downstream software façade: `Database::open` on a read-only set, `GameIter`, `decode_game_into(&mut buf)`; document reference-source hooks for the later downstream software change. Verify: example program decodes N games with bounded memory.
 - [ ] 6.2 Benchmark suite in CI (alert mode) plus `benchmarks/README.md` with published numbers (baseline vs port). Verify: reproducible run on a clean checkout.
 - [ ] 6.3 Fuzz targets for `.cbh`, `.cbg`, `.cba`, `.cbv`; short local campaign; fix findings. Verify: no crashes in 60 s per target.
 - [ ] 6.4 Docs: README status update, `SPEC.md` published, provenance ledger complete; spec sync if applicable. Verify: docs lint/build.
