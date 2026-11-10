@@ -1,4 +1,4 @@
-# Tasks — blindbase-bridge
+# Tasks — consumer-bridge
 
 > **Successor note (2026-11-05).** Phases 0, 1, 2, 3, and 5 have landed in
 > cbvault (releases 0.1.0–0.1.6). Phase 3 (.cbv/.cbz archive containers and
@@ -8,7 +8,7 @@
 
 Ordered by what unblocks the consumer soonest, not by layer. Every task ends
 with its own verification; the gate set runs at each phase boundary.
-**Commit prefix: `[blindbase-bridge]`.** Task 0 assumes `rename-cbvault` has
+**Commit prefix: `[consumer-bridge]`.** Task 0 assumes `rename-cbvault` has
 landed (it uses the new names).
 
 ## Phase 0 — The façade (`Database`)
@@ -24,7 +24,7 @@ landed (it uses the new names).
 - [x] 1.2 `for_each_game(&Database, &mut sink)` — the sequential path, streaming, reusing one moves buffer and one keys buffer. Verify: converting 10,000 fixture games into a counting sink equals the record count, and no `.cba` byte is read when `wants_annotations` is false.
 - [x] 1.3 `convert_parallel(&Database, &mut sink, threads, batch)` — ADR-004's shape: 8,192-record chunks, per-chunk private buffers, one ordered writer stage, recycled buffers, bounded in-flight waves. Verify: sink call order is identical to the sequential path for any thread count; a 419,385-game run is within 10 % of the sequential time on one thread.
 - [x] 1.4 Keys in the same pass: `wants_keys` routes to the keyed walk; keys land in a caller-owned `Vec<u64>` cleared per game, never per ply. Verify: the indexed pass is within 15 % of the moves-only pass on the reference set, and a game's key sequence equals `replay_moves2_hashes` over the same `moves2` (the consumer's own primitive, as the oracle).
-- [x] 1.5 Round-trip test with an in-memory target: convert N games, read them back, assert identical `moves2` blobs, tags and key sequences. This is the contract BlindBase implements against, so it ships as a documented example (`examples/convert.rs`) with the sink written the way the consumer should write it.
+- [x] 1.5 Round-trip test with an in-memory target: convert N games, read them back, assert identical `moves2` blobs, tags and key sequences. This is the contract downstream software implements against, so it ships as a documented example (`examples/convert.rs`) with the sink written the way the consumer should write it.
 - [x] 1.6 Annotations on request: the `.cba` record parsed and exposed as structured items; `wants_annotations == false` skips the file entirely. Verify: a fixture game's annotations match the PGN writer's placement (§8.1 of the format spec) for the same game.
 
 ## Phase 2 — Search over a raw `.cbh`

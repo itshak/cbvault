@@ -2,12 +2,12 @@
 
 ## Context
 
-`cbvault` reads ChessBase databases for BlindBase's BYOD strategy. The direct ancestor is `cbformat` (MIT, from `oschess-cb-bridge`): a working Rust reader for classic `.cbh` and 2CBH `.2cbh` with annotations, whose chess layer is the hand-rolled `chesscore`. BlindBase standardizes on `gigachess` (ADR-013/015). This design therefore **ports `cbformat` and replaces `chesscore` with `gigachess` everywhere**, then adds what `cbformat` lacks (`.cbv`/`.cbz`, the BlindBase façade), with benchmarks proving the swap.
+`cbvault` reads ChessBase databases for downstream software's BYOD strategy. The direct ancestor is `cbformat` (MIT, from `oschess-cb-bridge`): a working Rust reader for classic `.cbh` and 2CBH `.2cbh` with annotations, whose chess layer is the hand-rolled `chesscore`. downstream software standardizes on `gigachess` (ADR-013/015). This design therefore **ports `cbformat` and replaces `chesscore` with `gigachess` everywhere**, then adds what `cbformat` lacks (`.cbv`/`.cbz`, the downstream software façade), with benchmarks proving the swap.
 
 ## Goals
 
 - One chess core: `gigachess`, everywhere; no second implementation, no validation by another engine.
-- `moves2` as the output currency: BlindBase import feeds the existing `.bbdb` writer and position-index builder with no conversions beyond the boundary.
+- `moves2` as the output currency: downstream software import feeds the existing `.db` writer and position-index builder with no conversions beyond the boundary.
 - Fast: streaming, zero-allocation hot paths, measured against the upstream baseline; numbers published.
 - Correct on real data: verified against a real Mega Database (local-only), ChessBase's own PGN exports, and independent oracles.
 - Clean license: MIT tree, attribution, provenance ledger, no GPL or unlicensed reuse.
@@ -53,7 +53,7 @@ cbvault/
 Layer rules:
 
 - `cbvault-format` knows bytes: headers, records, codepages, container parsing; it produces raw move tokens and annotation records — **no board, no legality**.
-- `cbvault-chess` owns the only board interaction: it consumes move tokens, decodes them against a `gigachess` board, validates, emits `moves2`, maintains incremental Polyglot Zobrist for BlindBase-index alignment, and maps castling to king→rook squares.
+- `cbvault-chess` owns the only board interaction: it consumes move tokens, decodes them against a `gigachess` board, validates, emits `moves2`, maintains incremental Polyglot Zobrist for downstream software-index alignment, and maps castling to king→rook squares.
 - `cbvault` exposes the public API (streaming iterators, per-game decode into caller buffers, annotation model, PGN writer, archives).
 - `cbvault-cli` is a thin shell over the façade.
 
@@ -76,7 +76,7 @@ Zero-allocation rules: buffers are owned by the caller or the iterator; no `Stri
 - **Move currency**: `moves2 = (from & 0x3f) | ((to & 0x3f) << 6) | ((promo & 0x0f) << 12)`.
 - **Castling**: every castling token (standard and Chess960) maps to king→rook (`e1h1`, `e1a1`, `e8h8`, `e8a8` per position).
 - **Start positions**: board setup via `gigachess` FEN parsing (Shredder-FEN for 960); one code path for classic and 960 setups.
-- **Keys**: Polyglot Zobrist from `gigachess`, same seeds as the BlindBase position index; a unit test asserts equality with upstream `chesscore` values on a fixed position set and documents any 960 divergence (gigachess wins).
+- **Keys**: Polyglot Zobrist from `gigachess`, same seeds as the downstream software position index; a unit test asserts equality with upstream `chesscore` values on a fixed position set and documents any 960 divergence (gigachess wins).
 - **Deletions**: `chesscore` and every call into it are removed during the port; CI fails if `chesscore` or `shakmaty` appears in any `Cargo.toml` or `use`.
 
 ## Performance budgets and method
@@ -105,7 +105,7 @@ Zero-allocation rules: buffers are owned by the caller or the iterator; no `Stri
 
 ## Open questions (resolved in Phase 0)
 
-- Bytes-per-game/ply distribution on the local Mega Database 2025 set (`.cbg` 1,253,435,766 B for 11,151,119 records, ≈112 B/record; feeds the BlindBase `moves3` reconsideration).
+- Bytes-per-game/ply distribution on the local Mega Database 2025 set (`.cbg` 1,253,435,766 B for 11,151,119 records, ≈112 B/record; feeds the downstream software `moves3` reconsideration).
 - `.cbh` header field map beyond the record math (a records + 1 field, `00 AA 27 10`, sits at offset 6) and hole semantics after shortened records.
 - Derived files must never be required for decoding: `.cbgi` (per-record offsets into `.cbg`), `.cbb`, `.cko` (opening key), `.cpo` (position key), `.patterns/`, `.accelerators/` — confirm on real data.
 - 2CBH move-encoding specifics vs classic (verified on the local `MyPGNDownloads.2cbh` and the classic/2CBH `History` pairs).
