@@ -59,7 +59,7 @@ Group by source-grounded specific cause, record first differing game/offset **on
 ## 4. Return a decision-ready, privacy-safe report
 Provide total source slots, eligible/matched/raw-identical/transformed-identical counts, SHA-256 (safe only if not identifying private filenames), every named exception count and proof method, illegality/unknown/unsupported/unreadable/native-only coverage counts, 1/2/4 thread byte hashes, peak RSS and throughput, classic golden regression, Git commit SHA, five CI results and acknowledged limitations. Do not claim 100% of all possible 2CBH files. Explicitly state **Mega Database 2026 is the only real corpus** and that Chess960/rare annotation/media/training/embedded quotes may be absent and not fully field-verified.
 
-Stop for owner review. The next release/tag/BlindBase integration is an independent approved action.
+Stop for owner review. The next release/tag/downstream software integration is an independent approved action.
 
 ## Independent revalidation after commit 97de8c3 (2026-11-09)
 
