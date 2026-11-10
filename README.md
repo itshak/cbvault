@@ -1,16 +1,17 @@
 <h1 align="center">cbvault</h1>
 
 <p align="center">
-  <strong>Read ChessBase databases from Rust — 100% MIT.</strong><br>
-  The classic <code>.cbh</code> family and <code>.cbv</code>/<code>.cbz</code> archives,
+  <strong>Read classic and modern ChessBase databases from Rust — 100% MIT.</strong><br>
+  Native read-only <code>.cbh</code>/<code>.2cbh</code> games and annotations, plus <code>.cbv</code>/<code>.cbz</code> archives,
   with <a href="https://crates.io/crates/gigachess">gigachess</a> as the one and only
   chess core, a zero-allocation conversion sink for downstream engines and a streaming PGN exporter.
 </p>
 
 <p align="center">
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square" alt="License: MIT"></a>
+  <a href="https://crates.io/crates/cbvault"><img src="https://img.shields.io/crates/v/cbvault.svg?style=flat-square" alt="cbvault on crates.io"></a>
   <img src="https://img.shields.io/badge/chess%20core-gigachess-informational?style=flat-square" alt="Chess core: gigachess">
-  <img src="https://img.shields.io/badge/status-alpha%20%2F%20in%20progress-orange?style=flat-square" alt="Status: alpha / in progress">
+  <img src="https://img.shields.io/badge/status-alpha%20%2F%202CBH%20read%20supported-orange?style=flat-square" alt="Status: alpha / 2CBH read supported">
 </p>
 
 ---
@@ -34,6 +35,9 @@
 > The classic `.cbh` family is genuinely implemented and tested, and **`.cbv`
 > archives now unarchive completely — every member, byte-identical to the
 > reference extractor.** `.cbz` works, including every password length.
+> **Version 0.1.7:** Native 2CBH reading, search and PGN support are included
+> in the versioned Rust crates.
+>
 > **2CBH read-only support is verified on a substantial real-world sample.**
 > A **3,410,497-game** ChessBase 18 PGN export from Mega Database 2026 passed
 > strict **canonical-byte** comparison with zero unexplained differences after
@@ -147,7 +151,7 @@
 | `.cbz` | **read** | DES-ECB; three key rules (repeat / as-is / fold) verified against the reference's own samples |
 | 2CBH records and annotations | **read** | `.2cbh`, `.2cbg`, `.2cba`, `.2lid`; canonical parity on 3.41M exported games; uncommon layouts not universally verified |
 | Boosters, derived accelerators | **not read** | tolerated and ignored, by design |
-| crates.io release | **published** | v0.1.0; `cargo add cbvault` |
+| crates.io release | **published** | v0.1.7; `cargo add cbvault` |
 
 ## Performance
 
