@@ -1,9 +1,10 @@
 [package]
 name = "cbvault-chess"
-description = "The gigachess bridge: move-token decode to moves2, replay validation and keys"
+description = "Gigachess bridge for classic CBH and native 2CBH moves: legal replay, SAN, moves2 and position hashes"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+readme.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 # On the registry a crate with no keywords and no categories is unsearchable and
