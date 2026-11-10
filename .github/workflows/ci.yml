@@ -132,6 +132,26 @@ jobs:
           fi
           echo "All 2CBH release-hardening archive tasks are checked."
 
+  standalone-library:
+    name: Standalone library naming
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No downstream product names in tracked content or paths
+        shell: bash
+        run: |
+          # The regexp catches joined, hyphenated, underscored and spaced
+          # variants; it does not itself spell a brand name in the source tree.
+          if git grep -n -i -E 'blind[[:space:]_-]*base'; then
+            echo "::error::Found downstream app branding in library content."
+            exit 1
+          fi
+          if git ls-files | grep -n -i -E 'blind[[:space:]_-]*base'; then
+            echo "::error::Found downstream app branding in library paths."
+            exit 1
+          fi
+          echo "Standalone library naming verified."
+
   fuzz:
     name: cargo-fuzz (nightly)
     runs-on: ubuntu-latest
