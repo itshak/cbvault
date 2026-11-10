@@ -1,7 +1,14 @@
-# The bridge — how a consumer reads a `.cbh` set
+# The bridge — how a consumer reads `.cbh` and `.2cbh` sets
 
 `cbvault::bridge` is the consumer-facing half of cbvault: a read-only
-`Database` over a validated classic file set, and a sink-based conversion API.
+`Database` over validated classic CBH and native 2CBH file sets, and a sink-based conversion API.
+For 2CBH, generation-aware APIs support native annotation access, annotated PGN,
+tag and position search and ordered parallel conversion. A frozen **3,410,497-game**
+Mega Database 2026 / ChessBase 18 PGN sample passed strict **canonical** parity
+after documented exceptions. The later 8.33M eligible games were not gold-compared,
+and raw ChessBase PGN is not byte-identical. The older performance measurements
+below refer to the **classic CBH** corpus, not the native 2CBH reader.
+
 This document is the hand-off — the sink contract, the measured numbers, the
 recipes, and the parts of the format the consumer has to know about.
 
