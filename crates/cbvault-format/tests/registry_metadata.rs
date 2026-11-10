@@ -49,7 +49,7 @@ fn array_field(manifest: &str, key: &str) -> Vec<String> {
 fn scalar_field(manifest: &str, key: &str) -> String {
     manifest
         .lines()
-        .find(|l| l.starts_with(key) && l.contains('='))
+        .find(|l| l.split_once('=').is_some_and(|(name, _)| name.trim() == key))
         .map(|l| l.split_once('=').unwrap().1.trim().trim_matches('"').to_string())
         .unwrap_or_default()
 }
@@ -113,16 +113,35 @@ fn every_crate_has_keywords_categories_and_a_license() {
 
 #[test]
 fn every_crate_readme_path_exists() {
-    // A `readme` path that does not exist fails the upload, and only the upload.
+    // `readme.workspace = true` inherits a path relative to the workspace root.
+    // Do not mistake the boolean flag for a local file named "true".
+    let root = workspace_root();
+    let workspace = std::fs::read_to_string(root.join("Cargo.toml")).unwrap();
+    let workspace_readme = scalar_field(&workspace, "readme");
     for manifest in published_crates() {
         let text = std::fs::read_to_string(&manifest).unwrap();
+        if scalar_field(&text, "readme.workspace") == "true" {
+            assert!(!workspace_readme.is_empty(), "{} inherits a missing workspace readme", manifest.display());
+            assert!(
+                root.join(&workspace_readme).is_file(),
+                "{} inherits missing workspace README {:?}", manifest.display(), workspace_readme
+            );
+            continue;
+        }
         let readme = scalar_field(&text, "readme");
         if readme.is_empty() {
-            continue; // inherits the workspace README
+            continue; // Cargo can also auto-detect a crate-local README.
         }
         let dir = manifest.parent().unwrap();
-        assert!(dir.join(&readme).exists(), "{} points readme at {readme:?}, which does not exist", manifest.display());
+        assert!(dir.join(&readme).is_file(), "{} points readme at {readme:?}, which does not exist", manifest.display());
     }
+}
+
+#[test]
+fn scalar_metadata_keys_match_exactly() {
+    let manifest = "readme.workspace = true\nreadme = \"README.md\"\n";
+    assert_eq!(scalar_field(manifest, "readme"), "README.md");
+    assert_eq!(scalar_field(manifest, "readme.workspace"), "true");
 }
 
 #[test]
