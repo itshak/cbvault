@@ -22,7 +22,7 @@ The database layer SHALL provide batched span reads for game move streams (`.cbg
 
 ### Requirement: Parallel Database Replay and Verification
 
-The database processing layer SHALL support multi-threaded verification and replay utilizing Rayon work-stealing parallelism, matching the concurrency stack used in `gigachess` (ADR-002) and `blind-base`.
+The database processing layer SHALL support multi-threaded verification and replay utilizing Rayon work-stealing parallelism, matching the concurrency stack used in `gigachess` (ADR-002) and `downstream-client`.
 
 #### Scenario: Rayon-Parallel Processing
 - **GIVEN** an open database and a Rayon thread pool
