@@ -431,10 +431,9 @@ against a 15 M/s budget (5.1–5.8s for full 11.1M-game position scan).
 - **It does not read the boosters or the derived files.** `.cbb`, `.cbgi`,
   `.cit`/`.cib` are not read; the reasons and the re-open criterion are in
   ADR-005 §4. `.cko` and `.cpo` are not read either.
-- **It does not read 2CBH yet.** `generation_of` recognises a `.2cbh` set and
-  reports `Generation::TwoCbh`, and `Database::open` refuses one with a typed
-  `MissingFile` for the `.cbh` a classic reader needs. Reading it behind the
-  same façade and the same sink is task 4.2.
+- **It does not write 2CBH or classic CBH files.** It reads both native
+  generations through `Database::open`, including supported moves and annotations,
+  and leaves all database editing/storage to downstream applications.
 - **It does not parse PGN in the conversion path.** PGN is produced, by
   `cbvault::pgn`, for the games a consumer stores as text.
 

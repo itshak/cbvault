@@ -21,6 +21,12 @@ The project is pre-1.0.
 - Corrected multilingual comment and quotation ordering, visual glyphs/diagrams, SAN overqualification and null-move differences.
 - Strengthened golden comparisons: duplicate tags and unsafe comment permutations fail; source record identities and counts are audited; all database header slots are classified.
 
+### Documentation and packaging
+
+- Updated package descriptions, featured README, live crates.io version badge, and all crate-local docs to present a fully independent Rust library with classic and native 2CBH reading.
+- Scrubbed downstream application names from the current source and archived OpenSpec/ADR history, with CI protection against recurrence.
+- Clarified MIT-era `oschess-cb-bridge` v1.0.0/v1.0.3 provenance; no post-license-switch GPL code was used.
+
 ### Verification and limitations
 
 - Linux, macOS and Windows builds/tests, generated adversarial tests, fuzzing, Clippy and OpenSpec validation passed in GitHub CI.
