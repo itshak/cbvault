@@ -4,6 +4,20 @@ Our own statement of the ChessBase on-disk facts this project implements, in our
 with one source note per fact and every unknown listed. It is the fact sheet behind
 `openspec/specs/cbvault/spec.md`; it is not a copy of any upstream text.
 
+## Native 2CBH implementation and validation (2026-11-10)
+
+The read-only library supports classic CBH and native 2CBH through common
+generation-aware database APIs. A frozen **3,410,497-game** ChessBase 18 PGN
+export from Mega Database 2026 reportedly matched canonical output after
+enumerated format-specific transformations with **zero unexplained differences**.
+The raw exporter PGNs differ. The **8,330,763 later eligible games** were
+classified by header but not independently compared against ChessBase PGN.
+
+This format fact sheet is not a universal compatibility guarantee. Real
+Chess960, rare native annotations, multimedia and training objects remain
+incompletely verified. See [the archived gold acceptance](openspec/changes/archive/2026-11-10-native-2cbh-release-hardening/closeout.md).
+Native ChessBase database writing/editing is not implemented.
+
 ## Source legend
 
 | Tag | Source |
