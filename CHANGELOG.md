@@ -25,7 +25,7 @@ The project is pre-1.0.
 
 - Updated package descriptions, featured README, live crates.io version badge, and all crate-local docs to present a fully independent Rust library with classic and native 2CBH reading.
 - Scrubbed downstream application names from the current source and archived OpenSpec/ADR history, with CI protection against recurrence.
-- Clarified MIT-era `oschess-cb-bridge` v1.0.0/v1.0.3 provenance; no post-license-switch GPL code was used.
+- Clarified MIT-era `oschess-cb-bridge` v1.0.0/v1.0.3 provenance; no later AGPL-licensed upstream code was used.
 
 ### Verification and limitations
 

@@ -16,4 +16,4 @@ Commands support `--json` for machine-readable output. PGN can be written to a f
 
 **Read-only:** no command writes or edits ChessBase databases. Native 2CBH has a verified 3.41-million-game ChessBase PGN export sample, with the coverage limits detailed in the [main README](../../README.md).
 
-The library is MIT-licensed, based on pinned **MIT-era `oschess-cb-bridge`** code (v1.0.0 classic and v1.0.3 2CBH), **not upstream code added after the GPL switch**. See [provenance](../../docs/provenance.md).
+The library is MIT-licensed, based on pinned **MIT-era `oschess-cb-bridge`** code (v1.0.0 classic and v1.0.3 2CBH), **not upstream code added after the switch to AGPL-3.0**. See [provenance](../../docs/provenance.md).

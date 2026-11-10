@@ -35,4 +35,4 @@ This demonstrates substantial **sampled** real-data support, not universal parit
 
 ## License and provenance
 
-The classic and native 2CBH readers use the **MIT-licensed pre-GPL code** from [oschess-cb-bridge](https://github.com/asavis/oschess-cb-bridge), pinned at classic **v1.0.0** (`ca9e8f8e4389edd6430f02a14b33ff53552bcadc`) and native 2CBH **v1.0.3** (`bffebfc498d52b4e4631aed32b2f8e8194d125ff`). Changes published by upstream **after its GPL license switch were not copied, linked, vendored or ported**. Independently established format facts may inform original code, subject to the [clean-room provenance protocol](provenance.md).
+The classic and native 2CBH readers use the **MIT-licensed pre-GPL code** from [oschess-cb-bridge](https://github.com/asavis/oschess-cb-bridge), pinned at classic **v1.0.0** (`ca9e8f8e4389edd6430f02a14b33ff53552bcadc`) and native 2CBH **v1.0.3** (`bffebfc498d52b4e4631aed32b2f8e8194d125ff`). Changes published by upstream **after its switch to AGPL-3.0 were not copied, linked, vendored or ported**. Independently established format facts may inform original code, subject to the [clean-room provenance protocol](provenance.md).

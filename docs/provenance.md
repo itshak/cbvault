@@ -23,7 +23,7 @@ specification alone.
 The pinned ancestors for Port rows (`oschess-cb-bridge`, MIT, "Copyright (c) 2026 the oschess-cb-bridge contributors"):
 - Classic `.cbh` baseline: commit `ca9e8f8e4389edd6430f02a14b33ff53552bcadc` (v1.0.0, 2026-09-27)
 - 2CBH `.2cbh` foundation: commit `bffebfc498d52b4e4631aed32b2f8e8194d125ff` (annotated tag v1.0.3, 2026-09-28)
-**License boundary:** only these pinned MIT-era ancestors were ported. No source code from upstream revisions after the subsequent GPL license switch is copied, linked, vendored or redistributed. New facts documented after that switch were independently established and implemented through the clean-room/facts-only processes above. This applies to classic CBH and modern 2CBH alike.
+**License boundary:** only these pinned MIT-era ancestors were ported. No source code from upstream revisions after its subsequent switch to AGPL-3.0 is copied, linked, vendored or redistributed. New facts documented after that switch were independently established and implemented through the clean-room/facts-only processes above. This applies to classic CBH and modern 2CBH alike.
 
 Historical local snapshot in `vendor/upstream-snapshot/`, classification in `docs/port-inventory.md`.
 

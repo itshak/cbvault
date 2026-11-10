@@ -1258,10 +1258,10 @@ Public Rustdoc, all crate READMEs, package descriptions and the repository overv
 
 ### Requirement: MIT-era upstream licensing is accurately attributed
 
-The project SHALL identify the pinned MIT versions of oschess-cb-bridge used for classic (v1.0.0) and native 2CBH (v1.0.3) code, preserving notices while excluding source code introduced after upstream's GPL license switch.
+The project SHALL identify the pinned MIT versions of oschess-cb-bridge used for classic (v1.0.0) and native 2CBH (v1.0.3) code, preserving notices while excluding source code introduced after upstream's switch to AGPL-3.0.
 
 #### Scenario: Public provenance is reviewed
 - **WHEN** documentation cites the ancestor implementation
 - **THEN** it names the pre-GPL MIT foundation and exact source revisions
-- **AND** later GPL-era layout details, if applicable, are described as independently verified format facts only.
+- **AND** later later AGPL-era layout facts, if applicable, are described as independently verified format facts only.
 

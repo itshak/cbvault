@@ -108,7 +108,7 @@ No second chess engine is bundled. The library reads source databases without mo
 - **Classic CBH:** MIT [v1.0.0, commit `ca9e8f8e`](https://github.com/asavis/oschess-cb-bridge/tree/ca9e8f8e4389edd6430f02a14b33ff53552bcadc).
 - **Native 2CBH:** MIT [v1.0.3, commit `bffebfc4`](https://github.com/asavis/oschess-cb-bridge/tree/bffebfc498d52b4e4631aed32b2f8e8194d125ff).
 
-**We did not copy, vendor, link or port the upstream code introduced after its GPL license switch.** Later format observations were reconciled as independently verified facts, not source-code reuse. The MIT notice and modifications are tracked in the [provenance ledger](docs/provenance.md) and [third-party notices](THIRD_PARTY_NOTICES.md). The archive codecs were independently implemented from format facts. No ChessBase proprietary code or databases are distributed.
+**We did not copy, vendor, link or port the upstream code introduced after its switch to AGPL-3.0.** Later format observations were reconciled as independently verified facts, not source-code reuse. The MIT notice and modifications are tracked in the [provenance ledger](docs/provenance.md) and [third-party notices](THIRD_PARTY_NOTICES.md). The archive codecs were independently implemented from format facts. No ChessBase proprietary code or databases are distributed.
 
 **License:** [MIT](LICENSE). ChessBase is a trademark of its owner; cbvault is independent and not affiliated with or endorsed by ChessBase.
 
