@@ -42,15 +42,25 @@ established SHALL be returned as a typed error and SHALL NOT be guessed.
 - **THEN** that move is reported as an unknown byte
 - **AND** the other moves of the position are still returned
 
-### Requirement: Book metadata is decoded only where established
+### Requirement: Book statistics are decoded
 
-The library SHALL expose the statistics block (games, wins, draws, losses, both
-sides' rating counts and sums), ChessBase's N as wins plus draws plus losses, the
-move symbols `!` `?` `!!` `??` `!?` `?!`, the "Main move" and "Don't play in
-tournament" marks, the position evaluations with the advantage family oriented for
-the real side to move, and the colour ChessBase gives each move. Fields and
-combinations whose meaning is not established SHALL be exposed raw or as no value,
-never named by guess.
+The library SHALL expose each position's games, wins, draws and losses, the rating
+counts and sums of both sides, and ChessBase's N as wins plus draws plus losses.
+Statistics fields whose meaning is not established SHALL be exposed raw.
+
+#### Scenario: N counts only games with a result
+
+- **WHEN** a position records more games than wins, draws and losses together
+- **THEN** N is the sum of wins, draws and losses
+- **AND** the total number of games is still available
+
+### Requirement: Book annotations are decoded only where established
+
+The library SHALL decode the move symbols `!` `?` `!!` `??` `!?` `?!`, the "Main
+move" and "Don't play in tournament" marks, the position evaluations with the
+advantage family oriented for the real side to move, and the colour ChessBase gives
+each move. Codes and combinations not established SHALL give no value, never a
+guess.
 
 #### Scenario: An evaluation is oriented for the side to move
 
