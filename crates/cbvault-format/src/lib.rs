@@ -1,5 +1,5 @@
-//! Byte-level ChessBase formats: the classic `.cbh` family, the 2CBH `.2cbh` family
-//! and the `.cbv`/`.cbz` containers.
+//! Byte-level ChessBase formats: the classic `.cbh` family, the 2CBH `.2cbh` family,
+//! the `.cbv`/`.cbz` containers and the `.ctg` opening books.
 //!
 //! This crate knows bytes, not chess: it parses headers, records, namebases,
 //! codepages and containers, and produces raw move tokens and annotation records.
@@ -10,6 +10,7 @@
 pub mod archive;
 pub mod cbh;
 pub mod codepage;
+pub mod ctg;
 pub mod des;
 pub mod error;
 pub mod file;

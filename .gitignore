@@ -49,3 +49,8 @@
 *.acceleratori
 *.pattern
 *.patterni
+
+# ChessBase opening books (never committed)
+*.ctg
+*.cto
+*.ctb

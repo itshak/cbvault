@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 The project is pre-1.0.
 
+## [Unreleased]
+
+### Added
+
+- **Read-only ChessBase opening books (`.ctg`).** `cbvault::book::Book` opens a book, builds an in-memory index (8 bytes per position) by scanning the `.ctg` once, and answers `probe(&Board)` with the book moves and the statistics of the position (games, wins, draws, losses, and the average ratings of each side). Move symbols `!`, `?`, `!!`, `??`, `!?` and `?!` are decoded (`Annotation`), the colour ChessBase gives each move (`colour`: green, blue, red or black), the "Main move" and "Don't play in tournament" marks (`Stats::main_move`, `Stats::dont_play`), and the position evaluations (`Evaluation`: ∞ ⩲ ⩱ ± ∓ +− −+ ↑ → ⇆ N and compensation, oriented for the side to move). `book probe` matches ChessBase's N, %, =%, Av and colours on HIARCS 15 and Fritz 20. `Book::verify` checks a whole book. The CLI adds `cbvault book info | probe | verify`.
+- The format was established clean-room from bytes, with no third-party CTG code or specification read. The facts and their evidence are in `docs/research/ctg-observations-2026-11-14.md`.
+
+### Verification and limitations
+
+- On ten real books (up to 32.3 million positions each, HIARCS 15 included): every key round-trips byte for byte, and every move byte decodes to a legal move whose resulting position is also in the book.
+- Not established, so not used or exposed only as raw values: the `.cto` hash, the `.ctb` bitmap, the header page, the annotation class and symbol codes other than `!`, `?`, `!!`, `??`, `!?` and `?!`, and statistics offset 31. A pawn reaching the last rank decodes as a queen promotion, because the move byte carries no promotion piece.
+
 ## [0.1.7] - 2026-11-10
 
 ### Added

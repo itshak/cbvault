@@ -1,7 +1,9 @@
 //! The `cbvault` command line: a thin shell over the `cbvault` façade.
 //!
 //! Workflows:
-//! `info`, `verify`, `pgn`, `games` and `archive`, with stable `--json` output.
+//! `info`, `verify`, `pgn`, `games`, `archive` and `book`, with stable `--json` output.
+
+mod book;
 
 use std::io::Write;
 use std::path::Path;
@@ -33,9 +35,16 @@ const USAGE: &str = "usage:
   cbvault pgn    <db> [out] [--from ID] [--to ID] [--threads N] [--batch-size N] [--json] [--no-mmap] [--no-wide]
   cbvault archive list <archive> [--json] [--password P]
   cbvault archive extract <archive> <dir> [--only NAME] [--threads N] [--json] [--password P]
+  cbvault book info   <book> [--json]
+  cbvault book probe  <book> [--fen FEN] [--moves M...] [--json]
+  cbvault book verify <book> [--children] [--json]
 
 The PGN goes to `out`, or to stdout when no path is given, so it can be piped.
 The export report always goes to stderr, so stdout stays pure PGN.
+
+<book> is a ChessBase opening book: the .ctg file or its base name. Opening one
+scans the .ctg once to build an index in memory (about 8 bytes per position).
+--moves takes SAN (e4 Nf3) or UCI (e2e4) moves played from the start or from --fen.
 
 <db> is a ChessBase database base path (e.g. 'Mega Database 2025/Mega Database 2025' or 'Mega.cbh').
 --threads sets the number of worker threads. The default is 4: past two workers the
@@ -57,6 +66,7 @@ fn main() -> ExitCode {
         "verify" => run_verify(args),
         "pgn" => run_pgn(args),
         "archive" => run_archive(args),
+        "book" => book::run(args),
         _ => {
             eprintln!("{USAGE}");
             return ExitCode::from(2);

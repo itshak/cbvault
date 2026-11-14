@@ -8,6 +8,7 @@
 //! [`bridge::GameSink`]. The PGN writer ([`pgn`]) and the replay verifier
 //! ([`replay`]) sit underneath it.
 
+pub mod book;
 pub mod bridge;
 pub mod pgn;
 pub mod replay;

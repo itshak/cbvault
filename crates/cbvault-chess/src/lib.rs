@@ -9,6 +9,7 @@
 //! Ported from `cbformat` in `oschess-cb-bridge` (MIT), re-based on `gigachess`;
 //! see `docs/provenance.md`.
 
+pub mod ctg;
 pub mod decode;
 pub mod movetable;
 pub mod pieces;

@@ -61,6 +61,7 @@ cbvault verify "MyDatabase.2cbh" --threads 8
 cbvault pgn "MyDatabase.2cbh" games.pgn --threads 8
 cbvault archive list "Collection.cbv"
 cbvault archive extract "Collection.cbv" ./extracted --threads 8
+cbvault book probe "MyBook.ctg" --moves e4 c5 Nf3
 ```
 
 The same commands also work with classic `.cbh` databases; archive commands accept `.cbz` with `--password`. The CLI can emit machine-readable JSON and redirect PGN to stdout.
@@ -75,7 +76,9 @@ The same commands also work with classic `.cbh` databases; archive commands acce
 
 **Portable PGN export.** Export entire sets or game ranges from **both `.cbh` and `.2cbh`**, including supported annotations and variations. Sequential and parallel paths are regression-tested for deterministic output.
 
-**Archive migration and recovery.** List or extract `.cbv`/`.cbz` members without implementing a ChessBase archive reader yourself. On the tested reference archive, cbvault reproduced **all 3,871 members (3.61 GB extracted) byte-for-byte** against the reference extraction.
+**Opening books.** Open a ChessBase opening book (`.ctg`) and look up any position: its book moves, and games, results and average rating for the position and for each move. Positions are found through an index cbvault builds in memory when the book is opened (about 8 bytes per position), not through the book's own `.cto` table, whose hash is not established.
+
+**Archive migration and recovery. List or extract `.cbv`/`.cbz` members without implementing a ChessBase archive reader yourself. On the tested reference archive, cbvault reproduced **all 3,871 members (3.61 GB extracted) byte-for-byte** against the reference extraction.
 
 See [Rust API documentation](https://docs.rs/cbvault), [CLI crate](https://crates.io/crates/cbvault-cli), and the [consumer API guide](https://github.com/itshak/cbvault/blob/main/docs/bridge.md).
 
@@ -87,6 +90,8 @@ See [Rust API documentation](https://docs.rs/cbvault), [CLI crate](https://crate
 | **Archive extraction** | **3,871 / 3,871** members, **3.61 GB** extracted, byte-identical to reference on the tested archive | Verified on the stated reference corpus, not every possible archive |
 | **Classic `.cbh` throughput** | **1.17–1.20× faster** than the MIT `cbformat` reference during like-for-like *verify* benchmarks on a 10-core Apple Silicon machine | A measured classic-CBH workload, **not** a universal speed comparison or a benchmark for 2CBH |
 | **Platform and correctness** | GitHub CI on **Windows, macOS and Linux**, generated malformed-input tests, fuzz targets, Clippy and example tests | Real proprietary ChessBase oracle data stays local; CI cannot rerun it |
+
+**Known limits (opening books):** only the `.ctg` is read. Move symbols, colours, the "Main move"/"Don't play" marks and the common position evaluations are decoded; the annotation class and one statistics byte are not, and under-promotions in book moves cannot be expressed.
 
 **Known limits:** cbvault is read-only and does **not** edit/write ChessBase databases, parse PGN as an input format, or provide a GUI. Other real 2CBH corpora, rare native annotations and multimedia, ChessBase-specific GUI/training metadata and real-world Chess960 need further verification. The project remains pre-1.0. For exact comparisons and exclusions, see the [archived 2CBH acceptance report](https://github.com/itshak/cbvault/blob/main/openspec/changes/archive/2026-11-10-native-2cbh-release-hardening/closeout.md).
 
