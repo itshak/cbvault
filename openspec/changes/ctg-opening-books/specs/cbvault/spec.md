@@ -85,6 +85,12 @@ that the position after each decoded move is in the book, reporting the counts.
 - **THEN** every key round-trips and no decoded move is illegal
 - **AND** the number of resulting positions missing from the book is reported
 
+#### Scenario: An unclosed page is counted as damaged
+
+- **WHEN** a data page's entries do not terminate at the declared bytes-used boundary
+- **THEN** the page is counted as a damaged page
+- **AND** verification continues for the remaining pages
+
 ### Requirement: The CLI reads opening books
 
 The `cbvault` CLI SHALL offer `book info`, `book probe` (from the initial position,
@@ -96,3 +102,9 @@ a FEN, or a sequence of SAN or UCI moves) and `book verify`, each with a stable
 - **WHEN** `cbvault book probe <book> --moves e4 c5` is run
 - **THEN** the book moves of that position are printed with N, score, draws,
   average rating, colour and annotation
+
+#### Scenario: CLI verification fails on damaged books, unknown moves, or missing children
+
+- **WHEN** `cbvault book verify` is run on a book with damaged pages, undecodable keys, invalid positions, key mismatches, illegal moves, unknown move bytes, or missing children when `--children` is requested
+- **THEN** the command exits with a non-zero exit status
+- **AND** the counts of damaged pages, unknown moves, or missing children are reported

@@ -78,7 +78,7 @@ The same commands also work with classic `.cbh` databases; archive commands acce
 
 **Opening books.** Open a ChessBase opening book (`.ctg`) and look up any position: its book moves, and games, results and average rating for the position and for each move. Positions are found through an index cbvault builds in memory when the book is opened (about 8 bytes per position), not through the book's own `.cto` table, whose hash is not established.
 
-**Archive migration and recovery. List or extract `.cbv`/`.cbz` members without implementing a ChessBase archive reader yourself. On the tested reference archive, cbvault reproduced **all 3,871 members (3.61 GB extracted) byte-for-byte** against the reference extraction.
+**Archive migration and recovery.** List or extract `.cbv`/`.cbz` members without implementing a ChessBase archive reader yourself. On the tested reference archive, cbvault reproduced **all 3,871 members (3.61 GB extracted) byte-for-byte** against the reference extraction.
 
 See [Rust API documentation](https://docs.rs/cbvault), [CLI crate](https://crates.io/crates/cbvault-cli), and the [consumer API guide](https://github.com/itshak/cbvault/blob/main/docs/bridge.md).
 

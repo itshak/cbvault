@@ -15,12 +15,15 @@
 - [x] 2.2 `cbvault-chess::ctg`: stored form, keys, move decoding to legal `Move`s
 - [x] 2.3 `cbvault::book`: index, `probe`, `probe_after`, `verify`, damaged-page reporting
 - [x] 2.4 `cbvault-cli`: `book info | probe | verify`, with `--json`
+- [x] 2.5 Page closure validation in `verify_pages` and CLI exit-code strictness for damaged pages, unknown move bytes, and missing children
+- [x] 2.6 Five rare promoted-piece move codes in `MOVE_TABLE` (`0x19`, `0x2b`, `0x89`, `0xb4`, `0xbc`)
 
 ## 3. Tests
 
 - [x] 3.1 Synthetic unit tests for every codec and for malformed pages and keys (no book content)
 - [x] 3.2 Real-book test gated on `CBVAULT_TEST_CTG`, which says it did not run when unset
 - [x] 3.3 Whole-book `verify --children` on ten local books: every key round-trips and every move leads to a position in the book
+- [x] 3.4 Synthetic CTG regressions (`ctg_regressions.rs`) for page closure, CLI exit codes, and rare promoted move codes
 
 ## 4. Documentation and verification
 
