@@ -3,7 +3,9 @@
 //! - `book info <book>`: pages, positions indexed, index size, damaged pages.
 //! - `book probe <book> [--fen FEN] [--moves M…] [--json]`: the book moves of a
 //!   position, each with the statistics of the position it leads to.
-//! - `book verify <book> [--children] [--json]`: checks every entry.
+//! - `book verify <book> [--children] [--json]`: checks every entry. Exits 0
+//!   when the book has no damaged pages, all keys round-trip, all move bytes
+//!   are known and legal, and (with `--children`) every child position is in the book.
 
 use std::time::Instant;
 
@@ -308,6 +310,7 @@ fn run_verify(args: impl Iterator<Item = String>) -> CliResult {
     let t0 = Instant::now();
     let r = book.verify(children)?;
     let secs = t0.elapsed().as_secs_f64();
+    let damaged_pages = r.damaged_pages.max(book.damaged().len() as u64);
     if json {
         println!(
             concat!(
@@ -317,7 +320,7 @@ fn run_verify(args: impl Iterator<Item = String>) -> CliResult {
                 "\"children_missing\":{},\"index_seconds\":{:.2},\"verify_seconds\":{:.2}}}"
             ),
             r.entries,
-            r.damaged_pages,
+            damaged_pages,
             r.bad_keys,
             r.invalid_positions,
             r.key_round_trips,
@@ -334,7 +337,7 @@ fn run_verify(args: impl Iterator<Item = String>) -> CliResult {
         );
     } else {
         println!("entries            {} (index {index_secs:.1} s, verify {secs:.1} s)", r.entries);
-        println!("damaged pages      {}", r.damaged_pages);
+        println!("damaged pages      {}", damaged_pages);
         println!("undecodable keys   {}", r.bad_keys);
         println!("invalid positions  {}", r.invalid_positions);
         println!("keys round-trip    {} (mismatches {})", r.key_round_trips, r.key_mismatches);
@@ -348,9 +351,12 @@ fn run_verify(args: impl Iterator<Item = String>) -> CliResult {
             println!("children           not checked (pass --children)");
         }
     }
-    Ok(r.damaged_pages == 0
+    Ok(book.damaged().is_empty()
+        && r.damaged_pages == 0
         && r.bad_keys == 0
         && r.invalid_positions == 0
         && r.key_mismatches == 0
-        && r.moves_illegal == 0)
+        && r.moves_illegal == 0
+        && r.moves_unknown == 0
+        && (!children || r.children_missing == 0))
 }

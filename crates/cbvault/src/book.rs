@@ -237,9 +237,12 @@ impl Book {
                 r.damaged_pages += 1;
                 continue;
             };
-            for entry in entries {
+            let mut page_has_err = false;
+            let mut walk = entries;
+            for entry in walk.by_ref() {
                 let Ok(entry) = entry else {
                     r.damaged_pages += 1;
+                    page_has_err = true;
                     break;
                 };
                 r.entries += 1;
@@ -280,6 +283,9 @@ impl Book {
                         Err(MoveError::NoSuchPiece | MoveError::Illegal) => r.moves_illegal += 1,
                     }
                 }
+            }
+            if !page_has_err && !walk.closed() {
+                r.damaged_pages += 1;
             }
         }
         Ok(r)
