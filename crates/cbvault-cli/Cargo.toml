@@ -26,6 +26,9 @@ cbvault.workspace = true
 cbvault-chess.workspace = true
 gigachess.workspace = true
 
+[dev-dependencies]
+cbvault-fixtures.workspace = true
+
 [[example]]
 name = "dump_null_games"
 path = "examples/dump_null_games.rs"

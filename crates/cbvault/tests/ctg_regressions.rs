@@ -5,9 +5,6 @@
 //! All tests use purely synthetic, procedurally generated CTG fixtures from
 //! `cbvault-fixtures`. Zero proprietary ChessBase files or bytes are committed.
 
-use std::path::{Path, PathBuf};
-use std::process::Command;
-
 use cbvault::book::Book;
 use cbvault_chess::ctg as chess_ctg;
 use cbvault_chess::ctg::MoveError;
@@ -18,22 +15,6 @@ use cbvault_fixtures::ctg::{
 };
 use cbvault_format::ctg::{Kind, MoveCode};
 use gigachess::Board;
-
-fn cbvault_binary_path() -> PathBuf {
-    if let Ok(p) = std::env::var("CARGO_BIN_EXE_cbvault") {
-        return PathBuf::from(p);
-    }
-    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let debug = manifest.join("../../target/debug/cbvault");
-    if debug.exists() {
-        return debug;
-    }
-    let release = manifest.join("../../target/release/cbvault");
-    if release.exists() {
-        return release;
-    }
-    PathBuf::from("cbvault")
-}
 
 #[test]
 fn minimal_synthetic_book_opens_and_probes() {
@@ -112,71 +93,6 @@ fn bug_a_verify_pages_detects_unclosed_page() {
     assert_eq!(
         report.damaged_pages, 1,
         "Book::verify(false) must report damaged_pages == 1 when entries do not end at bytes-used mark"
-    );
-}
-
-/// Regression test for Bug B in CLI `book verify`:
-/// `cbvault book verify` must exit with non-zero status when the indexer or verifier reports damage.
-#[test]
-fn bug_b_cli_verify_exits_with_error_on_damaged_book() {
-    let temp = TempDb::create("ctg_bug_b_cli");
-    let ctg_bytes = malformed_unclosed_book();
-    let path = temp.write(".ctg", &ctg_bytes);
-
-    let status = Command::new(cbvault_binary_path())
-        .args(["book", "verify", path.to_str().unwrap()])
-        .status()
-        .expect("run cbvault book verify");
-
-    assert!(
-        !status.success(),
-        "cbvault book verify must exit with non-zero failure code when verifying a damaged book"
-    );
-}
-
-/// Regression test for Bug B in CLI `book verify`:
-/// `cbvault book verify` must exit with non-zero status when a move byte is unknown.
-#[test]
-fn bug_b_cli_verify_exits_with_error_on_unknown_move() {
-    let temp = TempDb::create("ctg_bug_b_unknown");
-    let ctg_bytes = unknown_move_byte_book();
-    let path = temp.write(".ctg", &ctg_bytes);
-
-    let status = Command::new(cbvault_binary_path())
-        .args(["book", "verify", path.to_str().unwrap()])
-        .status()
-        .expect("run cbvault book verify");
-
-    assert!(!status.success(), "cbvault book verify must exit with non-zero failure code when move bytes are unknown");
-}
-
-/// Regression test for Bug B in CLI `book verify`:
-/// When `--children` is requested, missing children cause a non-zero exit status;
-/// without `--children`, a book with missing children still exits with code 0.
-#[test]
-fn bug_b_cli_verify_missing_children_policy() {
-    let temp = TempDb::create("ctg_bug_b_children");
-    let ctg_bytes = connected_parent_child_book();
-    let path = temp.write(".ctg", &ctg_bytes);
-
-    // Without --children: success (exit 0)
-    let status_no_children = Command::new(cbvault_binary_path())
-        .args(["book", "verify", path.to_str().unwrap()])
-        .status()
-        .expect("run cbvault book verify without --children");
-    assert!(
-        status_no_children.success(),
-        "cbvault book verify without --children should exit 0 even if leaf positions have missing children"
-    );
-
-    // With --children: failure (exit nonzero)
-    let status_children = Command::new(cbvault_binary_path())
-        .args(["book", "verify", path.to_str().unwrap(), "--children"])
-        .status()
-        .expect("run cbvault book verify with --children");
-    assert!(
-        !status_children.success(),
-        "cbvault book verify with --children must exit nonzero when child positions are missing"
     );
 }
 

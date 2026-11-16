@@ -360,3 +360,56 @@ fn run_verify(args: impl Iterator<Item = String>) -> CliResult {
         && r.moves_unknown == 0
         && (!children || r.children_missing == 0))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cbvault_fixtures::TempDb;
+    use cbvault_fixtures::ctg::{
+        connected_parent_child_book, malformed_unclosed_book, minimal_valid_book, unknown_move_byte_book,
+    };
+
+    #[test]
+    fn run_verify_succeeds_on_valid_book() {
+        let temp = TempDb::create("cli_verify_valid");
+        let ctg_bytes = minimal_valid_book();
+        let path = temp.write(".ctg", &ctg_bytes);
+        let res = run_verify([path.to_str().unwrap().to_string()].into_iter()).expect("run_verify completes");
+        assert!(res, "valid book must return Ok(true)");
+    }
+
+    #[test]
+    fn run_verify_fails_on_damaged_book() {
+        let temp = TempDb::create("cli_verify_damaged");
+        let ctg_bytes = malformed_unclosed_book();
+        let path = temp.write(".ctg", &ctg_bytes);
+        let res = run_verify([path.to_str().unwrap().to_string()].into_iter()).expect("run_verify completes");
+        assert!(!res, "damaged book must return Ok(false) causing non-zero exit status");
+    }
+
+    #[test]
+    fn run_verify_fails_on_unknown_move() {
+        let temp = TempDb::create("cli_verify_unknown");
+        let ctg_bytes = unknown_move_byte_book();
+        let path = temp.write(".ctg", &ctg_bytes);
+        let res = run_verify([path.to_str().unwrap().to_string()].into_iter()).expect("run_verify completes");
+        assert!(!res, "unknown move byte must return Ok(false) causing non-zero exit status");
+    }
+
+    #[test]
+    fn run_verify_missing_children_policy() {
+        let temp = TempDb::create("cli_verify_children");
+        let ctg_bytes = connected_parent_child_book();
+        let path = temp.write(".ctg", &ctg_bytes);
+
+        // Without --children: returns Ok(true)
+        let res_no_children =
+            run_verify([path.to_str().unwrap().to_string()].into_iter()).expect("run_verify completes");
+        assert!(res_no_children, "without --children, missing leaf children should return Ok(true)");
+
+        // With --children: returns Ok(false)
+        let res_children = run_verify(["--children".to_string(), path.to_str().unwrap().to_string()].into_iter())
+            .expect("run_verify completes");
+        assert!(!res_children, "with --children, missing leaf children must return Ok(false)");
+    }
+}
