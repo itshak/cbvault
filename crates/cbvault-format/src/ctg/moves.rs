@@ -12,7 +12,10 @@
 //!    28,263,243/28,263,243), with a single candidate on every occurrence;
 //! 3. three more second-queen bytes (`0x1a`, `0xab`, `0xee`) were resolved the
 //!    same way on two other books, which also agreed with the second pass on
-//!    every byte they share.
+//!    every byte they share;
+//! 4. five rare move bytes (`0x19`, `0x2b`, `0x89`, `0xb4` for third knights,
+//!    `0xbc` for second queen) were resolved by table symmetry and confirmed
+//!    via unique legal child existence on a 3.4M-game Mega Database CTG book.
 //!
 //! Bytes never seen are `None`.
 
@@ -106,7 +109,7 @@ const MOVE_TABLE: [Option<MoveCode>; 256] = [
     None,                                                                // 0x16
     None,                                                                // 0x17
     Some(MoveCode { kind: Kind::Pawn, ordinal: 6, dfile: 0, drank: 1 }), // 0x18
-    None,                                                                // 0x19
+    Some(MoveCode { kind: Kind::Knight, ordinal: 2, dfile: 6, drank: 1 }), // 0x19
     Some(MoveCode { kind: Kind::Queen, ordinal: 1, dfile: 0, drank: 6 }), // 0x1a (child existence, other books)
     Some(MoveCode { kind: Kind::Bishop, ordinal: 0, dfile: 7, drank: 1 }), // 0x1b
     None,                                                                // 0x1c
@@ -124,7 +127,7 @@ const MOVE_TABLE: [Option<MoveCode>; 256] = [
     Some(MoveCode { kind: Kind::Queen, ordinal: 0, dfile: 5, drank: 5 }), // 0x28
     Some(MoveCode { kind: Kind::Queen, ordinal: 0, dfile: 6, drank: 0 }), // 0x29
     Some(MoveCode { kind: Kind::Knight, ordinal: 1, dfile: 1, drank: 6 }), // 0x2a
-    None,                                                                // 0x2b
+    Some(MoveCode { kind: Kind::Knight, ordinal: 2, dfile: 7, drank: 2 }), // 0x2b
     None,                                                                // 0x2c
     Some(MoveCode { kind: Kind::Pawn, ordinal: 5, dfile: 1, drank: 1 }), // 0x2d
     Some(MoveCode { kind: Kind::Bishop, ordinal: 0, dfile: 1, drank: 1 }), // 0x2e
@@ -218,7 +221,7 @@ const MOVE_TABLE: [Option<MoveCode>; 256] = [
     Some(MoveCode { kind: Kind::Rook, ordinal: 0, dfile: 7, drank: 0 }), // 0x86
     Some(MoveCode { kind: Kind::Rook, ordinal: 0, dfile: 0, drank: 5 }), // 0x87
     None,                                                                // 0x88
-    None,                                                                // 0x89
+    Some(MoveCode { kind: Kind::Knight, ordinal: 2, dfile: 1, drank: 6 }), // 0x89
     Some(MoveCode { kind: Kind::Knight, ordinal: 0, dfile: 1, drank: 6 }), // 0x8a
     Some(MoveCode { kind: Kind::Pawn, ordinal: 0, dfile: 1, drank: 1 }), // 0x8b
     Some(MoveCode { kind: Kind::King, ordinal: 0, dfile: 7, drank: 7 }), // 0x8c
@@ -261,7 +264,7 @@ const MOVE_TABLE: [Option<MoveCode>; 256] = [
     Some(MoveCode { kind: Kind::Pawn, ordinal: 5, dfile: 0, drank: 2 }), // 0xb1
     Some(MoveCode { kind: Kind::Bishop, ordinal: 0, dfile: 2, drank: 6 }), // 0xb2
     None,                                                                // 0xb3
-    None,                                                                // 0xb4
+    Some(MoveCode { kind: Kind::Knight, ordinal: 2, dfile: 7, drank: 6 }), // 0xb4
     Some(MoveCode { kind: Kind::Rook, ordinal: 1, dfile: 5, drank: 0 }), // 0xb5
     None,                                                                // 0xb6
     Some(MoveCode { kind: Kind::Queen, ordinal: 0, dfile: 0, drank: 5 }), // 0xb7
@@ -269,7 +272,7 @@ const MOVE_TABLE: [Option<MoveCode>; 256] = [
     Some(MoveCode { kind: Kind::Bishop, ordinal: 1, dfile: 3, drank: 3 }), // 0xb9
     None,                                                                // 0xba
     Some(MoveCode { kind: Kind::Pawn, ordinal: 4, dfile: 0, drank: 1 }), // 0xbb
-    None,                                                                // 0xbc
+    Some(MoveCode { kind: Kind::Queen, ordinal: 1, dfile: 5, drank: 0 }), // 0xbc (child existence)
     Some(MoveCode { kind: Kind::Queen, ordinal: 1, dfile: 0, drank: 2 }), // 0xbd (child existence)
     Some(MoveCode { kind: Kind::King, ordinal: 0, dfile: 1, drank: 0 }), // 0xbe
     None,                                                                // 0xbf
@@ -382,6 +385,15 @@ mod tests {
         for (i, a) in all.iter().enumerate() {
             assert!(!all[i + 1..].contains(a), "{a:?} appears twice");
         }
-        assert_eq!(all.len(), 165);
+        assert_eq!(all.len(), 170);
+    }
+
+    #[test]
+    fn rare_promoted_move_codes_are_mapped() {
+        assert_eq!(move_code(0x19), Some(MoveCode { kind: Kind::Knight, ordinal: 2, dfile: 6, drank: 1 }));
+        assert_eq!(move_code(0x2b), Some(MoveCode { kind: Kind::Knight, ordinal: 2, dfile: 7, drank: 2 }));
+        assert_eq!(move_code(0x89), Some(MoveCode { kind: Kind::Knight, ordinal: 2, dfile: 1, drank: 6 }));
+        assert_eq!(move_code(0xb4), Some(MoveCode { kind: Kind::Knight, ordinal: 2, dfile: 7, drank: 6 }));
+        assert_eq!(move_code(0xbc), Some(MoveCode { kind: Kind::Queen, ordinal: 1, dfile: 5, drank: 0 }));
     }
 }
