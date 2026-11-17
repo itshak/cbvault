@@ -1,12 +1,13 @@
 # cbvault-format
 
-**Read-only binary-format parser for classic `.cbh` and modern `.2cbh` ChessBase databases, plus `.cbv` and password-protected `.cbz` archives.** This crate handles byte-level headers, framed move records, annotations, entities and archive codecs. Chess move legality and SAN live in `cbvault-chess`/`gigachess`.
+**Read-only binary-format parser for classic `.cbh` and modern `.2cbh` ChessBase databases, `.ctg` opening books, and `.cbv`/password-protected `.cbz` archives.** This crate handles byte-level headers, framed move records, annotations, entities and archive codecs. Chess move legality and SAN live in `cbvault-chess`/`gigachess`.
 
 | Input | What is decoded |
 |---|---|
 | Classic `.cbh`, `.cbg`, `.cba`, namebases and extended offsets | Header metadata, move records, annotations and supporting binary structures |
 | Modern `.2cbh`, `.2cbg`, `.2cba`, `.2lid` | 192-byte headers, framed 16-bit move words, structured annotations and entity names |
 | `.cbv` / `.cbz` | All four archive compression modes, including stored, LZ, Huffman and Huffman+LZ |
+| `.ctg` | Opening-book pages, position keys, raw move codes, annotations and statistics (chess legality and move mapping are handled by `cbvault-chess`) |
 
 The tested reference archive extracted **all 3,871 members / 3.61 GB byte-identically** against reference output. Native 2CBH higher-level game/PGN decoding is available through the public [`cbvault`](https://crates.io/crates/cbvault) crate.
 

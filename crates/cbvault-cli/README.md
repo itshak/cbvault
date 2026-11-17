@@ -1,6 +1,6 @@
 # cbvault-cli
 
-The `cbvault` CLI inspects, verifies and exports both **classic `.cbh` and modern `.2cbh`** ChessBase databases, and lists/extracts `.cbv` and password-protected `.cbz` archives.
+The `cbvault` CLI inspects, verifies and exports both **classic `.cbh` and modern `.2cbh`** ChessBase databases, probes/verifies **`.ctg` opening books**, and lists/extracts `.cbv` and password-protected `.cbz` archives.
 
 ```bash
 cargo install cbvault-cli --version 0.1.7
@@ -11,6 +11,16 @@ cbvault pgn "Collection.2cbh" games.pgn --threads 8
 cbvault archive list "Collection.cbv"
 cbvault archive extract "Collection.cbv" ./out --threads 8
 ```
+
+**CTG book commands (unreleased; not in crates.io `0.1.7`):**
+
+```sh
+cbvault book info "MyBook.ctg"
+cbvault book probe "MyBook.ctg" --moves e4 c5 Nf3 --json
+cbvault book verify "MyBook.ctg" --children --json
+```
+
+Build a CTG-enabled CLI from the PR #8 source checkout using `cargo install --path crates/cbvault-cli --force`. This feature was originally contributed by [Tulio Vianna](https://github.com/tuliovianna-lab) in [PR #8](https://github.com/itshak/cbvault/pull/8).
 
 Commands support `--json` for machine-readable output. PGN can be written to a file or stdout; diagnostics stay on stderr. Decoding errors are typed, and archive extraction reports failures rather than claiming a partial result is complete.
 

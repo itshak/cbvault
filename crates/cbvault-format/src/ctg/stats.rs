@@ -46,7 +46,7 @@ pub struct Stats {
     pub opponent_rating_sum: u32,
     /// Offsets 30–32. Offset 30 holds the move marks [`MAIN_MOVE`] and
     /// [`DONT_PLAY`] of the move that leads to this position (see
-    /// [`Stats::main_move`], [`Stats::dont_play`] and [`super::colour`]).
+    /// [`Stats::main_move`], [`Stats::dont_play`] and [`super::colour()`]).
     /// Offset 31 is not established. Offset 32 holds the position evaluation
     /// set on the move leading here, if any (see [`Stats::evaluation`]).
     pub raw_tail: [u8; 3],

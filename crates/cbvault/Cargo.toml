@@ -1,6 +1,6 @@
 [package]
 name = "cbvault"
-description = "Read-only ChessBase CBH and native 2CBH databases: moves, annotations, PGN, search, parallel conversion, CBV/CBZ archives"
+description = "Read-only ChessBase CBH/2CBH databases and CTG opening books: search, PGN export, book probing, CBV/CBZ archives"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,9 +12,9 @@ rust-version.workspace = true
 # validates categories against each crate's own targets.
 # crates.io accepts at most 5 keywords per crate and rejects the upload
 # otherwise, which is a tag-time failure, so this is capped and checked by
-# `cargo test --test registry_metadata`. The dropped "database" is the most
-# generic of the six; the five kept are what actually distinguishes the crate.
-keywords = ["chess", "chessbase", "pgn", "cbh", "2cbh"]
+# `cargo test --test registry_metadata`. This now retains the native 2CBH
+# and PGN discovery terms while adding CTG for opening books.
+keywords = ["chess", "chessbase", "pgn", "2cbh", "ctg"]
 # crates.io validates `categories` per crate, and it rejects
 # `command-line-utilities` on a crate with no binary target, so it is
 # on `cbvault-cli` alone rather than inherited by the libraries.

@@ -1,6 +1,6 @@
 # cbvault
 
-**Read classic `.cbh` and modern `.2cbh` ChessBase databases directly from Rust.** This MIT-licensed, read-only library exposes a generation-aware `Database` façade for game metadata, move trees, annotations, PGN export, search and ordered parallel conversion.
+**Read classic `.cbh`, modern `.2cbh` databases and `.ctg` opening books directly from Rust.** This MIT-licensed, read-only library exposes a generation-aware `Database` façade for game metadata, move trees, annotations, PGN export, search and ordered parallel conversion.
 
 ```rust
 use cbvault::bridge::{Database, GameBuf};
@@ -13,6 +13,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
+
+**CTG opening books (new in the next release).** Use `cbvault::book::Book::open("MyBook.ctg")`, then `book.probe(&gigachess::Board::startpos())?` for book moves and position statistics, or `book.verify(true)?` to validate all keys, legal moves and child positions. The reader builds its own index without requiring the `.cto` or `.ctb` companion files. See [the public CTG validation results](../../docs/ctg-validation.md) and [the Rustdoc API](https://docs.rs/cbvault/latest/cbvault/book/index.html). The original CTG feature was contributed by [Tulio Vianna](https://github.com/tuliovianna-lab) in [PR #8](https://github.com/itshak/cbvault/pull/8).
 
 With `GameSink`, select only the mainline moves, position keys and annotations your consumer needs. `convert_parallel` preserves source-game order while processing on multiple workers. Search by headers or replay chess positions without importing the entire database to another format.
 

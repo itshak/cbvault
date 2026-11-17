@@ -1,6 +1,6 @@
 [package]
 name = "cbvault-chess"
-description = "Gigachess bridge for classic CBH and native 2CBH moves: legal replay, SAN, moves2 and position hashes"
+description = "Gigachess bridge for CBH/2CBH game moves and CTG book moves: legality, SAN, moves2 and Polyglot hashes"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,7 +10,7 @@ rust-version.workspace = true
 # On the registry a crate with no keywords and no categories is unsearchable and
 # unplaced, so both are stated per crate rather than inherited: crates.io
 # validates categories against each crate's own targets.
-keywords = ["chess", "chess960", "zobrist", "pgn", "move-generation"]
+keywords = ["chess", "chess960", "zobrist", "ctg", "move-generation"]
 # crates.io validates `categories` per crate, and it rejects
 # `command-line-utilities` on a crate with no binary target, so it is
 # on `cbvault-cli` alone rather than inherited by the libraries.

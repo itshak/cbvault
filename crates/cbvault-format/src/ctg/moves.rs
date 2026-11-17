@@ -53,7 +53,7 @@ pub fn move_code(byte: u8) -> Option<MoveCode> {
 /// the contributor annotated for the purpose). Other codes are not confirmed, so
 /// [`Annotation::symbol`] does not name them. The **high 3 bits** are a class
 /// whose meaning is not established; it does not affect the move's colour (see
-/// [`super::colour`]).
+/// [`super::colour()`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct Annotation(pub u8);
 
