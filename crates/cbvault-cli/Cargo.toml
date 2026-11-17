@@ -1,6 +1,6 @@
 [package]
 name = "cbvault-cli"
-description = "ChessBase CLI: inspect, verify and export CBH/2CBH games to PGN; list and extract CBV/CBZ archives"
+description = "ChessBase CLI: CBH/2CBH game inspection and PGN export, CTG book probing/verification, CBV/CBZ archives"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,7 +10,7 @@ rust-version.workspace = true
 # On the registry a crate with no keywords and no categories is unsearchable and
 # unplaced, so both are stated per crate rather than inherited: crates.io
 # validates categories against each crate's own targets.
-keywords = ["chess", "chessbase", "pgn", "2cbh", "cli"]
+keywords = ["chess", "chessbase", "pgn", "ctg", "cli"]
 # crates.io validates `categories` per crate, and it rejects
 # `command-line-utilities` on a crate with no binary target, so it is
 # on `cbvault-cli` alone rather than inherited by the libraries.
@@ -25,6 +25,9 @@ cbvault-format.workspace = true
 cbvault.workspace = true
 cbvault-chess.workspace = true
 gigachess.workspace = true
+
+[dev-dependencies]
+cbvault-fixtures.workspace = true
 
 [[example]]
 name = "dump_null_games"

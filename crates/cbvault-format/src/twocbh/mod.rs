@@ -8,15 +8,13 @@
 //! [`crate::game::Head`], a [`GameMoves`] and an [`Annotations`] — so a
 //! consumer above this crate does not learn which generation it was fed.
 //!
-//! **What is established, and what is not.** The container is fully
-//! reverse-engineered and proven: `.2cbh` is fixed 192-byte records, and every
-//! `.2cbg`/`.2cba` record starts with a magic and ends with its own length.
-//! Four invariants were checked on 220,418 records across every 2CBH set on
-//! the development machine with no violations. The **`.2cbg` move codec is not
-//! decoded**: [`GameMoves::is_decoded`] is `false` and
-//! [`GameMoves::stream`] is `None`, because emitting a plausible-looking word
-//! per byte of a compressed payload would be a wrong answer that no test
-//! downstream would catch.
+//! **What is established, and what is not.** `.2cbh` has fixed 192-byte
+//! headers, and `.2cbg`/`.2cba` records use validated length-framed data.
+//! [`GameMoves`] exposes the native move words and variation tokens through
+//! [`GameMoves::tokens`], with `is_decoded()` returning `true`.
+//! The higher-level `cbvault` bridge performs legal replay, game-tree
+//! reconstruction and PGN export. Rare annotations, multimedia metadata
+//! and unusual Chess960 data still need additional real-corpus verification.
 //!
 //! `docs/format-spec-2cbh.md` is the source of truth: it carries the evidence
 //! for every field here, the hypotheses that were tested and ruled out, and —

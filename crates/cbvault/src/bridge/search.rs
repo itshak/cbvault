@@ -259,7 +259,7 @@ pub enum Filter {
     ///
     /// Compared on the year alone. The header's date is a packed day/month/year
     /// and a month/day that a consumer would compare against is almost always a
-    /// whole-year range; a caller needing exact dates can read [`GameHeader`]
+    /// whole-year range; a caller needing exact dates can read [`crate::bridge::GameHeaderRef`]
     /// itself. A game with no date (year 0) is never in range, because
     /// "unknown" is not "in the range the user asked for".
     YearBetween(Range),
