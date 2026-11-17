@@ -256,7 +256,7 @@ jobs:
           GH_TOKEN: ${{ secrets.REPO_ADMIN_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           gh api -X PATCH "repos/${GITHUB_REPOSITORY}" \
-            -f description="MIT Rust reader and CLI for ChessBase .cbh/.2cbh/.cbv/.cbz: annotated PGN, search and parallel conversion; 2CBH tested on 3.41M games." \
+            -f description="MIT-licensed Rust library and CLI for ChessBase CBH/2CBH databases, CTG opening books, CBV/CBZ archives, PGN export, search and verification." \
             -f homepage="https://crates.io/crates/cbvault"
 
       - name: Create GitHub Release

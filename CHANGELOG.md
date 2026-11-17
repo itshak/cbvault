@@ -9,10 +9,24 @@ The project is pre-1.0.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-17
+
 ### Added
 
 - **Read-only ChessBase opening books (`.ctg`)**, originally contributed by [Tulio Vianna](https://github.com/tuliovianna-lab) in [PR #8](https://github.com/itshak/cbvault/pull/8), with subsequent maintainer review and verification fixes. `cbvault::book::Book` opens a book, builds an in-memory index (8 bytes per position) by scanning the `.ctg` once, and answers `probe(&Board)` with the book moves and the statistics of the position (games, wins, draws, losses, and the average ratings of each side). Move symbols `!`, `?`, `!!`, `??`, `!?` and `?!` are decoded (`Annotation`), the colour ChessBase gives each move (`colour`: green, blue, red or black), the "Main move" and "Don't play in tournament" marks (`Stats::main_move`, `Stats::dont_play`), and the position evaluations (`Evaluation`: ∞ ⩲ ⩱ ± ∓ +− −+ ↑ → ⇆ N and compensation, oriented for the side to move). `book probe` matches ChessBase's N, %, =%, Av and colours on HIARCS 15 and Fritz 20. `Book::verify` checks a whole book. The CLI adds `cbvault book info | probe | verify`.
 - The format was established clean-room from bytes, with no third-party CTG code or specification read. The facts and their evidence are in `docs/research/ctg-observations-2026-11-14.md`.
+
+### Fixed
+
+- **CTG verification correctness.** Detect data pages whose entries do not end at the declared bytes-used boundary, and fail CLI verification when indexing finds damage. Unknown move codes fail strict verification; missing child positions fail when `--children` is requested.
+- **Rare promoted-piece CTG move codes.** Added `0x19`, `0x2b`, `0x89`, `0xb4` and `0xbc` with synthetic regression cases, closing the final seven unknown-move occurrences in the tested 88.1-million-move golden book.
+- **Documentation link quality.** Fixed stale/ambiguous Rustdoc references in the 2CBH and CTG API.
+
+### Documentation and contributors
+
+- Expanded the API landing page with a compile-checked CTG book example, documented all four crate packages, and published a standalone compatibility/statistical validation report with explicit limitations.
+- Added crate descriptions and discoverability keywords for CTG support. Archived the completed CTG OpenSpec change and updated the permanent requirements.
+- **Thanks to [Tulio Vianna](https://github.com/tuliovianna-lab)** for originally contributing the clean-room CTG opening-book reader in [PR #8](https://github.com/itshak/cbvault/pull/8), and for collaborating on its verification and final corrections.
 
 ### Verification and limitations
 

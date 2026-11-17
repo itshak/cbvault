@@ -33,8 +33,8 @@ Unlike a workflow that requires importing an entire collection into a new databa
 Requires **Rust 1.88+**.
 
 ```bash
-cargo add cbvault@0.1.7
-cargo install cbvault-cli --version 0.1.7
+cargo add cbvault@0.2.0
+cargo install cbvault-cli --version 0.2.0
 ```
 
 Open a database with Rust. Pass either a classic `.cbh` file, a modern `.2cbh` file, or an unambiguous database base path:
@@ -66,10 +66,9 @@ cbvault archive extract "Collection.cbv" ./extracted --threads 8
 
 The same database commands also work with classic `.cbh` files; archive commands accept `.cbz` with `--password`. The CLI can emit machine-readable JSON and redirect PGN to stdout.
 
-**CTG availability:** the opening-book reader and `book` commands are in the source changes from [PR #8](https://github.com/itshak/cbvault/pull/8), **not** in the published `0.1.7` crates. They will be included in a subsequent release. Until then, from a CTG-enabled source checkout run:
+**CTG opening books are supported from v0.2.0.** Probe a position, inspect its moves and result/rating statistics, or verify the book's keys, move decoding and child positions:
 
 ```bash
-cargo install --path crates/cbvault-cli --force
 cbvault book info "MyBook.ctg"
 cbvault book probe "MyBook.ctg" --moves e4 c5 Nf3 --json
 cbvault book verify "MyBook.ctg" --children --json

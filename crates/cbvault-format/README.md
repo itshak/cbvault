@@ -13,4 +13,4 @@ The tested reference archive extracted **all 3,871 members / 3.61 GB byte-identi
 
 **MIT provenance:** the classic and 2CBH readers were based on [MIT-era `oschess-cb-bridge`](https://github.com/asavis/oschess-cb-bridge) (classic [v1.0.0](https://github.com/asavis/oschess-cb-bridge/tree/ca9e8f8e4389edd6430f02a14b33ff53552bcadc), 2CBH [v1.0.3](https://github.com/asavis/oschess-cb-bridge/tree/bffebfc498d52b4e4631aed32b2f8e8194d125ff)); **code added after its switch to AGPL-3.0 was not copied or linked.** Archive codecs were implemented independently from format facts.
 
-[Main README](../../README.md) · [Format research](../../docs/format-spec-2cbh.md) · [Provenance](../../docs/provenance.md)
+[Main README](https://github.com/itshak/cbvault/blob/main/README.md) · [Format research](https://github.com/itshak/cbvault/blob/main/docs/format-spec-2cbh.md) · [Provenance](https://github.com/itshak/cbvault/blob/main/docs/provenance.md)

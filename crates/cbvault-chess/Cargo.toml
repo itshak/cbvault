@@ -4,7 +4,7 @@ description = "Gigachess bridge for CBH/2CBH game moves and CTG book moves: lega
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-readme.workspace = true
+readme = "README.md"
 repository.workspace = true
 rust-version.workspace = true
 # On the registry a crate with no keywords and no categories is unsearchable and
