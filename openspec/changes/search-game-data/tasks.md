@@ -14,7 +14,8 @@
 - [x] 2.2 A header-only query with `.cbg` hidden
 - [x] 2.3 Refusals: wins only without a White line, endings on guiding texts, classic time control
 - [x] 2.4 CLI: options, JSON, PGN output, bad options
-- [ ] 2.5 Matching rules confirmed against ChessBase's counts on a test database (names, wins only, Elo modes with a missing rating, the difference, check vs mate)
+- [x] 2.5 Spot checks against ChessBase's own counts on Mega Database 2026: White `Carlsen` 4,363; White `Carlsen` + Black `Caruana`, ignore colours 212; White `Gonzalez` (no accent) 22,438; Annotator `Kasparov` 67 (which also confirms that a 2CBH annotator id indexes the player table)
+- [ ] 2.6 Still to compare with ChessBase: wins only, Elo modes with a missing rating, the difference (upper or lower bound), check vs mate, tournament text in the middle of a title
 
 ## 3. Measurements
 

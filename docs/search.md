@@ -102,7 +102,10 @@ the query returns ids.
 - **Good games / Beautiful games**: which header, flag or medal bits ChessBase
   uses is not established; they are not offered.
 - **In repertoire** needs a position search, which this page does not cover.
-- The matching rules above are the ones a test database must confirm against
-  ChessBase's own counts: name matching (start vs anywhere, accents), "wins
-  only" with ignored colours, the Elo modes with a missing rating, whether
-  "Difference" is an upper or a lower bound, and whether "Check" includes mate.
+- Matching rules compared with ChessBase's own counts on Mega Database 2026 so
+  far, all equal: White `Carlsen` (4,363 games), White `Carlsen` and Black
+  `Caruana` with ignored colours (212), White `Gonzalez` without the accent
+  (22,438) and Annotator `Kasparov` (67). Still to compare: "wins only", the
+  Elo modes with a missing rating, whether "Difference" is an upper or a lower
+  bound, whether "Check" includes mate, and a tournament text in the middle of
+  a title.
