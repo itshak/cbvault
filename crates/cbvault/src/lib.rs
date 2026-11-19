@@ -68,6 +68,7 @@
 pub mod book;
 pub mod bridge;
 pub mod pgn;
+pub mod query;
 pub mod replay;
 
 pub use bridge::stem_of;

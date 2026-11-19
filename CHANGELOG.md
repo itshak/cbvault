@@ -9,6 +9,11 @@ The project is pre-1.0.
 
 ## [Unreleased]
 
+### Added
+
+- **`cbvault::query`: the "Game data" page of ChessBase's search dialog**, every field combined, over classic and 2CBH databases: White and Black (last name and forename, from their start or anywhere), ignore colours, wins only, tournament (title or place), annotator, date ranges to the day, ECO ranges with sub-codes, move count, Elo in the modes one, both and average with a rating difference, results 1-0, 0-1, ½ and 0-0, mate, stalemate and check on the final position, guiding texts, any text with "not", and the time control (2CBH). Names resolve to id sets once and the header scan compares integers; only mate, stalemate and check replay games, and only the ones the scan kept. Texts compare without case and accents. The module builds on the bridge's public API only; a bridge `Filter` can be one more criterion. See `docs/search.md`.
+- **`cbvault search`**, the same query from the command line, printing the matches, JSON, or their PGN.
+
 ## [0.2.0] - 2026-11-17
 
 ### Added
