@@ -62,6 +62,7 @@ cbvault verify "MyDatabase.2cbh" --threads 8
 cbvault pgn "MyDatabase.2cbh" games.pgn --threads 8
 cbvault archive list "Collection.cbv"
 cbvault archive extract "Collection.cbv" ./extracted --threads 8
+cbvault search "MyDatabase.2cbh" --white "Carlsen, Magnus" --ignore-colours --elo 2700- --elo-mode both --pgn found.pgn
 ```
 
 The same database commands also work with classic `.cbh` files; archive commands accept `.cbz` with `--password`. The CLI can emit machine-readable JSON and redirect PGN to stdout.
@@ -78,7 +79,7 @@ cbvault book verify "MyBook.ctg" --children --json
 
 **Direct database browsing.** List games, inspect player/event metadata, open a game with its annotations and variations, or export a selected record to PGN. Headers can be read independently of move decoding.
 
-**Search and preparation.** Filter by players, ECO, result, year, rating or round. Resolve multiple matching player IDs instead of silently picking one. Scan positions with legal replay, stop when enough results are found, or generate Polyglot keys for a separate opening index.
+**Search and preparation.** Filter by players, ECO, result, year, rating or round. `cbvault::query` and `cbvault search` answer every field of the "Game data" page of ChessBase's search dialog, combined: names with "ignore colours" and "wins only", tournament, annotator, date and ECO ranges, move count, Elo in each mode with a rating difference, results including mate, stalemate and check, guiding texts, "any text" and the time control ([docs/search.md](docs/search.md)). Resolve multiple matching player IDs instead of silently picking one. Scan positions with legal replay, stop when enough results are found, or generate Polyglot keys for a separate opening index.
 
 **High-throughput data pipelines.** Use `GameSink` with `for_each_game`, `for_each_range` or `convert_parallel`. Each callback receives borrowed game data; the sink can request moves, keys and/or native annotations as needed. Parallel processing **preserves source record order**, so consumers do not need to reorder games afterward.
 

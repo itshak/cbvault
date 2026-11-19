@@ -1,9 +1,10 @@
 //! The `cbvault` command line: a thin shell over the `cbvault` façade.
 //!
 //! Workflows:
-//! `info`, `verify`, `pgn`, `games`, `archive` and `book`, with stable `--json` output.
+//! `info`, `verify`, `pgn`, `games`, `archive`, `book` and `search`, with stable `--json` output.
 
 mod book;
+mod search;
 
 use std::io::Write;
 use std::path::Path;
@@ -38,6 +39,7 @@ const USAGE: &str = "usage:
   cbvault book info   <book> [--json]
   cbvault book probe  <book> [--fen FEN] [--moves M...] [--json]
   cbvault book verify <book> [--children] [--json]
+  cbvault search <db> [criteria] [--json]   (cbvault search --help for the criteria)
 
 The PGN goes to `out`, or to stdout when no path is given, so it can be piped.
 The export report always goes to stderr, so stdout stays pure PGN.
@@ -67,6 +69,14 @@ fn main() -> ExitCode {
         "pgn" => run_pgn(args),
         "archive" => run_archive(args),
         "book" => book::run(args),
+        "search" => {
+            let args: Vec<String> = args.collect();
+            if args.iter().any(|a| a == "--help" || a == "-h") {
+                println!("{}", search::USAGE);
+                return ExitCode::SUCCESS;
+            }
+            search::run(args.into_iter())
+        }
         _ => {
             eprintln!("{USAGE}");
             return ExitCode::from(2);
