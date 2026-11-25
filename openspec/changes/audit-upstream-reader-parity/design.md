@@ -1,0 +1,5 @@
+# Design: Audit upstream CBH and 2CBH read parity
+
+Review oschess ba58b3e525 (2CBH analysis date/move count), f110d0db0d (guiding texts), 7002675695 (analysis), 19b875e9ad/58886c537a/400412e505/104f0fc8f1/e04be173f5 (text and code pages). Review Morphy a42642a586 (en passant), 7d09e71849 (evaluation graphs), afe9cf65d6 (structured annotations), 0ddd665d0c (quotations), 0bb65fe014 (FIDE IDs). Check existing support first; do not duplicate work. Audit headers, time control, rating type, sources, teams, game tags, non-game records, multilingual text, symbols, annotation ordering, setup/Chess960, unknown fields and reference IDs. Preserve unknown/raw records with typed diagnostics. Distinguish ChessBase PGN loss from binary parsing failure. Freeze facts-only spec and hygiene review before independent implementation; external oracles separate. Public corpus and manually authored special-feature fixtures plus private local gold; profile any touched path.
+
+Acceptance: no unsupported feature may be advertised; document failed experiments and report absent real-data gates explicitly.
