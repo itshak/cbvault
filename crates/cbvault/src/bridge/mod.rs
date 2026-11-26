@@ -1097,25 +1097,28 @@ impl Database {
     ) -> Result<GameRef<'a>> {
         let id = header.id();
         let at = self.move_offset(&header)?;
-        match &self.backend {
-            Backend::Classic(_) => {
-                let mut record = Vec::new();
-                let bytes = convert::move_record(self.moves()?, at, &mut record)?;
-                let game = GameMoves::parse(&self.members.moves, bytes)?;
-                buf.walk(id, at, &game)?;
-                walk::resolve_names(&header, self.entities(), buf)?;
-                buf.view(id, header, self, want_annotations)
+        let mut record = std::mem::take(&mut buf.record_scratch);
+        let walked = (|| -> Result<()> {
+            match &self.backend {
+                Backend::Classic(_) => {
+                    let bytes = convert::move_record(self.moves()?, at, &mut record)?;
+                    let game = GameMoves::parse(&self.members.moves, bytes)?;
+                    buf.walk(id, at, &game)?;
+                    walk::resolve_names(&header, self.entities(), buf)?;
+                }
+                Backend::TwoCbh(t) => {
+                    let seg = self.moves_segment()?;
+                    let raw = seg.record_at_with(at, &mut record)?;
+                    let game = cbvault_format::twocbh::moves::GameMoves::from_record(&self.members.moves, raw)?;
+                    buf.walk_v2(id, at, &game)?;
+                    walk::resolve_names_v2(&header, &t.entities, buf)?;
+                }
             }
-            Backend::TwoCbh(t) => {
-                let seg = self.moves_segment()?;
-                let seg_rec = seg.record_at(at)?;
-                let game =
-                    cbvault_format::twocbh::moves::GameMoves::from_record(&self.members.moves, seg_rec.record())?;
-                buf.walk_v2(id, at, &game)?;
-                walk::resolve_names_v2(&header, &t.entities, buf)?;
-                buf.view(id, header, self, want_annotations)
-            }
-        }
+            Ok(())
+        })();
+        buf.record_scratch = record;
+        walked?;
+        buf.view(id, header, self, want_annotations)
     }
 
     /// Exports game `id` as a PGN string, using `buf`'s annotation preference.
@@ -1136,8 +1139,7 @@ impl Database {
         let at = self.move_offset(&header)?;
         match &self.backend {
             Backend::Classic(_) => {
-                let mut record = Vec::new();
-                let bytes = convert::move_record(self.moves()?, at, &mut record)?;
+                let bytes = convert::move_record(self.moves()?, at, &mut buf.record_scratch)?;
                 let game = GameMoves::parse(&self.members.moves, bytes)?;
                 let anns = if want_annotations && header.annotations_offset() != 0 {
                     let h_ref = header.as_classic().expect("classic header");
@@ -1156,9 +1158,8 @@ impl Database {
             }
             Backend::TwoCbh(t) => {
                 let seg = self.moves_segment()?;
-                let seg_rec = seg.record_at(at)?;
-                let game =
-                    cbvault_format::twocbh::moves::GameMoves::from_record(&self.members.moves, seg_rec.record())?;
+                let seg_rec = seg.record_at_with(at, &mut buf.record_scratch)?;
+                let game = cbvault_format::twocbh::moves::GameMoves::from_record(&self.members.moves, seg_rec)?;
                 let h = header.as_twocbh().copied().expect("2cbh header");
                 let anns_rec = if want_annotations && h.annotations_offset() != 0 {
                     let seg = self.annotations_segment()?.ok_or_else(|| {
@@ -1168,11 +1169,11 @@ impl Database {
                             "2CBA annotation frame referenced but file is missing",
                         )
                     })?;
-                    Some(seg.record_at(h.annotations_offset())?)
+                    Some(seg.record_at_with(h.annotations_offset(), &mut buf.annotation)?)
                 } else {
                     None
                 };
-                let anns = anns_rec.as_ref().map(|r| cbvault_format::twocbh::Annotations::from_record(r.record()));
+                let anns = anns_rec.map(cbvault_format::twocbh::Annotations::from_record);
                 let writer = buf.pgn_writer.get_or_insert_with(|| Box::new(crate::pgn::PgnWriter::new()));
                 let mut out = Vec::new();
                 writer

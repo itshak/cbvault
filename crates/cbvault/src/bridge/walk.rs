@@ -206,6 +206,7 @@ pub struct GameBuf {
     starts: StartCache,
     /// Scratch for an annotation record, used only when the file is not mapped.
     pub(crate) annotation: Vec<u8>,
+    pub(crate) record_scratch: Vec<u8>,
     /// Lazily created only for single-game PGN export; reused across reads.
     pub(crate) pgn_writer: Option<Box<crate::pgn::PgnWriter>>,
     /// Whether the walk keeps keys, asked of the sink once per run.
@@ -469,12 +470,8 @@ impl GameBuf {
                             "referenced 2CBA file is missing",
                         )
                     })?;
-                    let frame = segment.record_at(header.annotations_offset())?;
-                    // Keep the no-mmap frame alive in reusable per-game scratch.
-                    self.annotation.clear();
-                    self.annotation.extend_from_slice(frame.bytes());
-                    let native =
-                        cbvault_format::twocbh::Annotations::parse(&db.members().annotations, &self.annotation)?;
+                    let frame = segment.record_at_with(header.annotations_offset(), &mut self.annotation)?;
+                    let native = cbvault_format::twocbh::Annotations::from_record(frame);
                     for item in native.iter_items() {
                         item?;
                     }

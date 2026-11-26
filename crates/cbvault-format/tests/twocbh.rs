@@ -313,6 +313,7 @@ fn segment_rejects_overflowing_record_offsets() {
         for offset in [u64::MAX, u64::MAX - 7, u64::MAX - 15] {
             assert!(seg.total_at(offset).is_err());
             assert!(seg.record_at(offset).is_err());
+            assert!(seg.record_at_with(offset, &mut Vec::new()).is_err());
         }
     });
 }

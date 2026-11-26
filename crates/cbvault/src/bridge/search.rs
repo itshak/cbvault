@@ -1028,6 +1028,7 @@ fn for_each_position_key_range_v2(
         let mut out = Replay::default();
         let mut buf = GameBuf::with_capacity(super::walk::DEFAULT_PLY_ROOM);
         buf.set_wants(true, false);
+        let mut record = Vec::new();
         if is_cancelled() {
             out.cancelled = true;
             return Ok(out);
@@ -1053,14 +1054,14 @@ fn for_each_position_key_range_v2(
                 continue;
             }
             let at = header.moves_offset();
-            let seg_rec = match moves.record_at(at) {
+            let seg_rec = match moves.record_at_with(at, &mut record) {
                 Ok(r) => r,
                 Err(_) => {
                     out.stats.failures += 1;
                     continue;
                 }
             };
-            let game = match cbvault_format::twocbh::moves::GameMoves::from_record(moves.path(), seg_rec.record()) {
+            let game = match cbvault_format::twocbh::moves::GameMoves::from_record(moves.path(), seg_rec) {
                 Ok(g) => g,
                 Err(_) => {
                     out.stats.failures += 1;

@@ -123,6 +123,32 @@ impl Segment {
         Ok(total)
     }
 
+    fn checked_total(&self, offset: u64) -> Result<usize> {
+        let total = self.total_at(offset)? as usize;
+        if offset.checked_add(total as u64).is_none_or(|end| end > self.len) {
+            return Err(Error::corrupt(
+                &self.path,
+                offset,
+                format!("2CBH segment: a {total}-byte record does not fit in {}", self.len),
+            ));
+        }
+        Ok(total)
+    }
+
+    /// Validate a record, borrowing mapped bytes or a caller-owned reusable
+    /// buffer. The record is valid until the next use of that buffer.
+    pub fn record_at_with<'a>(&'a self, offset: u64, scratch: &'a mut Vec<u8>) -> Result<Record<'a>> {
+        let total = self.checked_total(offset)?;
+        let bytes = if let Some(bytes) = self.file.slice_at(offset, total) {
+            bytes
+        } else {
+            scratch.resize(total, 0);
+            self.file.read_into(offset, scratch)?;
+            scratch
+        };
+        Record::parse(&self.path, offset, bytes)
+    }
+
     /// The record at `offset`, validated as [`Record::parse`] validates it —
     /// which includes checking the record's own trailer against its head.
     ///
@@ -132,14 +158,7 @@ impl Segment {
     /// way; it keeps the buffer alive for the unmapped case and borrows
     /// nothing for the mapped one.
     pub fn record_at(&self, offset: u64) -> Result<SegmentRecord<'_>> {
-        let total = self.total_at(offset)? as usize;
-        if offset.checked_add(total as u64).is_none_or(|end| end > self.len) {
-            return Err(Error::corrupt(
-                &self.path,
-                offset,
-                format!("2CBH segment: a {total}-byte record does not fit in {}", self.len),
-            ));
-        }
+        let total = self.checked_total(offset)?;
         if let Some(slice) = self.file.slice_at(offset, total) {
             return SegmentRecord::parse(&self.path, offset, slice);
         }

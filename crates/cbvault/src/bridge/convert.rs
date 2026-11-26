@@ -153,15 +153,14 @@ impl<'db> Walker<'db> {
             Ok(s) => s,
             Err(e) => return self.failed(id, e, sink),
         };
-        let seg_rec = match seg.record_at(at) {
+        let seg_rec = match seg.record_at_with(at, &mut self.record) {
             Ok(r) => r,
             Err(e) => return self.failed(id, e, sink),
         };
-        let game =
-            match cbvault_format::twocbh::moves::GameMoves::from_record(&self.db.members().moves, seg_rec.record()) {
-                Ok(game) => game,
-                Err(e) => return self.failed(id, e, sink),
-            };
+        let game = match cbvault_format::twocbh::moves::GameMoves::from_record(&self.db.members().moves, seg_rec) {
+            Ok(game) => game,
+            Err(e) => return self.failed(id, e, sink),
+        };
         if let Err(e) = self.buf.walk_v2(id, at, &game) {
             return self.failed(id, e, sink);
         }
@@ -399,17 +398,15 @@ impl V2Chunk {
 }
 
 fn v2_read_annotations<'a>(
-    db: &Database,
+    db: &'a Database,
     offset: u64,
     scratch: &'a mut Vec<u8>,
 ) -> Result<cbvault_format::twocbh::Annotations<'a>> {
     let seg = db
         .annotations_segment()?
         .ok_or_else(|| Error::corrupt(&db.members().annotations, offset, "referenced 2CBA missing"))?;
-    let frame = seg.record_at(offset)?;
-    scratch.clear();
-    scratch.extend_from_slice(frame.bytes());
-    let anns = cbvault_format::twocbh::Annotations::parse(&db.members().annotations, scratch)?;
+    let frame = seg.record_at_with(offset, scratch)?;
+    let anns = cbvault_format::twocbh::Annotations::from_record(frame);
     for item in anns.iter_items() {
         item?;
     }
