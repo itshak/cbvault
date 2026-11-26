@@ -4,11 +4,13 @@ on:
     branches: [main]
   push:
     branches: [main, roadmap/reader-performance-and-benchmarks]
+  schedule:
+    - cron: '23 2 * * 1'
   workflow_dispatch:
     inputs:
       tier:
         type: choice
-        options: [smoke]
+        options: [smoke, rich, extreme]
         default: smoke
 permissions:
   contents: read
@@ -18,10 +20,14 @@ concurrency:
 jobs:
   paired:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        tier: ${{ fromJSON(github.event_name == 'push' && github.ref_name == 'roadmap/reader-performance-and-benchmarks' && '["smoke","rich","extreme"]' || format('["{0}"]', inputs.tier || (github.event_name == 'schedule' && 'rich') || 'smoke')) }}
     env:
       BASELINE: 59f66f921e82a813f96dd6f289084d7ca9f99416
-      TIER: ${{ inputs.tier || 'smoke' }}
+      TIER: ${{ matrix.tier }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4

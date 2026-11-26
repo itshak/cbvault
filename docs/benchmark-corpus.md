@@ -62,3 +62,13 @@ archive contains 110120 games instead of 120; quarantine it until provenance
 and intended contents are verified. The CTG corpus, independent ChessBase
 reference PGNs, full scale audit, allocation and RSS gates, and broader
 workloads remain pending. No private gold data is uploaded.
+
+The rich (100,000 games) and extreme (10,000 games, over 10M variation
+plies) native corpora also passed both full replay and matching cross-format PGN
+export. These are separate release assets; manual workflow tiers are available
+for each, with a weekly rich run after merging to main. Scale native CBH and
+2CBH have correct header counts (3,410,497 games; 2CBH has an extra reserved
+slot); full replay found two classic failures (games 226476 and 2712614), zero
+2CBH failures. The 3.43 GiB upload contains an approximately 7.94 GB CTG
+file. Its verified archive is kept local until book testing and split assets
+are possible; only the DB files were extracted to preserve disk space.

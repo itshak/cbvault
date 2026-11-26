@@ -108,6 +108,218 @@
           "sha256": "bffa14240c0ba936889af382f912ddfd4bbf07c386439aab7465b131cdd83a76"
         }
       }
+    },
+    "rich": {
+      "stem": "rich-100000",
+      "games": 100000,
+      "mainline_plies": 6717385,
+      "all_plies": 17353987,
+      "slots": {
+        "cbh": 100000,
+        "2cbh": 100001
+      },
+      "sha256": "35bc45ad9f22dd7a0324895578f86ca2f3fd2453e96c0a1c0860384bd4c311ed",
+      "url": "https://github.com/itshak/cbvault/releases/download/benchmark-corpus-20261125-v1/rich-100000-native-v1.tar.zst",
+      "export_sha256": {
+        "cbh": "60fb20a5261abd6f0700f4c575d261ceddcc11db4f3cb4a87405a39b2a884a0c",
+        "2cbh": "60fb20a5261abd6f0700f4c575d261ceddcc11db4f3cb4a87405a39b2a884a0c"
+      },
+      "members": {
+        "rich-100000.2cba": {
+          "bytes": 86953136,
+          "sha256": "fa21b52f854edcb7f70bb94ff257eb6b5c0d857605540272499e343d963553aa"
+        },
+        "rich-100000.2cbg": {
+          "bytes": 54287888,
+          "sha256": "28a244ee0041361df1f7245a62a651976b37b191651d3ee63b5b6ae0f68f9c5d"
+        },
+        "rich-100000.2cbh": {
+          "bytes": 19200192,
+          "sha256": "e4f08fedd33c28e78943e1134fd87a1ab926d007b935f856370b58efb8ceb44e"
+        },
+        "rich-100000.2lcd": {
+          "bytes": 229376,
+          "sha256": "ac0f31ab20f22edcc585986824a07a86e54a2853b42a664e9502c6f3a44382c8"
+        },
+        "rich-100000.2lgd": {
+          "bytes": 6115852,
+          "sha256": "97123c62946906d114421ab6c629be8e6736106fe3fcb38e1efa9adff4589892"
+        },
+        "rich-100000.2lid": {
+          "bytes": 13851411,
+          "sha256": "afa29b4d23d3a2054babb447d602ffb2dbd82ed1bb1adec0241b0614a4ee41f2"
+        },
+        "rich-100000.cba": {
+          "bytes": 49773544,
+          "sha256": "5b2dec65d52b1b1743b78d66ef188d40ae14753fd2ea9f1b9b871a5eacc5b948"
+        },
+        "rich-100000.cbc": {
+          "bytes": 94,
+          "sha256": "af50b298b4286021cce12449d1c9535296b987edd2f290307b8fab4cb8ff6031"
+        },
+        "rich-100000.cbe": {
+          "bytes": 32,
+          "sha256": "0f2b24067c28854c2caca9d1815dde5caa8d36743b6a92d230b3a0fb088b938f"
+        },
+        "rich-100000.cbg": {
+          "bytes": 20756057,
+          "sha256": "fe0ac471f41c5843ee2c8103676202f1e71b64dc5ce50fbf9ecf16dfc7a5a752"
+        },
+        "rich-100000.cbh": {
+          "bytes": 4600046,
+          "sha256": "35d2a1f199f42a23a6eefcb1079c9c49690b466553f924a6d8148cd0951105a7"
+        },
+        "rich-100000.cbj": {
+          "bytes": 12000032,
+          "sha256": "0268999a8b564365e52eb0a0a887b93ea3bb97a1c6ae0a55c23c875f07ca88b0"
+        },
+        "rich-100000.cbl": {
+          "bytes": 1649,
+          "sha256": "d596a62f00981be992b021b6baa6f7860be88cb023e388e73d8a061450683f15"
+        },
+        "rich-100000.cbm": {
+          "bytes": 32,
+          "sha256": "275bca850788b873782d43b7b3bd408168038a6fa43452fb11f4e82c4fd1a6a7"
+        },
+        "rich-100000.cbp": {
+          "bytes": 289204,
+          "sha256": "cd788af36149dc816cd908bccc067b17e8bbd362e4b467504e2b5aacb2324a1f"
+        },
+        "rich-100000.cbs": {
+          "bytes": 100,
+          "sha256": "b4ad8b4e80afd5df9c73e6bb0151710080868466cc2b5ab495996cd91a9da566"
+        },
+        "rich-100000.cbt": {
+          "bytes": 11516,
+          "sha256": "657181b82d71e415c02b99f54d1b1717333825cf47e9ccf690e08d7e951aa47f"
+        },
+        "rich-100000.cbtt": {
+          "bytes": 437,
+          "sha256": "92f08eac42f3ff3e4df9a7eaa894aea7dc4fd5c1f8c2af8fa2ca4a164d136d1d"
+        },
+        "rich-100000.cib": {
+          "bytes": 2627340,
+          "sha256": "bb64e74c031d0266de5aafbe080ec8dd84e8011785fd538e11cbdc95f5372f78"
+        },
+        "rich-100000.cib2": {
+          "bytes": 492364,
+          "sha256": "f2bc9405edaa6399e951643929752d908c35c86972fd4f1f61e866fcd9311262"
+        },
+        "rich-100000.cit": {
+          "bytes": 172652,
+          "sha256": "333170c7d52b8048e6d12e60d8b271308eec9b9a959cbb1bad74894fa0fe8a27"
+        },
+        "rich-100000.cit2": {
+          "bytes": 20,
+          "sha256": "2c9d641d5b446d7b2c0234ff240bc0dc35d03f2d9cd6b0a74cbad43b9f4dc9ab"
+        }
+      }
+    },
+    "extreme": {
+      "stem": "extreme-10000",
+      "games": 10000,
+      "mainline_plies": 651314,
+      "all_plies": 10807926,
+      "slots": {
+        "cbh": 10000,
+        "2cbh": 10001
+      },
+      "sha256": "f7582c0262f0b35fc7d8282edaeea929eedaf20a3d65766dc3677160f1b4df44",
+      "url": "https://github.com/itshak/cbvault/releases/download/benchmark-corpus-20261125-v1/extreme-10000-native-v1.tar.zst",
+      "export_sha256": {
+        "cbh": "04c629ddc81934c4f744b9bda5f4d2db3380102f24e318eb7888c635c9dd29bd",
+        "2cbh": "04c629ddc81934c4f744b9bda5f4d2db3380102f24e318eb7888c635c9dd29bd"
+      },
+      "members": {
+        "extreme-10000.2cba": {
+          "bytes": 465435064,
+          "sha256": "0ca0544d55aad01c84df993f50d40e90fa4666e0ebf881b37eeaa5057b0a62ae"
+        },
+        "extreme-10000.2cbg": {
+          "bytes": 28431736,
+          "sha256": "99cd2795ffe941a13020245b55e74b6d4abdbf1be559db069dfa660c1f1576da"
+        },
+        "extreme-10000.2cbh": {
+          "bytes": 1920192,
+          "sha256": "98445e8afe18fe8c7465f39eb156a4c65fa84af4d18a8a3d8b9a6f6a44a18920"
+        },
+        "extreme-10000.2lcd": {
+          "bytes": 102400,
+          "sha256": "0d11cb8b58a8e654613e4e523ea11c721a86f99760ebf4f3fb53d41d25091884"
+        },
+        "extreme-10000.2lgd": {
+          "bytes": 818188,
+          "sha256": "32b17b9344faca92f6453ac5087385ee031d93460d627a1e65f08b8126244d21"
+        },
+        "extreme-10000.2lid": {
+          "bytes": 4523150,
+          "sha256": "fcfad5b806bfb10e428f08a5f7b8bbf4cbde3dd87aa4fd0665df853b50e902e9"
+        },
+        "extreme-10000.cba": {
+          "bytes": 446501145,
+          "sha256": "c31a979e3cc0c318eae6bc436f44a99ffebab3c5e341e2ca391e91134917415d"
+        },
+        "extreme-10000.cbc": {
+          "bytes": 94,
+          "sha256": "720552c87a8537dd1470e4cacb9092329537f72296f185dd7f35ce519f05df20"
+        },
+        "extreme-10000.cbe": {
+          "bytes": 32,
+          "sha256": "0f2b24067c28854c2caca9d1815dde5caa8d36743b6a92d230b3a0fb088b938f"
+        },
+        "extreme-10000.cbg": {
+          "bytes": 13600056,
+          "sha256": "86de48e2050c4cead20ecc5effa0c33bc70830ba50558c2bfc62845a0928ec1e"
+        },
+        "extreme-10000.cbh": {
+          "bytes": 460046,
+          "sha256": "177fc8f230478b9c30519350f0f9a0792ed081f653e6c723b404816c0a5a3fda"
+        },
+        "extreme-10000.cbj": {
+          "bytes": 1200032,
+          "sha256": "ed957157fc671516cbea9a06931a33b6977f88064f0fc67e78f4e54007bf8798"
+        },
+        "extreme-10000.cbl": {
+          "bytes": 1649,
+          "sha256": "48a78ccc42bfce2a91aa85222edf7cc0aa4f15f92be342620c6e22b90db978e4"
+        },
+        "extreme-10000.cbm": {
+          "bytes": 32,
+          "sha256": "b7c5b4fd833475e42f827e97804a3a325f1332f91ce2d8497d2da6e8ccc3ff46"
+        },
+        "extreme-10000.cbp": {
+          "bytes": 94502,
+          "sha256": "8eeefa806f05ac3ea0502991bf643a34fd6cdf57530222dab6eaa785fac49895"
+        },
+        "extreme-10000.cbs": {
+          "bytes": 100,
+          "sha256": "68645f1f6c2c19a3434d43dccfb71cb7b7d95fb8efea15e1008bdf559af2f2a5"
+        },
+        "extreme-10000.cbt": {
+          "bytes": 725,
+          "sha256": "9d4f7f6432f6e70332c936b1ed21a522918fbdf08600a367432eb85d16973671"
+        },
+        "extreme-10000.cbtt": {
+          "bytes": 437,
+          "sha256": "a9ed8d8379afa192b0c450ef1a14e57f34ed8d73c1e5723ddeb6b4d7add38e51"
+        },
+        "extreme-10000.cib": {
+          "bytes": 301452,
+          "sha256": "10176869646abc0537a4b80130f88187e844ec9cbdbfd38dd55a293184ed0c09"
+        },
+        "extreme-10000.cib2": {
+          "bytes": 49292,
+          "sha256": "0086adb40c49b8763a62b0ed3b750606267874bcffe25ee67736f9b03b5a6254"
+        },
+        "extreme-10000.cit": {
+          "bytes": 56412,
+          "sha256": "a406e558baa4fea45ef81563e79a3b069038710ec4a4d3c293d18f8c93863f4b"
+        },
+        "extreme-10000.cit2": {
+          "bytes": 20,
+          "sha256": "275e256d006bd2e11ba4852b1d4c03bb844b8034990809c162fe87f9e6acb40c"
+        }
+      }
     }
   }
 }
