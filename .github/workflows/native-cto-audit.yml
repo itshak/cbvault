@@ -1,0 +1,38 @@
+name: Native CTO exhaustive routing audit
+on:
+  push:
+    branches: [experiment/ctg-native-lookup]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  routing:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      RAYON_NUM_THREADS: '4'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.97.1'
+          components: clippy
+      - name: Build and test native routing hypothesis
+        run: |
+          cargo +1.97.1 test --locked -p cbvault-format cto::
+          cargo +1.97.1 clippy --locked -p cbvault-format -p cbvault --lib --example native_cto_audit -- -D warnings
+          cargo +1.97.1 build --locked --release -p cbvault --example native_cto_audit
+      - name: Fetch checksum-verified public book
+        run: |
+          mkdir -p benchmark-report
+          python3 scripts/bench-corpus/native-book-fetch.py scripts/bench-corpus/native-book-manifest.json "$RUNNER_TEMP/book" > benchmark-report/fixture.json
+      - name: Check every stored key reaches its physical page
+        run: |
+          set -o pipefail
+          target/release/examples/native_cto_audit "$RUNNER_TEMP/book/realistic-3410497.ctg" | tee benchmark-report/cto.json
+          python3 -c 'import json; r=json.load(open("benchmark-report/cto.json")); assert r["positions"]==85834993 and r["missed"]==0 and r["ambiguous_routes"]==0'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-cto-audit
+          path: benchmark-report/
