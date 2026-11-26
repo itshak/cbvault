@@ -254,3 +254,49 @@ fn native_reader_refuses_damaged_and_missing_companions() {
     assert!(native.validate().is_err());
     assert!(native.probe(&root).is_err());
 }
+
+#[test]
+fn adaptive_reader_defers_scan_and_validates_once_on_miss() {
+    use cbvault::book::{AdaptiveBook, LookupMode, NativeProbe};
+    let temp = TempDb::create("adaptive_native");
+    let path = temp.write(".ctg", &connected_parent_child_book());
+    native_single_slot(&temp, 0);
+    let mut book = AdaptiveBook::open(&path).unwrap();
+    assert_eq!(book.mode(), LookupMode::NativeUnverified);
+    assert_eq!(book.positions(), None);
+    assert_eq!(book.damaged(), None);
+    let root = Board::startpos();
+    assert!(matches!(book.probe(&root).unwrap(), NativeProbe::Found(_)));
+    assert_eq!(book.mode(), LookupMode::NativeUnverified);
+    let missing = gigachess::fen::parse_fen("7k/8/8/8/8/8/8/K7 w - - 0 1").unwrap();
+    assert_eq!(book.probe(&missing).unwrap(), NativeProbe::Absent);
+    assert_eq!(book.mode(), LookupMode::NativeValidated);
+    assert_eq!(book.positions(), Some(2));
+    assert_eq!(book.probe(&missing).unwrap(), NativeProbe::Absent);
+}
+
+#[test]
+fn adaptive_reader_falls_back_without_inventing_absence() {
+    use cbvault::book::{AdaptiveBook, LookupMode, NativeProbe};
+    let root = Board::startpos();
+    let missing = gigachess::fen::parse_fen("7k/8/8/8/8/8/8/K7 w - - 0 1").unwrap();
+    for raw in [None, Some(u32::MAX), Some(999)] {
+        let temp = TempDb::create("adaptive_fallback");
+        let path = temp.write(".ctg", &minimal_valid_book());
+        if let Some(raw) = raw {
+            native_single_slot(&temp, raw);
+        }
+        let mut book = AdaptiveBook::open(&path).unwrap();
+        let fallback = Book::open(&path).unwrap();
+        assert_eq!(book.probe(&root).unwrap(), NativeProbe::Found(fallback.probe(&root).unwrap().unwrap()));
+        assert_eq!(book.mode(), LookupMode::Scan);
+        assert!(book.fallback_reason().is_some());
+        assert_eq!(book.probe(&missing).unwrap(), NativeProbe::Absent);
+    }
+    let temp = TempDb::create("adaptive_damaged");
+    let path = temp.write(".ctg", &malformed_unclosed_book());
+    let mut book = AdaptiveBook::open(&path).unwrap();
+    assert_eq!(book.mode(), LookupMode::Scan);
+    assert_eq!(book.damaged().unwrap().len(), 1);
+    assert_eq!(book.probe(&missing).unwrap(), NativeProbe::UnverifiedMiss);
+}

@@ -185,6 +185,120 @@ impl NativeBook {
     }
 }
 
+/// Which lookup mechanism the adaptive reader currently uses.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LookupMode {
+    /// Native directory, exact hits only until validation.
+    NativeUnverified,
+    /// Native directory whose entire routing has been validated.
+    NativeValidated,
+    /// Scan-based fallback. See [`AdaptiveBook::fallback_reason`].
+    Scan,
+}
+
+enum AdaptiveBackend {
+    Native(NativeBook),
+    Scan(Book),
+}
+
+/// Fast-opening reader with automatic fallback. It never treats an uncertain
+/// negative as absence. An exact native hit can be returned immediately; the
+/// first uncertain miss validates the directory or switches to a scan. As
+/// with other readers, all source files must remain immutable while open.
+///
+/// Use [`AdaptiveBook::validate`] explicitly before querying when complete
+/// routing and canonical-key precedence must be established from the start.
+pub struct AdaptiveBook {
+    path: std::path::PathBuf,
+    backend: AdaptiveBackend,
+    fallback_reason: Option<String>,
+}
+
+impl AdaptiveBook {
+    /// Open native companions first; if missing or unsupported, scan the CTG.
+    pub fn open(path: impl AsRef<Path>) -> Result<Self> {
+        let path = cbvault_format::ctg::ctg_path(path.as_ref());
+        let (backend, fallback_reason) = match NativeBook::open(&path) {
+            Ok(book) => (AdaptiveBackend::Native(book), None),
+            Err(error) => (AdaptiveBackend::Scan(Book::open(&path)?), Some(error.to_string())),
+        };
+        Ok(Self { path, backend, fallback_reason })
+    }
+
+    /// Current lookup mode, including whether absence has been established.
+    pub fn mode(&self) -> LookupMode {
+        match &self.backend {
+            AdaptiveBackend::Native(book) if book.positions().is_some() => LookupMode::NativeValidated,
+            AdaptiveBackend::Native(_) => LookupMode::NativeUnverified,
+            AdaptiveBackend::Scan(_) => LookupMode::Scan,
+        }
+    }
+
+    /// Why native lookup was abandoned, if applicable.
+    pub fn fallback_reason(&self) -> Option<&str> {
+        self.fallback_reason.as_deref()
+    }
+
+    /// Indexed or validated position count; unknown on a quick native open.
+    /// For a damaged fallback book this counts only readable entries.
+    pub fn positions(&self) -> Option<u64> {
+        match &self.backend {
+            AdaptiveBackend::Native(book) => book.positions(),
+            AdaptiveBackend::Scan(book) => Some(book.positions() as u64),
+        }
+    }
+
+    /// Damage detected by the scan-based fallback. Unknown before native
+    /// validation; an empty slice is not a certificate of intact data.
+    pub fn damaged(&self) -> Option<&[Damage]> {
+        match &self.backend {
+            AdaptiveBackend::Scan(book) => Some(book.damaged()),
+            AdaptiveBackend::Native(book) if book.positions().is_some() => Some(&[]),
+            _ => None,
+        }
+    }
+
+    fn fallback(&mut self, reason: Error) -> Result<()> {
+        let scan = Book::open(&self.path)?;
+        self.backend = AdaptiveBackend::Scan(scan);
+        self.fallback_reason = Some(reason.to_string());
+        Ok(())
+    }
+
+    /// Establish native routing completeness now, or use the scan fallback
+    /// if it cannot be established. A damaged fallback still reports uncertainty.
+    pub fn validate(&mut self) -> Result<()> {
+        if let AdaptiveBackend::Native(book) = &mut self.backend
+            && book.positions().is_none()
+            && let Err(error) = book.validate()
+        {
+            self.fallback(error)?;
+        }
+        Ok(())
+    }
+
+    /// Probe a position, transparently resolving a first uncertain native miss
+    /// by validating or falling back. A damaged scan can return an exact hit,
+    /// but cannot claim the book lacks a position.
+    pub fn probe(&mut self, board: &Board) -> Result<NativeProbe<BookPosition>> {
+        if let AdaptiveBackend::Native(book) = &self.backend {
+            match book.probe(board) {
+                Ok(NativeProbe::UnverifiedMiss) => self.validate()?,
+                Ok(result) => return Ok(result),
+                Err(error) => self.fallback(error)?,
+            }
+        }
+        match &self.backend {
+            AdaptiveBackend::Native(book) => book.probe(board),
+            AdaptiveBackend::Scan(book) => Ok(match book.probe(board)? {
+                Some(found) => NativeProbe::Found(found),
+                None if book.damaged().is_empty() => NativeProbe::Absent,
+                None => NativeProbe::UnverifiedMiss,
+            }),
+        }
+    }
+}
+
 /// A page the index build could not read completely.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Damage {
