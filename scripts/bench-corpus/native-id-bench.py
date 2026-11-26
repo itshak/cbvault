@@ -42,18 +42,26 @@ for ext in ("cbh","2cbh"):
     for op in ("all","broad","selective"):
         for mapped in (True,False):
             for n in (1,2,4):
+                # The old borrowed classic name API cannot run without mmap.
+                # Check candidate against the exact mapped oracle, not a fake speedup.
+                active = {"head": bins["head"]} if ext == "cbh" and not mapped else bins
                 rows = []
                 for rep in range(-1,5):
                     for side in (("base","head") if rep%2==0 else ("head","base")):
+                        if side not in active: continue
                         data = run(bins[side],db,op,n,mapped)
                         if rep>=0:rows.append(dict(side=side,repetition=rep,**data))
                 row = dict(format=ext,workload=op,mapped=mapped,threads=n)
-                for side,exe in bins.items():
+                for side,exe in active.items():
                     samples = [r for r in rows if r["side"]==side]
                     row[side] = {k:statistics.median(r[k] for r in samples) for k in ("seconds","peak_rss_kib")}
                     row[side]["allocation_calls"] = run(exe,db,op,n,mapped,True)["allocation_calls"]
                     row[side]["seconds_range"] = [min(r["seconds"] for r in samples),max(r["seconds"] for r in samples)]
-                row["speedup"]=row["base"]["seconds"]/max(row["head"]["seconds"],1e-12)
+                if "base" in row:
+                    row["speedup"]=row["base"]["seconds"]/max(row["head"]["seconds"],1e-12)
+                else:
+                    row["base"] = {"status": "unsupported: classic borrowed names require mmap"}
+                    row["speedup"] = None
                 report["summary"].append(row)
                 report["samples"].append(dict(format=ext,workload=op,mapped=mapped,threads=n,rows=rows))
                 save()
