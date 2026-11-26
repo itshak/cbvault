@@ -142,22 +142,24 @@ pub fn stored_form(board: &Board) -> Stored {
 /// Usually one. A key whose padding falls in a case never observed in a real
 /// book gets the alternative too, so the lookup tries both rather than guess.
 pub fn keys(stored: &Stored) -> Vec<([u8; MAX_ENCODED], usize)> {
+    key_candidates(stored).collect()
+}
+
+/// Allocation-free key candidates in exactly the same order as [`keys`].
+pub fn key_candidates(stored: &Stored) -> impl Iterator<Item = ([u8; MAX_ENCODED], usize)> {
     let raw = &stored.raw;
     let (pad, observed) = position::observed_aligned_pad(raw.castling != 0, raw.ep_file.is_some());
-    let mut out = Vec::with_capacity(2);
     let mut buf = [0; MAX_ENCODED];
-    if let Some(len) = position::encode_with(raw, pad, &mut buf) {
-        out.push((buf, len));
-    }
-    if !observed {
+    let first = position::encode_with(raw, pad, &mut buf).map(|len| (buf, len));
+    let second = if observed {
+        None
+    } else {
         let other = if pad == AlignedPad::None { AlignedPad::FullByte } else { AlignedPad::None };
-        if let Some(len) = position::encode_with(raw, other, &mut buf)
-            && out.iter().all(|(k, l)| k[..*l] != buf[..len])
-        {
-            out.push((buf, len));
-        }
-    }
-    out
+        position::encode_with(raw, other, &mut buf)
+            .filter(|&len| first.as_ref().is_none_or(|(k, l)| k[..*l] != buf[..len]))
+            .map(|len| (buf, len))
+    };
+    [first, second].into_iter().flatten()
 }
 
 /// The stored square (`rank * 8 + file`) of the `ordinal`-th white piece of
@@ -172,13 +174,24 @@ fn nth_piece(raw: &RawPosition, kind: Kind, ordinal: u8) -> Option<usize> {
 
 /// Turns move code `code` of the stored position into a legal move of `board`.
 pub fn decode_move(board: &Board, stored: &Stored, code: MoveCode) -> Result<Move, MoveError> {
+    let legal = board.legal_moves();
+    decode_move_with_legal(board, stored, code, &legal)
+}
+
+/// Resolve a code with a legal move list already generated for this exact board.
+/// The caller must supply the complete legal move list for `board`.
+pub fn decode_move_with_legal(
+    board: &Board,
+    stored: &Stored,
+    code: MoveCode,
+    legal: &[Move],
+) -> Result<Move, MoveError> {
     let from_i = nth_piece(&stored.raw, code.kind, code.ordinal).ok_or(MoveError::NoSuchPiece)?;
     let (file, rank) = (from_i % 8, from_i / 8);
     let to_i = ((rank + usize::from(code.drank)) % 8) * 8 + (file + usize::from(code.dfile)) % 8;
     let from = real_square(stored, from_i);
     let to = real_square(stored, to_i);
     let castle = code.kind == Kind::King && code.drank == 0 && (code.dfile == 2 || code.dfile == 6);
-    let legal = board.legal_moves();
     let mut found: Option<Move> = None;
     for &mv in legal.iter() {
         if mv.from() != from {
@@ -206,7 +219,12 @@ pub fn decode_move(board: &Board, stored: &Stored, code: MoveCode) -> Result<Mov
 /// The stored position as a `gigachess` board with White to move, as the book
 /// sees it. `None` when it is not a valid chess position.
 pub fn board_of(raw: &RawPosition) -> Option<Board> {
-    let mut fen = String::with_capacity(90);
+    let mut fen = [0u8; 96];
+    let mut len = 0usize;
+    let mut append = |bytes: &[u8]| {
+        fen[len..len + bytes.len()].copy_from_slice(bytes);
+        len += bytes.len();
+    };
     for rank in (0..8).rev() {
         let mut empty = 0;
         for file in 0..8 {
@@ -214,7 +232,7 @@ pub fn board_of(raw: &RawPosition) -> Option<Board> {
                 None => empty += 1,
                 Some(m) => {
                     if empty > 0 {
-                        fen.push(char::from(b'0' + empty));
+                        append(&[b'0' + empty]);
                         empty = 0;
                     }
                     let c = match m.kind {
@@ -225,38 +243,42 @@ pub fn board_of(raw: &RawPosition) -> Option<Board> {
                         Kind::Queen => 'q',
                         Kind::King => 'k',
                     };
-                    fen.push(if m.white { c.to_ascii_uppercase() } else { c });
+                    append(&[if m.white { c.to_ascii_uppercase() } else { c } as u8]);
                 }
             }
         }
         if empty > 0 {
-            fen.push(char::from(b'0' + empty));
+            append(&[b'0' + empty]);
         }
         if rank > 0 {
-            fen.push('/');
+            append(b"/");
         }
     }
-    fen.push_str(" w ");
+    append(b" w ");
     let rights =
         [(CASTLE_WHITE_KING, 'K'), (CASTLE_WHITE_QUEEN, 'Q'), (CASTLE_BLACK_KING, 'k'), (CASTLE_BLACK_QUEEN, 'q')];
-    let before = fen.len();
     for (m, c) in rights {
         if raw.castling & m != 0 {
-            fen.push(c);
+            append(&[c as u8]);
         }
     }
-    if fen.len() == before {
-        fen.push('-');
+    if raw.castling & 0xf == 0 {
+        append(b"-");
     }
     match raw.ep_file {
         Some(f) => {
-            fen.push(' ');
-            fen.push(char::from(b'a' + (f & 7)));
-            fen.push_str("6 0 1");
+            append(&[b' ', b'a' + (f & 7)]);
+            append(b"6 0 1");
         }
-        None => fen.push_str(" - 0 1"),
+        None => append(b" - 0 1"),
     }
-    gigachess::fen::parse_fen(&fen).ok()
+    gigachess::fen::parse_fen(std::str::from_utf8(&fen[..len]).ok()?).ok()
+}
+
+/// Decode a raw byte using the already generated complete legal move list.
+pub fn decode_byte_with_legal(board: &Board, stored: &Stored, byte: u8, legal: &[Move]) -> Result<Move, MoveError> {
+    let code = cbvault_format::ctg::move_code(byte).ok_or(MoveError::UnknownByte(byte))?;
+    decode_move_with_legal(board, stored, code, legal)
 }
 
 /// [`decode_move`] for a raw move byte.
@@ -276,6 +298,26 @@ mod tests {
         0x56, 0xb6, 0x0f, 0x79, 0x60, 0xf3, 0xa6, 0x0f, 0x58, 0xb0, 0x78, 0xe0, 0xc1, 0xe1, 0xa6, 0x0f, 0x59, 0x60,
         0xf3, 0xb6, 0x0f, 0x7f,
     ];
+
+    #[test]
+    fn shared_legal_list_and_stack_keys_preserve_decoding() {
+        for fen in [
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1",
+            "4k3/P7/8/3pP3/8/8/8/4K3 w - d6 0 1",
+            "7k/8/8/8/8/2N5/NN6/1K6 w - - 0 1",
+        ] {
+            let board = parse_fen(fen).unwrap();
+            let stored = stored_form(&board);
+            assert_eq!(keys(&stored), key_candidates(&stored).collect::<Vec<_>>());
+            let legal = board.legal_moves();
+            for byte in 0..=255u8 {
+                assert_eq!(decode_byte(&board, &stored, byte), decode_byte_with_legal(&board, &stored, byte, &legal));
+            }
+            let canonical = board_of(&stored.raw).unwrap();
+            assert_eq!(stored.raw, stored_form(&canonical).raw);
+        }
+    }
 
     #[test]
     fn scale_book_third_piece_moves() {

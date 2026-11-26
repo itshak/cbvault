@@ -167,13 +167,14 @@ impl<'a> Entries<'a> {
     fn next_entry(&mut self) -> std::result::Result<Entry<'a>, (usize, String)> {
         let start = self.at;
         let page = self.page;
-        let key_len = usize::from(*page.get(start).ok_or((start, "entry past the bytes used".to_string()))? & 0x1F);
+        let key_len =
+            usize::from(*page.get(start).ok_or_else(|| (start, "entry past the bytes used".to_string()))? & 0x1F);
         if key_len < 2 {
             return Err((start, format!("position length {key_len}")));
         }
         let moves_at = start + key_len;
         let moves_len =
-            usize::from(*page.get(moves_at).ok_or((moves_at, "move section past the bytes used".to_string()))?);
+            usize::from(*page.get(moves_at).ok_or_else(|| (moves_at, "move section past the bytes used".to_string()))?);
         if moves_len == 0 || moves_len % 2 == 0 {
             return Err((moves_at, format!("move section length {moves_len} is not 1 + 2n")));
         }
@@ -182,7 +183,7 @@ impl<'a> Entries<'a> {
         let stats: &[u8; STATS_LEN] = page
             .get(stats_at..end)
             .and_then(|s| s.try_into().ok())
-            .ok_or((stats_at, "statistics past the bytes used".to_string()))?;
+            .ok_or_else(|| (stats_at, "statistics past the bytes used".to_string()))?;
         self.at = end;
         Ok(Entry {
             key: &page[start..moves_at],

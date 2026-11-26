@@ -149,3 +149,27 @@ validates offsets without arithmetic overflow, borrows names in PGN tag
 writing, and reuses a lazy PGN writer inside GameBuf for random export.
 Local targeted mapped/unmapped tests and Clippy passed; paired CI is the
 performance authority.
+
+### Verified reader experiments (2026-11-26)
+
+All timings below are paired measurements on the checksum-pinned public native
+corpus. They are not comparisons to other libraries. The ID-only API deliberately
+returns less data than a named scan; it is appropriate when the consumer needs
+only IDs, not a replacement for callers that require metadata.
+
+| Experiment | Evidence | Result |
+|---|---|---|
+| Reused PGN buffers | [45847322315](https://github.com/itshak/cbvault/actions/runs/45847322315) | All five tiers pass. |
+| CTG key/entry allocations and legal generation | [45849147120](https://github.com/itshak/cbvault/actions/runs/45849147120) | 85,834,993 entries and 87,463,673 moves; zero strict errors. Open 3.85 -> 2.56 s; open allocations 257,505,985 -> 1,006; lookup p95 3.89 -> 1.64 us. |
+| ID-only scan | [45850795524](https://github.com/itshak/cbvault/actions/runs/45850795524) | All five tiers pass. Scale mapped four-worker all-ID scan 35.68x CBH, 23.51x 2CBH; broad 18.24x and 12.82x. Unmapped 2CBH broad 51.10x. Old classic named scan cannot run unmapped; no ratio claimed. |
+| Reusable context | [45852216322](https://github.com/itshak/cbvault/actions/runs/45852216322) | All four tiers pass. Scale 16,384-record repeated requests: 1.57x CBH, 1.27x 2CBH, mapped four workers. |
+| Child statistics | [45851071642](https://github.com/itshak/cbvault/actions/runs/45851071642) | Full verification and all-child fingerprint pass; 0.648 -> 0.572 s, 188,976 -> 32,700 lookup allocations. Parent p95 increased on this runner; do not claim universally faster lookup. |
+| Bounded fallback index | [45851279337](https://github.com/itshak/cbvault/actions/runs/45851279337) | Correct but no demonstrated reduction in process peak RSS or material startup gain. Kept experimental. |
+| Reusable record scratch | [45852516392](https://github.com/itshak/cbvault/actions/runs/45852516392) | All four tiers pass, but random export timings mixed, so not consolidated wholesale. |
+| Native CTO directory | [45851944861](https://github.com/itshak/cbvault/actions/runs/45851944861) | Every key routed to its real page, zero missing or ambiguous routes. Native directory open 0.10 ms (not full reader startup). Native-reader differential benchmark separately pending. |
+
+The integration branch combines the verified CTG hot path, child statistics,
+ID-only scan and reusable execution context. Continuous conversion awaits its
+scale result. Separate private golden PGNs, additional CTG variants and
+maintainer-created promotion-overflow companions are not validated by these
+runs. No compatibility or release claim until the combined CI gates pass.

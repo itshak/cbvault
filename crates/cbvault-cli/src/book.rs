@@ -9,7 +9,7 @@
 
 use std::time::Instant;
 
-use cbvault::book::{Book, BookPosition};
+use cbvault::book::{Book, BookPosition, BookPositionStats};
 use gigachess::Board;
 
 use super::{USAGE, json_str};
@@ -85,7 +85,7 @@ struct Row {
     san: String,
     uci: String,
     error: Option<String>,
-    child: Option<BookPosition>,
+    child: Option<BookPositionStats>,
 }
 
 impl Row {
@@ -147,7 +147,7 @@ fn run_probe(mut args: impl Iterator<Item = String>) -> CliResult {
     };
     play_moves(&mut board, &moves)?;
     let (book, secs) = open(&path)?;
-    let Some(found) = book.probe(&board)? else {
+    let Some(tree) = book.probe_tree(&board)? else {
         if json {
             println!("{{\"fen\":{},\"found\":false}}", json_str(&board.to_fen()));
         } else {
@@ -155,8 +155,9 @@ fn run_probe(mut args: impl Iterator<Item = String>) -> CliResult {
         }
         return Ok(false);
     };
+    let found = tree.parent;
     let mut rows: Vec<Row> = Vec::with_capacity(found.moves.len());
-    for m in &found.moves {
+    for (m, child) in found.moves.iter().zip(tree.children) {
         match m.mv {
             Ok(mv) => rows.push(Row {
                 byte: m.byte,
@@ -164,7 +165,7 @@ fn run_probe(mut args: impl Iterator<Item = String>) -> CliResult {
                 san: gigachess::san::move_to_san(&board, mv).map_or_else(|| mv.to_string(), |s| s.to_string()),
                 uci: mv.to_string(),
                 error: None,
-                child: book.probe_after(&board, mv)?,
+                child,
             }),
             Err(e) => rows.push(Row {
                 byte: m.byte,
