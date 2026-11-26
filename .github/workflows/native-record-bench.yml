@@ -1,0 +1,92 @@
+name: Native reusable record buffers
+on:
+  push:
+    branches: [experiment/v2-record-scratch]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: native-corpus-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  paired:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        tier: [smoke, rich, extreme, standard]
+    env:
+      TIER: ${{ matrix.tier }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select verified baseline and preflight disk
+        id: corpus
+        run: |
+          python3 - <<'PY'
+          import json, os, shutil
+          m = json.load(open("scripts/bench-corpus/native-manifest.json"))["tiers"][os.environ["TIER"]]
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              print("baseline=84c5868ed4ac7f934d25d5b29beae624e75ca2bd", file=f)
+          # Extracted DB, archive, export scratch, and two release builds.
+          needed = sum(x["bytes"] for x in m["members"].values()) + (3 * 1024**3)
+          if os.environ["TIER"] == "scale":
+              needed += 4 * 1024**3
+          elif os.environ["TIER"] == "standard":
+              needed += 2 * 1024**3
+          assert shutil.disk_usage(os.environ["RUNNER_TEMP"]).free >= needed, "insufficient runner disk"
+          PY
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.corpus.outputs.baseline }}
+          path: baseline-src
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.97.1'
+          components: clippy
+      - name: Fetch and verify native corpus
+        run: |
+          set -euo pipefail
+          read -r stem sha url < <(python3 -c 'import json,os; m=json.load(open("scripts/bench-corpus/native-manifest.json"))["tiers"][os.environ["TIER"]]; print(m["stem"],m["sha256"],m["url"])')
+          curl --fail --location --retry 3 "$url" -o "$RUNNER_TEMP/fixture.tar.zst"
+          python3 scripts/bench-corpus/native-fixtures.py "$RUNNER_TEMP/fixture.tar.zst" "$sha" "$stem" "$RUNNER_TEMP/native" > "$RUNNER_TEMP/member-hashes.json"
+          python3 - <<'PY'
+          import json, os, pathlib
+          expected = json.load(open("scripts/bench-corpus/native-manifest.json"))["tiers"][os.environ["TIER"]]["members"]
+          actual = json.loads((pathlib.Path(os.environ["RUNNER_TEMP"])/"member-hashes.json").read_text())
+          assert actual == expected, "native companion hashes differ"
+          PY
+          df -h "$RUNNER_TEMP"
+      - name: Build release baseline and candidate
+        run: |
+          cargo +1.97.1 build --locked --release -p cbvault-cli --manifest-path baseline-src/Cargo.toml --target-dir "$RUNNER_TEMP/base-target"
+          cargo +1.97.1 build --locked --release -p cbvault-cli --target-dir "$RUNNER_TEMP/head-target"
+          cp crates/cbvault/examples/native_workload.rs baseline-src/crates/cbvault/examples/native_workload.rs
+          cargo +1.97.1 build --locked --release -p cbvault --example native_workload --manifest-path baseline-src/Cargo.toml --target-dir "$RUNNER_TEMP/base-target"
+          cargo +1.97.1 build --locked --release -p cbvault --example native_workload --target-dir "$RUNNER_TEMP/head-target"
+      - name: Streaming correctness and exact cancellation regressions
+        if: matrix.tier == 'smoke'
+        run: |
+          cargo +1.97.1 test --locked --release -p cbvault-format --test twocbh --target-dir "$RUNNER_TEMP/head-target"
+          cargo +1.97.1 test --locked --release -p cbvault --test twocbh_bridge --target-dir "$RUNNER_TEMP/head-target"
+          CBVAULT_NO_MMAP=1 cargo +1.97.1 test --locked --release -p cbvault --test twocbh_bridge v2_continuous_stream_is_ordered_and_cancelled_at_exact_prefix --target-dir "$RUNNER_TEMP/head-target"
+          cargo +1.97.1 clippy --locked -p cbvault --lib --example native_workload --target-dir "$RUNNER_TEMP/head-target" -- -D warnings
+      - name: Verify and benchmark both database generations
+        run: |
+          mkdir -p benchmark-report
+          { rustc --version; uname -a; lscpu; echo "base=${{ steps.corpus.outputs.baseline }}"; git rev-parse HEAD; } > benchmark-report/environment.txt
+          python3 scripts/bench-corpus/native-bench.py --tier "$TIER" --fixtures "$RUNNER_TEMP/native" --base "$RUNNER_TEMP/base-target/release/cbvault" --head "$RUNNER_TEMP/head-target/release/cbvault" --base-workload "$RUNNER_TEMP/base-target/release/examples/native_workload" --head-workload "$RUNNER_TEMP/head-target/release/examples/native_workload" --report benchmark-report/results.json --repetitions 5
+      - name: Random reads under both memory mapping modes
+        run: |
+          python3 scripts/bench-corpus/native-random-mapping-bench.py --tier "$TIER" --fixtures "$RUNNER_TEMP/native" --base "$RUNNER_TEMP/base-target/release/examples/native_workload" --head "$RUNNER_TEMP/head-target/release/examples/native_workload" --report benchmark-report/random-mapping.json
+      - name: Compare streaming, position search and cancellation
+        run: |
+          python3 scripts/bench-corpus/native-stream-bench.py --tier "$TIER" --fixtures "$RUNNER_TEMP/native" --base "$RUNNER_TEMP/base-target/release/examples/native_workload" --head "$RUNNER_TEMP/head-target/release/examples/native_workload" --report benchmark-report/stream.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-benchmark-${{ env.TIER }}-${{ github.run_id }}
+          path: benchmark-report/
+          retention-days: 14
+          if-no-files-found: ignore
