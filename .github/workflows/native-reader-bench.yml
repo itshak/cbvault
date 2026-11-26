@@ -1,7 +1,7 @@
-name: Native CTO reader differential benchmark
+name: Adaptive CTG reader correctness and latency
 on:
   push:
-    branches: [experiment/ctg-native-reader]
+    branches: [experiment/ctg-adaptive-reader]
   workflow_dispatch:
 permissions:
   contents: read
@@ -22,6 +22,7 @@ jobs:
           cargo +1.97.1 test --locked -p cbvault-format cto::
           cargo +1.97.1 test --locked -p cbvault --test ctg_regressions
           CBVAULT_NO_MMAP=1 cargo +1.97.1 test --locked -p cbvault --test ctg_regressions native_reader_
+          CBVAULT_NO_MMAP=1 cargo +1.97.1 test --locked -p cbvault --test ctg_regressions adaptive_reader_
           cargo +1.97.1 clippy --locked -p cbvault --lib --example native_reader_workload -- -D warnings
           cargo +1.97.1 build --locked --release -p cbvault --example native_reader_workload
       - name: Fetch checksum-verified public book
