@@ -1,7 +1,7 @@
 name: Native CTG benchmarks
 on:
   push:
-    branches: [roadmap/reader-performance-and-benchmarks, roadmap/ctg-native-benchmarks, experiment/ctg-hot-path]
+    branches: [roadmap/reader-performance-and-benchmarks, roadmap/ctg-native-benchmarks, experiment/ctg-hot-path, experiment/ctg-stats-only]
     paths:
       - '.github/workflows/native-book-bench.yml'
       - 'scripts/bench-corpus/native-book-*'
@@ -23,12 +23,12 @@ jobs:
     timeout-minutes: 90
     env:
       RAYON_NUM_THREADS: '4'
-      BASELINE: 39a9552852973abd63e4f84caa74486035070ed0
+      BASELINE: bd87af0d0199f66cbec4306db2462c2463707566
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
-          ref: 39a9552852973abd63e4f84caa74486035070ed0
+          ref: bd87af0d0199f66cbec4306db2462c2463707566
           path: baseline-src
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@master
@@ -40,7 +40,7 @@ jobs:
           set -euo pipefail
           cargo +1.97.1 build --locked --release -p cbvault-cli --manifest-path baseline-src/Cargo.toml --target-dir "$RUNNER_TEMP/base-target"
           cargo +1.97.1 build --locked --release -p cbvault-cli --target-dir "$RUNNER_TEMP/head-target"
-          cp crates/cbvault/examples/native_book_workload.rs baseline-src/crates/cbvault/examples/native_book_workload.rs
+          sed -e s/probe_stats_after/probe_after/g -e "s/c.continuation_count/c.moves.len()/g" crates/cbvault/examples/native_book_workload.rs > baseline-src/crates/cbvault/examples/native_book_workload.rs
           cargo +1.97.1 build --locked --release -p cbvault --example native_book_workload --manifest-path baseline-src/Cargo.toml --target-dir "$RUNNER_TEMP/base-target"
           cargo +1.97.1 build --locked --release -p cbvault --example native_book_workload --target-dir "$RUNNER_TEMP/head-target"
       - name: CTG correctness regressions
