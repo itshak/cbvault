@@ -23,6 +23,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: '1.97.1'
+          components: clippy
       - name: Reproduce and verify all public special sources
         run: |
           set -euo pipefail

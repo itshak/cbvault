@@ -3,7 +3,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, roadmap/reader-performance-and-benchmarks, roadmap/promotion-overflow-and-readers]
+    branches: [main, roadmap/reader-performance-and-benchmarks, roadmap/promotion-overflow-and-readers, experiment/v2-continuous-stream]
   schedule:
     - cron: '23 2 * * 1'
   workflow_dispatch:
@@ -20,11 +20,11 @@ concurrency:
 jobs:
   paired:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
-        tier: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', inputs.tier) || github.event_name == 'schedule' && '["standard","rich","extreme"]' || github.event_name == 'push' && (github.ref_name == 'roadmap/reader-performance-and-benchmarks' || github.ref_name == 'roadmap/promotion-overflow-and-readers') && '["smoke","rich","extreme","standard","scale"]' || '["smoke","extreme"]') }}
+        tier: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', inputs.tier) || github.event_name == 'schedule' && '["standard","rich","extreme"]' || github.event_name == 'push' && (github.ref_name == 'roadmap/reader-performance-and-benchmarks' || github.ref_name == 'roadmap/promotion-overflow-and-readers' || github.ref_name == 'experiment/v2-continuous-stream') && '["smoke","rich","extreme","standard","scale"]' || '["smoke","extreme"]') }}
     env:
       TIER: ${{ matrix.tier }}
     steps:
@@ -36,7 +36,7 @@ jobs:
           import json, os, shutil
           m = json.load(open("scripts/bench-corpus/native-manifest.json"))["tiers"][os.environ["TIER"]]
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-              print("baseline=" + ("7feac6315cdd7040fc194d1b4b89f4f448372aaa" if os.environ["GITHUB_REF_NAME"] == "roadmap/promotion-overflow-and-readers" else m["baseline"]), file=f)
+              print("baseline=" + {"roadmap/promotion-overflow-and-readers": "7feac6315cdd7040fc194d1b4b89f4f448372aaa", "experiment/v2-continuous-stream": "4bdcb5bd6bad314647fc26203f78c7bae7254d77"}.get(os.environ["GITHUB_REF_NAME"], m["baseline"]), file=f)
           # Extracted DB, archive, export scratch, and two release builds.
           needed = sum(x["bytes"] for x in m["members"].values()) + (3 * 1024**3)
           if os.environ["TIER"] == "scale":
@@ -53,6 +53,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: '1.97.1'
+          components: clippy
       - name: Fetch and verify native corpus
         run: |
           set -euo pipefail
@@ -73,11 +74,20 @@ jobs:
           cp crates/cbvault/examples/native_workload.rs baseline-src/crates/cbvault/examples/native_workload.rs
           cargo +1.97.1 build --locked --release -p cbvault --example native_workload --manifest-path baseline-src/Cargo.toml --target-dir "$RUNNER_TEMP/base-target"
           cargo +1.97.1 build --locked --release -p cbvault --example native_workload --target-dir "$RUNNER_TEMP/head-target"
+      - name: Streaming correctness and exact cancellation regressions
+        if: matrix.tier == 'smoke'
+        run: |
+          cargo +1.97.1 test --locked --release -p cbvault --test twocbh_bridge --target-dir "$RUNNER_TEMP/head-target"
+          CBVAULT_NO_MMAP=1 cargo +1.97.1 test --locked --release -p cbvault --test twocbh_bridge v2_continuous_stream_is_ordered_and_cancelled_at_exact_prefix --target-dir "$RUNNER_TEMP/head-target"
+          cargo +1.97.1 clippy --locked -p cbvault --lib --example native_workload --target-dir "$RUNNER_TEMP/head-target" -- -D warnings
       - name: Verify and benchmark both database generations
         run: |
           mkdir -p benchmark-report
           { rustc --version; uname -a; lscpu; echo "base=${{ steps.corpus.outputs.baseline }}"; git rev-parse HEAD; } > benchmark-report/environment.txt
           python3 scripts/bench-corpus/native-bench.py --tier "$TIER" --fixtures "$RUNNER_TEMP/native" --base "$RUNNER_TEMP/base-target/release/cbvault" --head "$RUNNER_TEMP/head-target/release/cbvault" --base-workload "$RUNNER_TEMP/base-target/release/examples/native_workload" --head-workload "$RUNNER_TEMP/head-target/release/examples/native_workload" --report benchmark-report/results.json --repetitions 5
+      - name: Compare streaming, position search and cancellation
+        run: |
+          python3 scripts/bench-corpus/native-stream-bench.py --tier "$TIER" --fixtures "$RUNNER_TEMP/native" --base "$RUNNER_TEMP/base-target/release/examples/native_workload" --head "$RUNNER_TEMP/head-target/release/examples/native_workload" --report benchmark-report/stream.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
