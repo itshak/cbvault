@@ -696,6 +696,11 @@ impl SearchContext {
         self.scan_ids_range(db, 1, 0, filter)
     }
 
+    /// Exact count and bounded page, reusing this worker pool.
+    pub fn scan_id_page(&self, db: &Database, filter: &Filter, offset: u64, limit: usize) -> Result<IdPage> {
+        scan_id_page_impl(db, filter, offset, limit, self.threads, self.pool.as_ref())
+    }
+
     /// Materialized metadata results, over an inclusive range.
     pub fn scan_range<'db>(&self, db: &'db Database, first: u32, last: u32, filter: &Filter) -> Result<Scan<'db>> {
         scan_ranges(db, &ranges_of(db, first, last), filter, self.threads, self.pool.as_ref())
@@ -801,39 +806,7 @@ fn scan_ids_range_impl(
     let ranges = ranges_of(db, first, last);
     let scan_chunk = |&(first, last): &(u32, u32)| -> Result<Vec<u32>> {
         let mut out = Vec::new();
-        match db.header_source() {
-            super::HeaderSource::Classic(_) => {
-                for header in db.record_batch(first, last)? {
-                    if header.kind() == RecordKind::Game && !header.is_deleted() && filter.matches(header.id(), &header)
-                    {
-                        out.push(header.id());
-                    }
-                }
-            }
-            super::HeaderSource::TwoCbh(headers) => {
-                use cbvault_format::twocbh::{GameHeader, RECORD_SIZE};
-                let count = last - first + 1;
-                let bytes = count as usize * RECORD_SIZE;
-                let offset = u64::from(first) * RECORD_SIZE as u64;
-                let mut scratch = Vec::new();
-                let data = if let Some(mapped) = headers.db_file().slice_at(offset, bytes) {
-                    mapped
-                } else {
-                    scratch.resize(bytes, 0);
-                    if headers.read_records(first, count, &mut scratch)? != count {
-                        return Err(Error::corrupt(headers.path(), offset, "short v2 header batch"));
-                    }
-                    &scratch
-                };
-                for (i, b) in data.as_chunks::<RECORD_SIZE>().0.iter().enumerate() {
-                    let id = first + i as u32;
-                    let header = GameHeaderRef::TwoCbh(GameHeader::from_bytes(id, b));
-                    if header.kind() == RecordKind::Game && !header.is_deleted() && filter.matches(id, &header) {
-                        out.push(id);
-                    }
-                }
-            }
-        }
+        visit_matching_ids(db, first, last, filter, |id| out.push(id))?;
         Ok(out)
     };
     let found: Vec<Vec<u32>> = collect_chunks(db, &ranges, threads, pool, scan_chunk)?;
@@ -841,6 +814,129 @@ fn scan_ids_range_impl(
     let ids = found.into_iter().flatten().collect::<Vec<_>>();
     let stats = SearchStats { records, matches: ids.len() as u64, threads: threads.max(1) };
     Ok(IdScan { ids, stats })
+}
+
+// Shared visitor: counting does not allocate a vector of matching IDs.
+fn visit_matching_ids(db: &Database, first: u32, last: u32, filter: &Filter, mut visit: impl FnMut(u32)) -> Result<()> {
+    match db.header_source() {
+        super::HeaderSource::Classic(_) => {
+            for header in db.record_batch(first, last)? {
+                if header.kind() == RecordKind::Game && !header.is_deleted() && filter.matches(header.id(), &header) {
+                    visit(header.id());
+                }
+            }
+        }
+        super::HeaderSource::TwoCbh(headers) => {
+            use cbvault_format::twocbh::{GameHeader, RECORD_SIZE};
+            let count = last - first + 1;
+            let bytes = count as usize * RECORD_SIZE;
+            let offset = u64::from(first) * RECORD_SIZE as u64;
+            let mut scratch = Vec::new();
+            let data = if let Some(mapped) = headers.db_file().slice_at(offset, bytes) {
+                mapped
+            } else {
+                scratch.resize(bytes, 0);
+                if headers.read_records(first, count, &mut scratch)? != count {
+                    return Err(Error::corrupt(headers.path(), offset, "short v2 header batch"));
+                }
+                &scratch
+            };
+            for (i, b) in data.as_chunks::<RECORD_SIZE>().0.iter().enumerate() {
+                let id = first + i as u32;
+                let header = GameHeaderRef::TwoCbh(GameHeader::from_bytes(id, b));
+                if header.kind() == RecordKind::Game && !header.is_deleted() && filter.matches(id, &header) {
+                    visit(id);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// A bounded page of matching IDs and the exact total count. No names or
+/// moves are resolved. The source must remain immutable during the two passes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IdPage {
+    ids: Vec<u32>,
+    offset: u64,
+    stats: SearchStats,
+}
+
+impl IdPage {
+    /// IDs in source order, starting at the zero-based matching-result offset.
+    pub fn ids(&self) -> &[u32] {
+        &self.ids
+    }
+    /// Offset requested, even if it is beyond the end of the results.
+    pub fn offset(&self) -> u64 {
+        self.offset
+    }
+    /// Statistics for the complete filter, not merely this page.
+    pub fn stats(&self) -> SearchStats {
+        self.stats
+    }
+}
+
+/// Scan the entire database for the exact match count and one page of IDs.
+/// The first pass counts matches per bounded header chunk; only the chunks
+/// overlapping the page are scanned a second time. Memory is proportional
+/// to the page size and the number of chunks, not the total match count.
+pub fn scan_id_page(db: &Database, filter: &Filter, offset: u64, limit: usize, threads: usize) -> Result<IdPage> {
+    scan_id_page_impl(db, filter, offset, limit, threads, None)
+}
+
+fn scan_id_page_impl(
+    db: &Database,
+    filter: &Filter,
+    offset: u64,
+    limit: usize,
+    threads: usize,
+    pool: Option<&rayon::ThreadPool>,
+) -> Result<IdPage> {
+    let ranges = ranges_of(db, 1, 0);
+    let counts = collect_chunks(db, &ranges, threads, pool, |&(first, last)| {
+        let mut count = 0u64;
+        visit_matching_ids(db, first, last, filter, |_| count += 1)?;
+        Ok(count)
+    })?;
+    let matches = counts.iter().sum::<u64>();
+    let end = offset.saturating_add(limit as u64).min(matches);
+    let expected = end.saturating_sub(offset);
+    let mut ids = Vec::with_capacity(expected as usize);
+    let mut prefix = 0u64;
+    if expected > 0 {
+        for (&(first, last), count) in ranges.iter().zip(counts) {
+            let chunk_end = prefix + count;
+            if prefix >= end {
+                break;
+            }
+            if chunk_end > offset && prefix < end {
+                let mut rank = prefix;
+                visit_matching_ids(db, first, last, filter, |id| {
+                    if rank >= offset && rank < end {
+                        ids.push(id);
+                    }
+                    rank += 1;
+                })?;
+                if rank != chunk_end {
+                    return Err(Error::corrupt(db.base(), 0, "header results changed between page passes"));
+                }
+            }
+            prefix = chunk_end;
+        }
+    }
+    if ids.len() as u64 != expected {
+        return Err(Error::corrupt(db.base(), 0, "incomplete ID page"));
+    }
+    Ok(IdPage {
+        ids,
+        offset,
+        stats: SearchStats {
+            records: ranges.iter().map(|(a, b)| u64::from(b - a + 1)).sum(),
+            matches,
+            threads: threads.max(1),
+        },
+    })
 }
 
 /// The chunk boundaries of `first..=last`, or of the whole database.
