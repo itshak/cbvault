@@ -512,6 +512,7 @@ fn v2_id_only_scan_matches_named_scan_across_batches() {
         let full = cbvault::bridge::scan_ids(&db, &filter, 1).unwrap();
         for threads in [1, 4] {
             let ctx = cbvault::bridge::SearchContext::new(threads).unwrap();
+            let plan = ctx.prepare_id_pages(&db, &filter).unwrap();
             for (offset, limit) in [
                 (0, 0),
                 (0, 50),
@@ -521,6 +522,7 @@ fn v2_id_only_scan_matches_named_scan_across_batches() {
                 (0, 20000),
             ] {
                 let page = ctx.scan_id_page(&db, &filter, offset, limit).unwrap();
+                assert_eq!(page, plan.page(offset, limit).unwrap());
                 let start = offset.min(full.ids().len() as u64) as usize;
                 let end = start.saturating_add(limit).min(full.ids().len());
                 assert_eq!(page.ids(), &full.ids()[start..end]);

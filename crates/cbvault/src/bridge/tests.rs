@@ -1175,8 +1175,10 @@ fn bounded_id_page_matches_full_classic_scan() {
     for filter in [Filter::All, Filter::WhiteEloAtLeast(2600), Filter::WhiteEloAtLeast(3000)] {
         let all = scan_ids(&database, &filter, 1).unwrap();
         for threads in [1, 4] {
+            let plan = IdPagePlan::new(&database, &filter, threads).unwrap();
             for (offset, limit) in [(0, 0), (0, 50), (8150, 200), (16990, 100), (u64::MAX, 50), (0, 20000)] {
                 let page = scan_id_page(&database, &filter, offset, limit, threads).unwrap();
+                assert_eq!(page, plan.page(offset, limit).unwrap());
                 let start = offset.min(all.ids().len() as u64) as usize;
                 let end = start.saturating_add(limit).min(all.ids().len());
                 assert_eq!(page.ids(), &all.ids()[start..end]);
