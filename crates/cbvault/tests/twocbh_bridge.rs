@@ -739,7 +739,14 @@ fn v2_early_stop_predicate_sees_current_hash_and_checkers() {
     buf.set_wants(false, false);
     assert!(buf.walk_v2_with(1, at as u64, &game, Some(&predicate)).unwrap());
     assert!(buf.keys().is_empty());
-    let result = for_each_position_key(&db, &PositionQuery::of(0).early_stop_with(&predicate), 4, |_| {}).unwrap();
+    assert_eq!(buf.moves().len(), 3);
+    let mut hits = Vec::new();
+    let result = for_each_position_key(&db, &PositionQuery::of(board.zobrist()).early_stop_with(&predicate), 4, |h| {
+        hits.push(h)
+    })
+    .unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].ply, 3);
     assert_eq!(result.failures, 0);
     assert_eq!(result.plies, 3);
 }
