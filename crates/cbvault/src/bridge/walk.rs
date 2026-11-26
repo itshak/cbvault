@@ -599,10 +599,12 @@ pub fn resolve_names(header: &GameHeaderRef<'_>, entities: &Entities, buf: &mut 
     let GameBuf { event, site, .. } = buf;
     event.clear();
     site.clear();
-    if let Some(name) = entities.name(Entity::Tournament, t_id)? {
-        last_buf_set(&mut buf.last, name.last(), event);
-        last_buf_set(&mut buf.first, name.first(), site);
-    }
+    entities.with_name(Entity::Tournament, t_id, |name| {
+        if let Some(name) = name {
+            last_buf_set(&mut buf.last, name.last(), event);
+            last_buf_set(&mut buf.first, name.first(), site);
+        }
+    })?;
 
     let GameBuf { annotator, source, plain, .. } = buf;
     single(entities, Entity::Annotator, a_id, annotator, plain)?;
@@ -700,21 +702,25 @@ fn last_buf_set(buf: &mut NameBuf, field: &[u8], out: &mut String) {
 /// One player as `Last, First` in `out`, from the two fields of one record.
 fn player(entities: &Entities, id: u32, out: &mut String, last: &mut NameBuf, first: &mut NameBuf) -> Result<()> {
     out.clear();
-    let Some(name) = entities.name(Entity::Player, id)? else { return Ok(()) };
-    last_buf_set(last, name.last(), out);
-    if !name.first().is_empty() {
-        if !out.is_empty() {
-            out.push_str(", ");
+    entities.with_name(Entity::Player, id, |name| {
+        if let Some(name) = name {
+            last_buf_set(last, name.last(), out);
+            if !name.first().is_empty() {
+                if !out.is_empty() {
+                    out.push_str(", ");
+                }
+                last_buf_set(first, name.first(), out);
+            }
         }
-        last_buf_set(first, name.first(), out);
-    }
-    Ok(())
+    })
 }
 
 /// One single-field name in `out`.
 fn single(entities: &Entities, entity: Entity, id: u32, out: &mut String, buf: &mut NameBuf) -> Result<()> {
     out.clear();
-    let Some(name) = entities.name(entity, id)? else { return Ok(()) };
-    last_buf_set(buf, name.last(), out);
-    Ok(())
+    entities.with_name(entity, id, |name| {
+        if let Some(name) = name {
+            last_buf_set(buf, name.last(), out);
+        }
+    })
 }

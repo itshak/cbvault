@@ -1019,13 +1019,13 @@ impl Database {
         match &self.backend {
             Backend::Classic(c) => {
                 let at = u64::from(id) * 46;
-                let bytes = c
-                    .headers
-                    .db_file()
-                    .slice_at(at, 46)
-                    .and_then(|slice| <&[u8; 46]>::try_from(slice).ok())
-                    .ok_or_else(|| Error::corrupt(c.headers.path(), at, "header record out of range"))?;
-                Ok(GameHeaderRef::Classic(cbvault_format::cbh::GameHeaderRef::from_bytes(id, bytes)))
+                if let Some(bytes) =
+                    c.headers.db_file().slice_at(at, 46).and_then(|slice| <&[u8; 46]>::try_from(slice).ok())
+                {
+                    Ok(GameHeaderRef::Classic(cbvault_format::cbh::GameHeaderRef::from_bytes(id, bytes)))
+                } else {
+                    Ok(GameHeaderRef::ClassicOwned(c.headers.record(id)?))
+                }
             }
             Backend::TwoCbh(t) => {
                 let header = t.headers.record(id)?;

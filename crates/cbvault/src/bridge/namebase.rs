@@ -657,6 +657,31 @@ impl Entities {
         }
     }
 
+    /// Visit a classic name for the duration of a callback, using a bounded
+    /// stack record for positioned reads when memory mapping is disabled.
+    pub(crate) fn with_name<T>(&self, entity: Entity, id: u32, f: impl FnOnce(Option<Name<'_>>) -> T) -> Result<T> {
+        let Some(file) = self.of(entity) else {
+            return Ok(f(None));
+        };
+        if id >= file.count || id > i32::MAX as u32 {
+            return Ok(f(None));
+        }
+        let at = file.header + u64::from(id) * file.record;
+        let mut scratch = [0u8; NODE_HEAD + 70];
+        let bytes = if let Some(bytes) = file.file.slice_at(at, file.record as usize) {
+            bytes
+        } else {
+            let bytes = &mut scratch[..NODE_HEAD + file.kind.name_width() + file.kind.second_width()];
+            file.file.read_into(at, bytes)?;
+            bytes
+        };
+        let name = node_of(bytes).and_then(|node| {
+            let last = file.key(&node);
+            (!last.is_empty()).then(|| Name { last, first: file.second(&node) })
+        });
+        Ok(f(name))
+    }
+
     /// Every id of `entity`'s namebase with its name, in ascending id order —
     /// the bulk export a consumer interns its player, event, site, annotator
     /// and source tables from. A deleted or blank record is skipped.
