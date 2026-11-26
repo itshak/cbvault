@@ -2,7 +2,39 @@
 #![allow(missing_docs)]
 use cbvault::book::Book;
 use gigachess::Board;
+use std::alloc::{GlobalAlloc, Layout, System};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
 use std::time::Instant;
+
+struct CountAlloc;
+static ARMED: AtomicBool = AtomicBool::new(false);
+static ALLOCS: AtomicU64 = AtomicU64::new(0);
+#[allow(unsafe_code)]
+unsafe impl GlobalAlloc for CountAlloc {
+    unsafe fn alloc(&self, l: Layout) -> *mut u8 {
+        if ARMED.load(Relaxed) {
+            ALLOCS.fetch_add(1, Relaxed);
+        }
+        unsafe { System.alloc(l) }
+    }
+    unsafe fn alloc_zeroed(&self, l: Layout) -> *mut u8 {
+        if ARMED.load(Relaxed) {
+            ALLOCS.fetch_add(1, Relaxed);
+        }
+        unsafe { System.alloc_zeroed(l) }
+    }
+    unsafe fn realloc(&self, p: *mut u8, l: Layout, n: usize) -> *mut u8 {
+        if ARMED.load(Relaxed) {
+            ALLOCS.fetch_add(1, Relaxed);
+        }
+        unsafe { System.realloc(p, l, n) }
+    }
+    unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
+        unsafe { System.dealloc(p, l) }
+    }
+}
+#[global_allocator]
+static ALLOC: CountAlloc = CountAlloc;
 
 fn hash(h: &mut u64, data: &[u8]) {
     for b in data {
@@ -11,9 +43,13 @@ fn hash(h: &mut u64, data: &[u8]) {
 }
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().collect();
+    let measure_alloc = args.iter().any(|s| s == "--alloc");
+    ARMED.store(measure_alloc, Relaxed);
     let t = Instant::now();
     let book = Book::open(&args[1])?;
     let open_seconds = t.elapsed().as_secs_f64();
+    ARMED.store(false, Relaxed);
+    let open_allocations = ALLOCS.swap(0, Relaxed);
     assert!(book.damaged().is_empty());
     let mut seed = 0x58b0a13d_u64;
     let mut fingerprint = 14695981039346656037u64;
@@ -21,6 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut hits = 0u64;
     let mut misses = 0u64;
     let mut children = 0u64;
+    ARMED.store(measure_alloc, Relaxed);
     let start = Instant::now();
     for _ in 0..2048 {
         let mut board = Board::startpos();
@@ -67,11 +104,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     let seconds = start.elapsed().as_secs_f64();
+    ARMED.store(false, Relaxed);
+    let probe_allocations = ALLOCS.load(Relaxed);
     lat.sort_unstable();
     let pct = |p: usize| lat[(lat.len() - 1) * p / 100];
     assert!(hits >= 2048, "book must contain the initial position");
     println!(
-        "{{\"positions\":{},\"pages\":{},\"index_bytes\":{},\"open_seconds\":{open_seconds:.9},\"seconds\":{seconds:.9},\"hits\":{hits},\"misses\":{misses},\"children\":{children},\"fingerprint\":\"{fingerprint:016x}\",\"p50_ns\":{},\"p95_ns\":{},\"p99_ns\":{}}}",
+        "{{\"positions\":{},\"pages\":{},\"index_bytes\":{},\"open_seconds\":{open_seconds:.9},\"seconds\":{seconds:.9},\"hits\":{hits},\"misses\":{misses},\"children\":{children},\"fingerprint\":\"{fingerprint:016x}\",\"p50_ns\":{},\"p95_ns\":{},\"p99_ns\":{},\"open_allocations\":{open_allocations},\"probe_allocations\":{probe_allocations}}}",
         book.positions(),
         book.pages(),
         book.index_bytes(),

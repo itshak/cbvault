@@ -109,8 +109,10 @@ impl Book {
         let pages = ctg.pages();
         let page_bits = 32 - pages.leading_zeros();
         let page_mask = (1u64 << page_bits) - 1;
-        let tasks: Vec<(u32, u32)> =
-            (1..pages).step_by(PAGES_PER_TASK as usize).map(|s| (s, (s + PAGES_PER_TASK).min(pages))).collect();
+        let tasks: Vec<(u32, u32)> = (1..pages)
+            .step_by(PAGES_PER_TASK as usize)
+            .map(|s| (s, s.saturating_add(PAGES_PER_TASK).min(pages)))
+            .collect();
         let parts: Vec<(Vec<u64>, Vec<Damage>)> =
             tasks.par_iter().map(|&(start, end)| index_pages(&ctg, start, end, page_mask)).collect();
         let total = parts.iter().map(|(v, _)| v.len()).sum();
@@ -152,7 +154,7 @@ impl Book {
     /// Looks `board` up. `Ok(None)` when the book does not have the position.
     pub fn probe(&self, board: &Board) -> Result<Option<BookPosition>> {
         let stored = chess_ctg::stored_form(board);
-        for (key, len) in chess_ctg::keys(&stored) {
+        for (key, len) in chess_ctg::key_candidates(&stored) {
             if let Some(found) = self.find(&key[..len], |entry| book_position(board, &stored, entry))? {
                 return Ok(Some(found));
             }
@@ -211,8 +213,10 @@ impl Book {
     /// book too. Read-only, like everything here.
     pub fn verify(&self, children: bool) -> Result<VerifyReport> {
         let pages = self.ctg.pages();
-        let tasks: Vec<(u32, u32)> =
-            (1..pages).step_by(PAGES_PER_TASK as usize).map(|s| (s, (s + PAGES_PER_TASK).min(pages))).collect();
+        let tasks: Vec<(u32, u32)> = (1..pages)
+            .step_by(PAGES_PER_TASK as usize)
+            .map(|s| (s, s.saturating_add(PAGES_PER_TASK).min(pages)))
+            .collect();
         let parts: Vec<Result<VerifyReport>> =
             tasks.par_iter().map(|&(start, end)| self.verify_pages(start, end, children)).collect();
         let mut report = VerifyReport::default();
@@ -255,15 +259,19 @@ impl Book {
                     continue;
                 };
                 let stored = chess_ctg::stored_form(&board);
-                let round_trips = chess_ctg::keys(&stored).iter().any(|(k, l)| &k[..*l] == entry.key);
+                let round_trips = chess_ctg::key_candidates(&stored).any(|(k, l)| &k[..l] == entry.key);
                 if round_trips {
                     r.key_round_trips += 1;
                 } else {
                     r.key_mismatches += 1;
                     continue;
                 }
+                if entry.moves.is_empty() {
+                    continue;
+                }
+                let legal = board.legal_moves();
                 for (byte, _) in entry.move_pairs() {
-                    match chess_ctg::decode_byte(&board, &stored, byte) {
+                    match chess_ctg::decode_byte_with_legal(&board, &stored, byte, &legal) {
                         Ok(mv) => {
                             r.moves_decoded += 1;
                             if mv.promotion().is_some() {
@@ -293,7 +301,7 @@ impl Book {
 
     fn probe_key_of(&self, board: &Board) -> Result<bool> {
         let stored = chess_ctg::stored_form(board);
-        for (key, len) in chess_ctg::keys(&stored) {
+        for (key, len) in chess_ctg::key_candidates(&stored) {
             if self.contains_key(&key[..len])? {
                 return Ok(true);
             }
@@ -343,10 +351,19 @@ fn index_pages(ctg: &Ctg, start: u32, end: u32, page_mask: u64) -> (Vec<u64>, Ve
 }
 
 fn book_position(board: &Board, stored: &Stored, entry: &Entry<'_>) -> BookPosition {
-    let moves = entry
-        .move_pairs()
-        .map(|(byte, annotation)| BookMove { byte, annotation, mv: chess_ctg::decode_byte(board, stored, byte) })
-        .collect();
+    let moves = if entry.moves.is_empty() {
+        Vec::new()
+    } else {
+        let legal = board.legal_moves();
+        entry
+            .move_pairs()
+            .map(|(byte, annotation)| BookMove {
+                byte,
+                annotation,
+                mv: chess_ctg::decode_byte_with_legal(board, stored, byte, &legal),
+            })
+            .collect()
+    };
     let stats = entry.stats();
     let evaluation = stats.evaluation().map(|e| e.for_real_position(stored.flipped));
     BookPosition { stats, moves, evaluation, offset: entry.offset }

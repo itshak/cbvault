@@ -15,6 +15,7 @@ p.add_argument("--head", type=pathlib.Path, required=True)
 p.add_argument("--base-workload", type=pathlib.Path, required=True)
 p.add_argument("--head-workload", type=pathlib.Path, required=True)
 p.add_argument("--report", type=pathlib.Path, required=True)
+p.add_argument("--baseline-unknown", type=int, default=None)
 a = p.parse_args()
 expected_counts = json.loads(pathlib.Path(__file__).with_name("native-book-manifest.json").read_text())["expected"]
 a.report.parent.mkdir(parents=True, exist_ok=True)
@@ -48,7 +49,7 @@ for side, r in full.items():
     data = r["data"]
     # v0.2.0 is intentionally pinned with its known 12 unknown moves.
     # The candidate is strictly required to decode ALL moves.
-    unknown = expected_counts["baseline_unknown"] if side == "base" else 0
+    unknown = (expected_counts["baseline_unknown"] if a.baseline_unknown is None else a.baseline_unknown) if side == "base" else 0
     if r["returncode"] != (1 if unknown else 0) or any(data.get(k, -1) != 0 for k in (
         "damaged_pages", "bad_keys", "invalid_positions", "key_mismatches",
         "moves_illegal", "children_missing",
@@ -71,6 +72,16 @@ for repetition in range(-1, 3):
         if repetition >= 0:
             report["probes"].append({"side": side, "repetition": repetition, **r})
             save()
+# Separate allocation measurements from timing; allocation hooks contend
+# across index-building workers and would otherwise distort throughput.
+report["allocation_pass"] = {}
+for side, exe in bins.items():
+    r = run([exe, a.book, "--alloc"])
+    data = r["data"]
+    assert r["returncode"] == 0
+    assert tuple(data.get(k) for k in ("positions", "pages", "hits", "misses", "children", "fingerprint")) == expected
+    report["allocation_pass"][side] = r
+    save()
 report["summary"] = {}
 for side in bins:
     rows = [r for r in report["probes"] if r["side"] == side]
@@ -78,6 +89,9 @@ for side in bins:
         k: statistics.median(r["data"][k] for r in rows)
         for k in ("open_seconds", "seconds", "p50_ns", "p95_ns", "p99_ns")
     }
+    report["summary"][side]["open_allocations"] = report["allocation_pass"][side]["data"]["open_allocations"]
+    report["summary"][side]["probe_allocations"] = report["allocation_pass"][side]["data"]["probe_allocations"]
+    report["summary"][side]["peak_rss_kib"] = max(r["peak_rss_kib"] for r in rows)
 report["status"] = "passed"
 save()
 print(json.dumps(report["summary"], indent=2))
