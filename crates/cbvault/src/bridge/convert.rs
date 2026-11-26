@@ -326,7 +326,14 @@ fn v2_span_text(source: &str, (at, len): (usize, usize)) -> &str {
 }
 
 impl V2Chunk {
-    fn decode(&mut self, db: &Database, first: u32, last: u32, want_keys: bool) {
+    fn decode(
+        &mut self,
+        db: &Database,
+        first: u32,
+        last: u32,
+        want_keys: bool,
+        cancelled: &std::sync::atomic::AtomicBool,
+    ) {
         self.first = first;
         self.entries.clear();
         self.text.clear();
@@ -334,6 +341,9 @@ impl V2Chunk {
         self.keys.clear();
         self.buf.set_wants(want_keys, false);
         for id in first..=last {
+            if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+                break;
+            }
             let header = match db.header_ref(id) {
                 Ok(header) => header,
                 Err(e) => {
@@ -345,7 +355,7 @@ impl V2Chunk {
                 self.entries.push(V2Entry::Skipped);
                 continue;
             }
-            let game = match db.game_with(id, &mut self.buf, false) {
+            let game = match db.game_with_header(header, &mut self.buf, false) {
                 Ok(game) => game,
                 Err(e) => {
                     self.entries.push(V2Entry::Failed(e));
@@ -415,6 +425,10 @@ fn v2_deliver(
     stats: &mut ConvertStats,
 ) {
     for (index, entry) in chunk.entries.iter().enumerate() {
+        if sink.cancelled() {
+            stats.complete = false;
+            break;
+        }
         let id = chunk.first + index as u32;
         stats.records += 1;
         match entry {
@@ -476,7 +490,8 @@ fn convert_parallel_v2(db: &Database, sink: &mut impl GameSink, threads: usize, 
     if threads <= 1 {
         return for_each_game(db, sink);
     }
-    use rayon::prelude::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Mutex, mpsc::sync_channel};
 
     let batch = if batch == 0 { DEFAULT_BATCH } else { batch };
     let ranges = chunks(db.records(), batch);
@@ -484,42 +499,97 @@ fn convert_parallel_v2(db: &Database, sink: &mut impl GameSink, threads: usize, 
     if ranges.is_empty() {
         return Ok(stats);
     }
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(threads)
-        .build()
-        .map_err(|e| Error::corrupt(db.base(), 0, format!("thread pool creation failed: {e}")))?;
-    let free = std::sync::Mutex::new(Vec::<V2Chunk>::new());
+    let workers = threads.min(ranges.len());
+    let capacity = workers.saturating_mul(2).min(ranges.len()).max(1);
     let want_keys = sink.wants_keys();
     let want_annotations = sink.wants_annotations();
     let mut annotation_scratch = Vec::new();
-    let wave_size = threads.saturating_mul(2).max(2);
-
-    'waves: for wave in ranges.chunks(wave_size) {
-        if sink.cancelled() {
-            stats.complete = false;
-            break;
+    let cancelled = AtomicBool::new(false);
+    // Exactly capacity arenas can be queued, decoding, awaiting order, or
+    // being delivered. Reissue one only after ordered synchronous delivery.
+    // Dropping both channel endpoints wakes workers on cancellation/panic.
+    let (jobs, pending) = sync_channel::<(usize, V2Chunk)>(capacity);
+    let pending = Mutex::new(pending);
+    let (done, results) = sync_channel::<std::thread::Result<(usize, V2Chunk)>>(capacity);
+    let pending = &pending;
+    let cancelled = &cancelled;
+    let ranges = &ranges;
+    let stats_ref = &mut stats;
+    std::thread::scope(move |scope| -> Result<()> {
+        let stats = stats_ref;
+        for _ in 0..workers {
+            let done = done.clone();
+            // The worker panic is forwarded to the caller rather than
+            // leaving a missing ordered slot and a blocked receiver.
+            scope.spawn(move || {
+                loop {
+                    if cancelled.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    let Ok((idx, mut chunk)) = pending.lock().unwrap().recv() else {
+                        break;
+                    };
+                    if cancelled.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        let (first, last) = ranges[idx];
+                        chunk.decode(db, first, last, want_keys, cancelled);
+                        (idx, chunk)
+                    }));
+                    let failed = result.is_err();
+                    if done.send(result).is_err() || failed {
+                        break;
+                    }
+                }
+            });
         }
-        let chunks: Vec<V2Chunk> = pool.install(|| {
-            wave.par_iter()
-                .map(|&(first, last)| {
-                    let mut chunk = free.lock().unwrap().pop().unwrap_or_default();
-                    chunk.decode(db, first, last, want_keys);
-                    chunk
-                })
-                .collect()
-        });
-        for chunk in chunks {
-            // Poll between chunks, not only between whole waves. A user
-            // cancellation must prevent delivery of already-decoded future
-            // chunks, while keeping the delivered IDs a strict source prefix.
+        drop(done);
+        let mut next = 0;
+        let mut expected = 0;
+        let mut ready = std::collections::BTreeMap::new();
+        let disconnected = || Error::corrupt(db.base(), 0, "v2 conversion worker disconnected");
+        for _ in 0..capacity {
             if sink.cancelled() {
                 stats.complete = false;
-                break 'waves;
+                break;
             }
-            v2_deliver(db, sink, &chunk, &mut annotation_scratch, want_annotations, &mut stats);
-            free.lock().unwrap().push(chunk);
+            jobs.send((next, V2Chunk::default())).map_err(|_| disconnected())?;
+            next += 1;
         }
-    }
+        while expected < ranges.len() && stats.complete {
+            if sink.cancelled() {
+                stats.complete = false;
+                break;
+            }
+            if !ready.contains_key(&expected) {
+                match results.recv_timeout(std::time::Duration::from_millis(5)) {
+                    Ok(Ok((idx, chunk))) => {
+                        ready.insert(idx, chunk);
+                    }
+                    Ok(Err(panic)) => std::panic::resume_unwind(panic),
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return Err(disconnected()),
+                }
+            }
+            while let Some(chunk) = ready.remove(&expected) {
+                v2_deliver(db, sink, &chunk, &mut annotation_scratch, want_annotations, stats);
+                if !stats.complete {
+                    break;
+                }
+                expected += 1;
+                if next < ranges.len() {
+                    jobs.send((next, chunk)).map_err(|_| disconnected())?;
+                    next += 1;
+                }
+            }
+        }
+        cancelled.store(true, Ordering::Relaxed);
+        drop(jobs);
+        drop(results);
+        Ok(())
+    })?;
+
     Ok(stats)
 }
 

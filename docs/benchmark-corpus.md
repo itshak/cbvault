@@ -173,3 +173,20 @@ ID-only scan and reusable execution context. Continuous conversion awaits its
 scale result. Separate private golden PGNs, additional CTG variants and
 maintainer-created promotion-overflow companions are not validated by these
 runs. No compatibility or release claim until the combined CI gates pass.
+
+### Roadmap experiment: bounded streaming and keyed replay
+
+The original consolidation design (tasks 1.6–1.8) identifies repeated header
+reads, wave barriers and cancellation as explicit optimization targets.
+The v2 experiment reuses the already-read header and at most two arenas per
+worker, streams results continuously in source order, and checks cancellation
+before each delivery and during worker decoding. It adds exact-prefix tests
+across worker counts, batch sizes and stop positions. A separate paired
+stream benchmark measures every emitted game, move and key, exact-position
+search hits for the root and after e4, and cancellation tail/overshoot.
+Source game and ply counts remain hard gates, and the ordered fingerprints
+must agree across both readers, revisions, worker counts and tested mapping
+modes. Timing and allocation results are reported separately; no performance
+gain is claimed until CI completes. Cancellation measurements intentionally
+report different delivered counts on old and new implementations rather than
+requiring the old wave overshoot to be preserved.
