@@ -1,0 +1,46 @@
+name: Promotion overflow source verification
+on:
+  push:
+    branches: [roadmap/promotion-overflow-and-readers]
+  pull_request:
+    paths:
+      - 'scripts/bench-corpus/promotion-*.py'
+      - 'scripts/bench-corpus/special-*-v3.manifest.json'
+      - 'crates/cbvault/examples/promotion_book_audit.rs'
+      - '.github/workflows/promotion-source.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13.5'
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.97.1'
+      - name: Reproduce and verify all public special sources
+        run: |
+          set -euo pipefail
+          python -m pip install chess==1.11.2
+          cargo +1.97.1 build --locked --release --manifest-path scripts/bench-corpus/generator/Cargo.toml --bin special --target-dir "$RUNNER_TEMP/generator"
+          work="$RUNNER_TEMP/special"
+          mkdir -p "$work"
+          "$RUNNER_TEMP/generator/release/special" > "$work/special-120.pgn"
+          echo "b1df7b6535efd141a46a20a11e971d5eb723d595b6d780dcc1161302593917b7  $work/special-120.pgn" | sha256sum -c -
+          python scripts/bench-corpus/promotion-overflow.py "$work/special-120.pgn" "$work/special-expanded-v3.pgn" "$work/special-expanded-v3.manifest.json" --ctg-standard "$work/special-ctg-standard-v3.pgn"
+          python scripts/bench-corpus/promotion-ctg-coverage.py "$work/special-ctg-standard-v3.pgn" "$work/special-ctg-coverage-v3.pgn" "$work/special-ctg-coverage-v3.manifest.json"
+          diff -u scripts/bench-corpus/special-expanded-v3.manifest.json "$work/special-expanded-v3.manifest.json"
+          diff -u scripts/bench-corpus/special-ctg-coverage-v3.manifest.json "$work/special-ctg-coverage-v3.manifest.json"
+          python scripts/bench-corpus/promotion-audit.py compare "$work/special-expanded-v3.pgn" "$work/special-expanded-v3.pgn"
+          python scripts/bench-corpus/promotion-audit.py edges "$work/special-expanded-v3.pgn" > "$work/edges.tsv"
+          test "$(wc -l < "$work/edges.tsv")" -eq 9304
+          cargo +1.97.1 clippy --locked -p cbvault --example promotion_book_audit -- -D warnings
+      - uses: actions/upload-artifact@v4
+        with:
+          name: promotion-source-manifests
+          path: ${{ runner.temp }}/special/*.manifest.json
