@@ -465,3 +465,25 @@ fn v2_unified_header_and_entity_sources_are_safe_and_typed() {
         EntitySource::Classic(_) => panic!("2CBH must not be presented as classic entities"),
     }
 }
+
+#[test]
+fn reused_pgn_writer_matches_fresh_across_games_and_modes() {
+    let temp = TempDb::create("v2_reused_pgn_writer");
+    let mut builder = Builder::new();
+    let white = builder.player("Carlsen", "Magnus");
+    let black = builder.player("Nakamura", "Hikaru");
+    let event = builder.tournament("World Blitz", "Samarkand", 20231230);
+    let mut board = Board::startpos();
+    let at = builder.moves(1, &words(&mut board, "e2e4 e7e5 g1f3"));
+    set_entities(builder.game(at), white, black, event);
+    let mut board = Board::startpos();
+    let at = builder.moves(2, &words(&mut board, "d2d4 d7d5"));
+    set_entities(builder.game(at), black, white, event);
+    builder.write_to(&temp);
+    let db = Database::open(temp.base()).unwrap();
+    let mut reused = GameBuf::new();
+    for (id, annotations) in [(1, true), (2, false), (1, false), (2, true), (1, true)] {
+        let expected = db.game_pgn_with(id, &mut GameBuf::new(), annotations).unwrap();
+        assert_eq!(db.game_pgn_with(id, &mut reused, annotations).unwrap(), expected);
+    }
+}

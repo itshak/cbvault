@@ -1129,12 +1129,12 @@ impl Database {
                 let game = GameMoves::parse(&self.members.moves, bytes)?;
                 let anns = if want_annotations && header.annotations_offset() != 0 {
                     let h_ref = header.as_classic().expect("classic header");
-                    Some(self.annotations()?.of_ref(&h_ref, self.wide(), buf.annotation_scratch())?)
+                    Some(self.annotations()?.of_ref(&h_ref, self.wide(), &mut buf.annotation)?)
                 } else {
                     None
                 };
                 let entities = self.format_entities()?;
-                let mut writer = crate::pgn::PgnWriter::new();
+                let writer = buf.pgn_writer.get_or_insert_with(|| Box::new(crate::pgn::PgnWriter::new()));
                 let mut out = Vec::new();
                 let h_ref = header.as_classic().expect("classic header");
                 writer
@@ -1161,7 +1161,7 @@ impl Database {
                     None
                 };
                 let anns = anns_rec.as_ref().map(|r| cbvault_format::twocbh::Annotations::from_record(r.record()));
-                let mut writer = crate::pgn::PgnWriter::new();
+                let writer = buf.pgn_writer.get_or_insert_with(|| Box::new(crate::pgn::PgnWriter::new()));
                 let mut out = Vec::new();
                 writer
                     .write_game_v2(&mut out, &h, &t.entities, &game, anns.as_ref())

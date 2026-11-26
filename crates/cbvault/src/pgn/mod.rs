@@ -468,9 +468,9 @@ fn write_tags_v2(
         // event, and the export never copies it into the tags.
         ("?", "?")
     } else if header.tournament() >= 0 {
-        if let Some(t) = entities.tournament(header.tournament())? {
-            names.title.set(t.title.as_bytes());
-            names.place.set(t.place.as_bytes());
+        if let Some((title, place)) = entities.tournament_name(header.tournament())? {
+            names.title.set(title.as_bytes());
+            names.place.set(place.as_bytes());
             (
                 if names.title.as_str().is_empty() { "?" } else { names.title.as_str() },
                 if names.place.as_str().is_empty() { "?" } else { names.place.as_str() },
@@ -490,9 +490,9 @@ fn write_tags_v2(
         (None, None)
     } else {
         let white = if header.white() >= 0 {
-            if let Some(p) = entities.player(header.white())? {
-                names.white_last.set(p.last.as_bytes());
-                names.white_first.set(p.first.as_bytes());
+            if let Some((last, first)) = entities.player_name(header.white())? {
+                names.white_last.set(last.as_bytes());
+                names.white_first.set(first.as_bytes());
                 Some((names.white_last.as_str(), names.white_first.as_str()))
             } else {
                 None
@@ -501,9 +501,9 @@ fn write_tags_v2(
             None
         };
         let black = if header.black() >= 0 {
-            if let Some(p) = entities.player(header.black())? {
-                names.black_last.set(p.last.as_bytes());
-                names.black_first.set(p.first.as_bytes());
+            if let Some((last, first)) = entities.player_name(header.black())? {
+                names.black_last.set(last.as_bytes());
+                names.black_first.set(first.as_bytes());
                 Some((names.black_last.as_str(), names.black_first.as_str()))
             } else {
                 None

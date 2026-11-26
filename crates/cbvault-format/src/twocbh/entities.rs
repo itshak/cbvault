@@ -288,9 +288,9 @@ impl Entities {
 
     /// Decodes the first non-empty title of game tag `id` within `limit` bytes.
     pub fn title_within(&self, id: i64, limit: usize) -> Result<Option<String>> {
-        let raw = match self.raw_within(GAME_TAG, id, limit)? {
+        let raw = match self.raw_cow_within(GAME_TAG, id, limit)? {
             Some(r) => Some(r),
-            None => self.raw_within(5, id, limit)?,
+            None => self.raw_cow_within(5, id, limit)?,
         };
         Ok(raw.and_then(|r| {
             let mut c = Cursor(&r, 0);
@@ -313,9 +313,9 @@ impl Entities {
 
     /// Decodes annotator or source entity `id` within `limit` bytes.
     pub fn source_within(&self, id: i64, limit: usize) -> Result<Option<String>> {
-        let raw = match self.raw_within(ANNOTATOR_SOURCE, id, limit)? {
+        let raw = match self.raw_cow_within(ANNOTATOR_SOURCE, id, limit)? {
             Some(r) => Some(r),
-            None => self.raw_within(2, id, limit)?,
+            None => self.raw_cow_within(2, id, limit)?,
         };
         Ok(raw.and_then(|r| {
             let mut c = Cursor(&r, 0);

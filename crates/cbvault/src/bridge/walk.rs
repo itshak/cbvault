@@ -205,7 +205,9 @@ pub struct GameBuf {
     /// from the same set-up position builds the board once, not once a game.
     starts: StartCache,
     /// Scratch for an annotation record, used only when the file is not mapped.
-    annotation: Vec<u8>,
+    pub(crate) annotation: Vec<u8>,
+    /// Lazily created only for single-game PGN export; reused across reads.
+    pub(crate) pgn_writer: Option<Box<crate::pgn::PgnWriter>>,
     /// Whether the walk keeps keys, asked of the sink once per run.
     want_keys: bool,
     /// Whether the walk reads the `.cba` records, asked of the sink once.
@@ -265,11 +267,6 @@ impl GameBuf {
     /// Whether the walk keeps position keys.
     pub fn wants_keys(&self) -> bool {
         self.want_keys
-    }
-
-    /// Scratch buffer for reading annotations, kept across games.
-    pub(crate) fn annotation_scratch(&mut self) -> &mut Vec<u8> {
-        &mut self.annotation
     }
 
     /// Empties the buffer, keeping its memory: the decoded line, the keys, the

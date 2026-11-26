@@ -130,3 +130,22 @@ Scale selective search improved 1.23x; standard random-move reads 1.21x.
 Random PGN timings were mixed. These are preliminary local measurements,
 not GitHub-runner performance claims. Unicode, invalid UTF-8, malformed
 entity records and unmapped name resolution have explicit regression coverage.
+
+### Promotion overflow and random-read follow-up
+
+The zero-copy 2CBH name experiment passed every GitHub corpus. On the 3.4M
+four-worker broad search it achieved 1.47x speedup and reduced allocation
+calls from 10,591,062 to 4,816; standard broad search was 1.52x faster.
+CTG full verification passed all 85,834,993 entries and 87,463,673 moves,
+with zero unknown or illegal moves, damaged pages or missing children.
+
+The original 120-case special PGN is superseded for conversion by the
+6,572-game promotion overflow v3 source, with a separate 3,778-game
+standard-start CTG coverage source. Native special conversion is pending;
+independent move-tree and CTG edge audit tools are included. See the
+benchmark-corpus tooling README for exact conversion instructions.
+The next performance candidate eliminates per-record path clones,
+validates offsets without arithmetic overflow, borrows names in PGN tag
+writing, and reuses a lazy PGN writer inside GameBuf for random export.
+Local targeted mapped/unmapped tests and Clippy passed; paired CI is the
+performance authority.

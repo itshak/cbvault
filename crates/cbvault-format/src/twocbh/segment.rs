@@ -102,7 +102,7 @@ impl Segment {
     /// 8-byte trailer by [`Record::parse`] — the trailer cannot be the source,
     /// because finding it is what the length is for.
     pub fn total_at(&self, offset: u64) -> Result<u64> {
-        if offset < self.first || offset + 16 > self.len {
+        if offset < self.first || offset.checked_add(16).is_none_or(|end| end > self.len) {
             return Err(Error::corrupt(&self.path, offset, "2CBH segment: no record head here"));
         }
         let mut head = [0u8; 16];
@@ -133,19 +133,18 @@ impl Segment {
     /// nothing for the mapped one.
     pub fn record_at(&self, offset: u64) -> Result<SegmentRecord<'_>> {
         let total = self.total_at(offset)? as usize;
-        if offset + total as u64 > self.len {
+        if offset.checked_add(total as u64).is_none_or(|end| end > self.len) {
             return Err(Error::corrupt(
                 &self.path,
                 offset,
                 format!("2CBH segment: a {total}-byte record does not fit in {}", self.len),
             ));
         }
-        let path = self.path.clone();
         if let Some(slice) = self.file.slice_at(offset, total) {
-            return SegmentRecord::parse(&path, offset, slice);
+            return SegmentRecord::parse(&self.path, offset, slice);
         }
         let bytes = self.file.read(offset, total)?;
-        SegmentRecord::parse(&path, offset, bytes)
+        SegmentRecord::parse(&self.path, offset, bytes)
     }
 }
 

@@ -1,0 +1,19 @@
+{
+  "seed": 20261127,
+  "games": 3778,
+  "plies": 402787,
+  "coverage": {
+    "black:bishop": 422,
+    "white:bishop": 366,
+    "black:knight": 236,
+    "white:knight": 215,
+    "black:queen": 780,
+    "white:queen": 825,
+    "black:rook": 425,
+    "white:rook": 509
+  },
+  "matrix_target": 5908,
+  "matrix_reached": 3778,
+  "sha256": "cb4e304b6b25344d190e623c158a762d74f3bdedff369a4da6d1062f0053e080",
+  "notes": "All games from standard initial position. One legal mainline per reachable count/ordinal/delta, not a claim that all 5908 setup cells are reached. Full move depth required for CTG."
+}

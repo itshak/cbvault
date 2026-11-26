@@ -305,3 +305,14 @@ fn a_base_name_containing_a_dot_is_not_truncated() {
 
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn segment_rejects_overflowing_record_offsets() {
+    with_set("overflow_offsets", 1, true, |stem| {
+        let seg = Segment::open(twocbh::sibling(stem, ".2cbg")).unwrap();
+        for offset in [u64::MAX, u64::MAX - 7, u64::MAX - 15] {
+            assert!(seg.total_at(offset).is_err());
+            assert!(seg.record_at(offset).is_err());
+        }
+    });
+}
