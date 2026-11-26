@@ -218,3 +218,9 @@ Combined prior batch passed all six checks [45884229668](https://github.com/itsh
 ### Annotation delivery
 
 [45889485134](https://github.com/itshak/cbvault/actions/runs/45889485134) passed smoke/rich/extreme tiers with exact raw annotation, header, move and key fingerprints, including 463,129,646 bytes of extreme annotation content. Four-worker mapped ratios 1.168x/1.012x/1.023x; positioned ratios 1.090x/0.988x/1.029x. Retained the simpler no-copy delivery path; no universal throughput claim. Prior integration passed [45889332181](https://github.com/itshak/cbvault/actions/runs/45889332181) and [45889332189](https://github.com/itshak/cbvault/actions/runs/45889332189); latest standard 2CBH PGN ratio 0.944x is mixed versus earlier 1.025x and requires isolated export measurements.
+
+### PGN writer follow-up
+
+The corrected full-line predicate tests and write/flush error propagation passed all six CI jobs [45899196402](https://github.com/itshak/cbvault/actions/runs/45899196402); combined smoke and standard native gold [45899196407](https://github.com/itshak/cbvault/actions/runs/45899196407) passed. Standard ratios CBH verify/export 1.005x/0.989x; 2CBH 1.031x/1.009x.
+
+Single-pass annotation indexing [45899119516](https://github.com/itshak/cbvault/actions/runs/45899119516) passed all golden hashes; standard mapped four workers 1.038x, positioned single worker 0.946x; rich and extreme mostly within 2%. Recycled v2 PGN writers/bulk headers [45899254948](https://github.com/itshak/cbvault/actions/runs/45899254948) passed standard/rich/scale hashes; scale positioned 1.027x/1.014x (1/4 workers), mapped 0.987x/0.995x. Retained simpler one-pass validation and buffer reuse; gains are mixed and do not establish a universal throughput improvement.
