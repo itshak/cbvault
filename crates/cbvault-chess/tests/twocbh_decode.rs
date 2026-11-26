@@ -113,6 +113,7 @@ fn test_v2_chess960_castling() {
 
     let start = decode_v2_start(&game).expect("start");
     assert_eq!(start, Start::Chess960(0));
+    assert_cache_policies(&game);
 
     let mut sink = CollectMoves(Vec::new());
     let stats = walk_v2(GameRef::new(1), &game, &mut sink).expect("walk game");
@@ -149,6 +150,7 @@ fn test_v2_variations() {
     assert_eq!(stats.total_plies, 4);
     assert_eq!(stats.main_line_plies, 3);
     assert_eq!(buf.is_main(), &[true, true, true, false]);
+    assert_cache_policies(&game);
 }
 
 #[test]
@@ -202,4 +204,98 @@ fn test_v2_setup_castling_rights_recipe_6_2() {
     // Castling e1 to h1 (king to rook)
     assert_eq!(mv.from(), Square(4));
     assert_eq!(mv.to(), Square(7));
+}
+
+// Every mode must decode the same moves and positions; only the requested
+// caches are observed. Recompute the key independently of the cache policy.
+#[derive(Default)]
+struct CacheTrace {
+    hash: bool,
+    checkers: bool,
+    moves: Vec<(u16, bool)>,
+    positions: Vec<u64>,
+    checks: Vec<u64>,
+}
+
+impl MoveSink for CacheTrace {
+    fn play(&mut self, _: &Board, mv: u16, main: bool) {
+        self.moves.push((mv, main));
+    }
+
+    fn played(&mut self, board: &Board) {
+        let key = board.zobrist_full();
+        if self.hash {
+            assert_eq!(board.zobrist(), key);
+        }
+        self.positions.push(key);
+        if self.checkers {
+            self.checks.push(board.checkers_bb());
+        }
+    }
+
+    fn branch(&mut self) {}
+    fn resume(&mut self) {}
+    fn wants_zobrist(&self) -> bool {
+        self.hash
+    }
+    fn wants_checkers(&self) -> bool {
+        self.checkers
+    }
+}
+
+fn assert_cache_policies(game: &GameMoves<'_>) {
+    let mut reference = CacheTrace { hash: true, checkers: true, ..Default::default() };
+    let stats = walk_v2(GameRef::new(1), game, &mut reference).unwrap();
+    for (hash, checkers) in [(false, false), (true, false), (false, true)] {
+        let mut trace = CacheTrace { hash, checkers, ..Default::default() };
+        let got = walk_v2(GameRef::new(1), game, &mut trace).unwrap();
+        assert_eq!(got.total_plies, stats.total_plies);
+        assert_eq!(got.main_line_plies, stats.main_line_plies);
+        assert_eq!(got.lines, stats.lines);
+        assert_eq!(trace.moves, reference.moves);
+        assert_eq!(trace.positions, reference.positions);
+        if checkers {
+            assert_eq!(trace.checks, reference.checks);
+        }
+    }
+}
+
+#[test]
+fn v2_cache_policies_preserve_positions_and_requested_caches() {
+    for line in [
+        "e2e4 -- g1f3",
+        "e2e4 e7e5 g1f3 b8c6 f1c4 f8c5 e1g1 g8f6",
+        "e2e4 a7a6 e4e5 d7d5 e5d6",
+        "a2a4 h7h5 a4a5 h5h4 a5a6 h4h3 a6b7 h3g2 b7a8q g2h1q",
+        "e2e4 e7e5 f1b5 a7a6 b5d7",
+    ] {
+        let mut board = Board::startpos();
+        let mut content = 0xfffcu16.to_le_bytes().to_vec();
+        for w in words(&mut board, line) {
+            content.extend(w.to_le_bytes());
+        }
+        content.extend(0xffffu16.to_le_bytes());
+        let raw = framed(1, &content);
+        let game = GameMoves::parse(Path::new("cache.2cbg"), &raw).unwrap();
+        assert_cache_policies(&game);
+    }
+}
+
+#[test]
+fn v2_cache_policies_reject_pass_in_check() {
+    let mut board = Board::startpos();
+    let mut content = 0xfffcu16.to_le_bytes().to_vec();
+    for w in words(&mut board, "e2e4 f7f6 d1h5") {
+        content.extend(w.to_le_bytes());
+    }
+    assert!(board.in_check());
+    content.extend(cbvault_chess::movetable::NULL_MOVE.to_le_bytes());
+    content.extend(0xffffu16.to_le_bytes());
+    let raw = framed(1, &content);
+    let game = GameMoves::parse(Path::new("illegal-pass.2cbg"), &raw).unwrap();
+    for (hash, checkers) in [(false, false), (true, false), (false, true), (true, true)] {
+        let mut trace = CacheTrace { hash, checkers, ..Default::default() };
+        assert!(walk_v2(GameRef::new(1), &game, &mut trace).is_err());
+        assert_eq!(trace.positions.len(), 3);
+    }
 }
