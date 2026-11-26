@@ -263,28 +263,25 @@ pub fn walk_v2_from(what: GameRef, game: &GameMoves<'_>, start: &Start, sink: &m
 
                 sink.play(&board, mv_word, main);
 
-                if w == movetable::NULL_MOVE {
-                    board.play(Move::NULL).map_err(|why| Error::Move {
-                        game: what.id,
-                        ply,
-                        offset: what.offset,
-                        detail: format!("null move illegal: {why:?}"),
-                    })?;
-                } else if sink.wants_zobrist() || sink.wants_checkers() {
-                    board.play(mv).map_err(|why| Error::Move {
-                        game: what.id,
-                        ply,
-                        offset: what.offset,
-                        detail: format!("move illegal: {why:?}"),
-                    })?;
-                } else {
-                    board.play_fast(mv).map_err(|why| Error::Move {
-                        game: what.id,
-                        ply,
-                        offset: what.offset,
-                        detail: format!("move illegal: {why:?}"),
-                    })?;
-                }
+                // Match the classic decoder: maintain only the caches requested
+                // by the sink. All four entry points validate legality, including
+                // null moves (which test fresh king attacks, not cached checkers).
+                let result = match (sink.wants_zobrist(), sink.wants_checkers()) {
+                    (true, true) => board.play(mv),
+                    (true, false) => board.play_hashed(mv),
+                    (false, true) => board.play_checkered(mv),
+                    (false, false) => board.play_fast(mv),
+                };
+                result.map_err(|why| Error::Move {
+                    game: what.id,
+                    ply,
+                    offset: what.offset,
+                    detail: if mv.is_null() {
+                        format!("null move illegal: {why:?}")
+                    } else {
+                        format!("move illegal: {why:?}")
+                    },
+                })?;
 
                 sink.played(&board);
                 stats.total_plies += 1;
