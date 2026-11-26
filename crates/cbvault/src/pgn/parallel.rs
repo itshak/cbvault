@@ -157,6 +157,9 @@ pub fn export_span_report(
     while id <= last {
         let end = id.saturating_add(batch - 1).min(last);
         chunks.push((id, end));
+        if end == last {
+            break;
+        }
         id = end + 1;
     }
 
@@ -203,9 +206,10 @@ pub fn export_span_report(
             .collect()
     };
 
-    let mut write = |rendered: Vec<(u32, Vec<u8>, ExportStats)>, stats: &mut ExportStats| {
+    let mut write = |rendered: Vec<(u32, Vec<u8>, ExportStats)>, stats: &mut ExportStats| -> Result<()> {
         for (_, bytes, s) in rendered {
-            let _ = (*sink).write_all(&bytes);
+            sink.write_all(&bytes)
+                .map_err(|source| cbvault_format::error::Error::Io { path: base.to_path_buf(), source })?;
             stats.records += s.records;
             stats.games += s.games;
             stats.texts += s.texts;
@@ -218,11 +222,12 @@ pub fn export_span_report(
                 buffers.lock().unwrap_or_else(|e| e.into_inner()).push(bytes);
             }
         }
+        Ok(())
     };
 
     if threads <= 1 {
         for wave in chunks.chunks(1) {
-            write(render(wave), &mut stats);
+            write(render(wave), &mut stats)?;
         }
     } else {
         let pool = rayon::ThreadPoolBuilder::new()
@@ -234,10 +239,10 @@ pub fn export_span_report(
         // shared behind an `Arc`, and peak memory is one buffer per worker.
         for wave in chunks.chunks(threads) {
             let rendered = pool.install(|| render(wave));
-            write(rendered, &mut stats);
+            write(rendered, &mut stats)?;
         }
     }
-    let _ = out.flush();
+    out.flush().map_err(|source| cbvault_format::error::Error::Io { path: base.to_path_buf(), source })?;
     let failures = failures.into_inner().unwrap_or_else(|e| e.into_inner());
     Ok((stats, failures))
 }
@@ -357,6 +362,9 @@ pub fn export_span_report_v2(
     while id <= last {
         let end = id.saturating_add(batch - 1).min(last);
         chunks.push((id, end));
+        if end == last {
+            break;
+        }
         id = end + 1;
     }
 
@@ -493,5 +501,6 @@ pub fn export_span_report_v2(
         }
     }
 
+    sink.flush().map_err(|source| cbvault_format::error::Error::Io { path: base.to_path_buf(), source })?;
     Ok((stats, failures.into_inner().unwrap()))
 }

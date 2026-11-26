@@ -1221,3 +1221,32 @@ fn classic_early_stop_predicate_sees_current_hash_and_checkers() {
     assert_eq!(result.failures, 0);
     assert_eq!(result.plies, 3);
 }
+
+#[test]
+fn exports_propagate_write_and_flush_errors_for_both_generations() {
+    struct Broken(bool);
+    impl std::io::Write for Broken {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            if self.0 { Err(std::io::Error::other("broken output")) } else { Ok(bytes.len()) }
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::other("broken flush"))
+        }
+    }
+    let classic = fixture("classic-export-errors", 4);
+    let v2 = TempDb::create("v2-export-errors");
+    let mut builder = cbvault_fixtures::twocbh::Builder::new();
+    let at = builder.moves(1, &cbvault_fixtures::twocbh::words(&mut Board::startpos(), "e2e4 e7e5"));
+    for _ in 0..4 {
+        builder.game(at);
+    }
+    builder.write_to(&v2);
+    for path in [classic.base().with_extension("cbh"), v2.base().with_extension("2cbh")] {
+        for threads in [1, 4] {
+            for fail_write in [true, false] {
+                let err = crate::pgn::export_parallel(&path, &mut Broken(fail_write), threads, 1, 0).unwrap_err();
+                assert!(err.to_string().contains(if fail_write { "broken output" } else { "broken flush" }));
+            }
+        }
+    }
+}
