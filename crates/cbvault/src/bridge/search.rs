@@ -951,7 +951,7 @@ pub struct Hit {
 /// What an unindexed replay read, and whether it finished.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PositionSearch {
-    /// Games replayed.
+    /// Games replayed, including speculative work in the final bounded wave.
     pub games: u64,
     /// Main-line plies played.
     pub plies: u64,
@@ -973,8 +973,8 @@ pub struct PositionQuery<'p> {
     pub key: u64,
     /// How often the replay reports progress, in games; 0 for never.
     pub every: u64,
-    /// Asked after every chunk: a `true` answer stops the replay, which takes
-    /// effect within one chunk.
+    /// Polled before and during replay batches and before hit delivery. A true
+    /// answer stops delivery and prevents another wave.
     pub cancelled: Option<&'p (dyn Fn() -> bool + Sync)>,
     /// Early-stop predicate evaluated per move during replay.
     pub early_stop: Option<&'p (dyn Fn(&gigachess::Board) -> super::walk::Flow + Sync)>,
@@ -1011,7 +1011,7 @@ impl<'p> PositionQuery<'p> {
         self
     }
 
-    /// Asks `cancelled` after every chunk, and stops when it answers `true`.
+    /// Stops replay and ordered delivery when the predicate answers `true`.
     pub fn cancel_with(mut self, cancelled: &'p (dyn Fn() -> bool + Sync)) -> PositionQuery<'p> {
         self.cancelled = Some(cancelled);
         self
@@ -1050,9 +1050,9 @@ const CANCEL_POLL_GAMES: u32 = 256;
 /// that building one is not worth it. The other answer to the same question is
 /// the consumer's own index, fed by the keys a keyed conversion emits.
 ///
-/// The games of one chunk are replayed by one worker, which asks the cancel
-/// before the chunk and every 256 games within it, so a cancel takes effect
-/// within a few hundred games per worker — and a cancelled run says so:
+/// Bounded waves of 2048-game chunks deliver hits in caller range order.
+/// Workers poll cancellation every 256 games and delivery polls before each
+/// hit. Cancellation from a callback prevents subsequent hits and waves:
 /// [`PositionSearch::complete`] is `false` and its hits are a prefix of the
 /// answer, never the whole of it.
 pub fn for_each_position_key(
@@ -1074,6 +1074,74 @@ pub fn for_each_position_key_range(
     on_hit: &mut (impl FnMut(Hit) + Send),
 ) -> Result<PositionSearch> {
     replay_ranges(db, ranges, query, threads, on_hit, None)
+}
+
+// Each wave bounds speculative replay and retained hits.
+const REPLAY_BATCH: u32 = 2048;
+
+fn deliver_replay_waves(
+    db: &Database,
+    ranges: &[(u32, u32)],
+    threads: usize,
+    pool: Option<&rayon::ThreadPool>,
+    cancelled: impl Fn() -> bool,
+    replay: impl Fn(&(u32, u32)) -> Result<Replay> + Sync + Send,
+    on_hit: &mut (impl FnMut(Hit) + Send),
+) -> Result<PositionSearch> {
+    let mut total = PositionSearch { complete: true, ..PositionSearch::default() };
+    if cancelled() {
+        total.complete = false;
+        return Ok(total);
+    }
+    let owned = if threads > 1 && pool.is_none() {
+        Some(
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .map_err(|e| Error::corrupt(db.base(), 0, format!("thread pool creation failed: {e}")))?,
+        )
+    } else {
+        None
+    };
+    let pool = pool.or(owned.as_ref());
+    let mut chunks = ranges.iter().flat_map(|&(first, last)| {
+        (first..=last)
+            .step_by(REPLAY_BATCH as usize)
+            .map(move |start| (start, start.saturating_add(REPLAY_BATCH - 1).min(last)))
+    });
+    let width = threads.max(1);
+    loop {
+        if cancelled() {
+            total.complete = false;
+            break;
+        }
+        let wave: Vec<_> = chunks.by_ref().take(width).collect();
+        if wave.is_empty() {
+            break;
+        }
+        let replays = collect_chunks(db, &wave, threads, pool, &replay)?;
+        // Work counters include speculative work in the final wave.
+        for part in &replays {
+            total.games += part.stats.games;
+            total.plies += part.stats.plies;
+            total.failures += part.stats.failures;
+        }
+        for part in replays {
+            for hit in part.hits {
+                if cancelled() {
+                    total.complete = false;
+                    return Ok(total);
+                }
+                on_hit(hit);
+                total.hits += 1;
+            }
+            if part.cancelled || cancelled() {
+                total.complete = false;
+                return Ok(total);
+            }
+        }
+    }
+    Ok(total)
 }
 
 fn replay_ranges(
@@ -1144,28 +1212,14 @@ fn replay_ranges(
                 }
             }
             if !keep_going {
+                out.cancelled = true;
                 break;
             }
         }
         Ok(out)
     };
 
-    let replays: Vec<Replay> = collect_chunks(db, ranges, threads, pool, replay_chunk)?;
-
-    let mut total = PositionSearch { complete: true, ..PositionSearch::default() };
-    for replay in replays {
-        total.games += replay.stats.games;
-        total.plies += replay.stats.plies;
-        total.failures += replay.stats.failures;
-        for hit in replay.hits {
-            on_hit(hit);
-            total.hits += 1;
-        }
-        if replay.cancelled || is_cancelled() {
-            total.complete = false;
-        }
-    }
-    Ok(total)
+    deliver_replay_waves(db, ranges, threads, pool, is_cancelled, replay_chunk, on_hit)
 }
 
 /// The v2 version of the unindexed position replay. It must never parse a
@@ -1247,21 +1301,7 @@ fn for_each_position_key_range_v2(
         Ok(out)
     };
 
-    let replays: Vec<Replay> = collect_chunks(db, ranges, threads, pool, replay_chunk)?;
-    let mut total = PositionSearch { complete: true, ..PositionSearch::default() };
-    for replay in replays {
-        total.games += replay.stats.games;
-        total.plies += replay.stats.plies;
-        total.failures += replay.stats.failures;
-        for hit in replay.hits {
-            on_hit(hit);
-            total.hits += 1;
-        }
-        if replay.cancelled || is_cancelled() {
-            total.complete = false;
-        }
-    }
-    Ok(total)
+    deliver_replay_waves(db, ranges, threads, pool, is_cancelled, replay_chunk, on_hit)
 }
 
 #[cfg(test)]
