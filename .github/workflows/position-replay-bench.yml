@@ -1,0 +1,56 @@
+name: Bounded position replay benchmarks
+on:
+  push:
+    branches: [experiment/bounded-position-replay]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  paired:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        tier: [smoke, standard, scale]
+    env:
+      TIER: ${{ matrix.tier }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: ce12eb0d14e6eb7309aacfaf7ac847b9b5676821
+          path: baseline-src
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.97.1'
+          components: clippy
+      - name: Correctness and build
+        run: |
+          cargo +1.97.1 test --locked -p cbvault --lib position_callback_cancel_is_bounded_and_exact
+          cargo +1.97.1 test --locked -p cbvault --test twocbh_bridge position_callback_cancel_is_bounded_and_exact_v2
+          CBVAULT_NO_MMAP=1 cargo +1.97.1 test --locked -p cbvault --test twocbh_bridge position_callback_cancel_is_bounded_and_exact_v2
+          cargo +1.97.1 clippy --locked -p cbvault --lib --example position_replay_workload -- -D warnings
+          cp crates/cbvault/examples/position_replay_workload.rs baseline-src/crates/cbvault/examples/
+          cargo +1.97.1 build --locked --release -p cbvault --example position_replay_workload --manifest-path baseline-src/Cargo.toml --target-dir "$RUNNER_TEMP/base-target"
+          cargo +1.97.1 build --locked --release -p cbvault --example position_replay_workload --target-dir "$RUNNER_TEMP/head-target"
+      - name: Fetch and verify public corpus
+        run: |
+          mkdir -p benchmark-report
+          read -r stem sha url < <(python3 -c 'import json,os; m=json.load(open("scripts/bench-corpus/native-manifest.json"))["tiers"][os.environ["TIER"]]; print(m["stem"],m["sha256"],m["url"])')
+          curl --fail --location --retry 3 "$url" -o "$RUNNER_TEMP/fixture.tar.zst"
+          python3 scripts/bench-corpus/native-fixtures.py "$RUNNER_TEMP/fixture.tar.zst" "$sha" "$stem" "$RUNNER_TEMP/native" > benchmark-report/member-hashes.json
+          python3 - <<'PY'
+          import json,os
+          m=json.load(open("scripts/bench-corpus/native-manifest.json"))["tiers"][os.environ["TIER"]]
+          assert json.load(open("benchmark-report/member-hashes.json"))==m["members"]
+          PY
+      - name: Compare complete replay and cancel from callback
+        run: |
+          python3 scripts/bench-corpus/position-replay-bench.py "$TIER" "$RUNNER_TEMP/native" "$RUNNER_TEMP/base-target/release/examples/position_replay_workload" "$RUNNER_TEMP/head-target/release/examples/position_replay_workload" benchmark-report/position-replay.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: position-replay-${{ matrix.tier }}
+          path: benchmark-report/
