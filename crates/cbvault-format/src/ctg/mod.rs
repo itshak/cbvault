@@ -19,6 +19,7 @@
 //! and a 33-byte [`stats::Stats`] block.
 
 pub mod colour;
+pub mod cto;
 pub mod evaluation;
 pub mod moves;
 pub mod position;
