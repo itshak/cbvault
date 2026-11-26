@@ -1,7 +1,10 @@
 //! Reproducible native database workloads, shared by baseline and candidate.
 #![allow(missing_docs)]
 
-use cbvault::bridge::{Database, Filter, GameBuf, scan};
+use cbvault::bridge::{
+    Database, Filter, GameBuf, GameRef, GameSink, PositionQuery, convert_parallel, for_each_position_key, scan,
+};
+use gigachess::Board;
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
 use std::time::Instant;
@@ -42,6 +45,42 @@ fn hash(h: &mut u64, bytes: &[u8]) {
     }
 }
 
+struct Stream {
+    digest: u64,
+    count: u64,
+    plies: u64,
+    keys: u64,
+    stop: u64,
+    stop_at: Option<Instant>,
+}
+impl GameSink for Stream {
+    fn wants_keys(&self) -> bool {
+        true
+    }
+    fn cancelled(&self) -> bool {
+        self.count >= self.stop
+    }
+    fn game(&mut self, g: GameRef<'_>) {
+        self.count += 1;
+        if self.count == self.stop {
+            self.stop_at = Some(Instant::now());
+        }
+        assert_eq!(u64::from(g.id), self.count);
+        assert_eq!(g.keys.len(), g.moves.len() + 1);
+        self.plies += g.moves.len() as u64;
+        self.keys += g.keys.len() as u64;
+        hash(&mut self.digest, &g.id.to_le_bytes());
+        for &m in g.moves {
+            self.digest = (self.digest ^ u64::from(m)).wrapping_mul(1099511628211);
+        }
+        for &k in g.keys {
+            self.digest = (self.digest ^ k).wrapping_mul(1099511628211);
+        }
+    }
+    fn failed(&mut self, id: u32, error: &cbvault::bridge::Error) {
+        panic!("stream failed {id}: {error}");
+    }
+}
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let a: Vec<_> = std::env::args().collect();
     let db = Database::open(&a[1])?;
@@ -62,6 +101,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut digest = 14695981039346656037u64;
     let mut count = 0u64;
     let mut units = 0u64;
+    let mut cancel_tail_ns = 0u128;
     if alloc {
         ARMED.store(true, Relaxed);
     }
@@ -87,6 +127,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 hash(&mut digest, &m.id.to_le_bytes());
             }
             std::hint::black_box(&result);
+        }
+        "stream-keys" | "stream-cancel" => {
+            let stop = if op == "stream-cancel" { 1024 } else { u64::MAX };
+            let mut sink = Stream { digest, count: 0, plies: 0, keys: 0, stop, stop_at: None };
+            let stats = convert_parallel(&db, &mut sink, threads, 0)?;
+            assert_eq!(stats.failures, 0);
+            if op == "stream-cancel" {
+                assert!(!stats.complete && sink.count >= stop);
+                cancel_tail_ns = sink.stop_at.expect("cancel trigger").elapsed().as_nanos();
+            } else {
+                assert!(stats.complete);
+            }
+            assert_eq!(stats.games, sink.count);
+            assert_eq!(stats.plies, sink.plies);
+            assert_eq!(stats.keys, sink.keys);
+            assert_eq!(sink.keys, sink.count + sink.plies);
+            count = sink.count;
+            units = sink.plies;
+            digest = sink.digest;
+        }
+        "position-root" | "position-e4" => {
+            let board = if op == "position-root" {
+                Board::startpos()
+            } else {
+                gigachess::fen::parse_fen("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1")
+                    .map_err(|_| "bad FEN")?
+            };
+            let stats = for_each_position_key(&db, &PositionQuery::of(board.zobrist()), threads, |hit| {
+                count += 1;
+                hash(&mut digest, &hit.game.to_le_bytes());
+                hash(&mut digest, &hit.ply.to_le_bytes());
+                hash(&mut digest, &hit.key.to_le_bytes());
+            })?;
+            assert!(stats.complete && stats.failures == 0);
+            assert_eq!(stats.hits, count);
+            assert_eq!(stats.games, u64::from(games));
+            units = stats.plies;
         }
         "random-moves" | "random-pgn" | "random-pgn-noann" => {
             for id in ids {
@@ -116,7 +193,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     lat.sort_unstable();
     let pct = |p: usize| lat.get((lat.len().saturating_sub(1)) * p / 100).copied().unwrap_or(0);
     println!(
-        "{{\"count\":{count},\"units\":{units},\"fingerprint\":\"{digest:016x}\",\"seconds\":{elapsed:.9},\"p50_ns\":{},\"p95_ns\":{},\"p99_ns\":{},\"allocation_calls\":{}}}",
+        "{{\"count\":{count},\"units\":{units},\"fingerprint\":\"{digest:016x}\",\"seconds\":{elapsed:.9},\"p50_ns\":{},\"p95_ns\":{},\"p99_ns\":{},\"allocation_calls\":{},\"cancel_tail_ns\":{cancel_tail_ns}}}",
         pct(50),
         pct(95),
         pct(99),

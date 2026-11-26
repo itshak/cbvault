@@ -487,3 +487,55 @@ fn reused_pgn_writer_matches_fresh_across_games_and_modes() {
         assert_eq!(db.game_pgn_with(id, &mut reused, annotations).unwrap(), expected);
     }
 }
+
+#[test]
+fn v2_continuous_stream_is_ordered_and_cancelled_at_exact_prefix() {
+    use cbvault::bridge::{GameRef, GameSink, convert_parallel};
+    struct Sink {
+        ids: Vec<u32>,
+        stop: usize,
+        keys: u64,
+    }
+    impl GameSink for Sink {
+        fn wants_keys(&self) -> bool {
+            true
+        }
+        fn cancelled(&self) -> bool {
+            self.ids.len() >= self.stop
+        }
+        fn game(&mut self, g: GameRef<'_>) {
+            self.ids.push(g.id);
+            self.keys += g.keys.len() as u64;
+            assert_eq!(g.keys.len(), g.moves.len() + 1);
+        }
+        fn failed(&mut self, id: u32, e: &cbvault::bridge::Error) {
+            panic!("unexpected failed game {id}: {e}");
+        }
+    }
+    let temp = TempDb::create("v2_continuous_stream");
+    let mut builder = Builder::new();
+    let mut board = Board::startpos();
+    let at = builder.moves(1, &words(&mut board, "e2e4 e7e5 g1f3"));
+    for _ in 0..128 {
+        builder.game(at);
+    }
+    builder.write_to(&temp);
+    let db = Database::open(temp.base()).unwrap();
+    for threads in [2, 4, 8] {
+        for batch in [1, 7, 32] {
+            let mut sink = Sink { ids: Vec::new(), stop: usize::MAX, keys: 0 };
+            let stats = convert_parallel(&db, &mut sink, threads, batch).unwrap();
+            assert!(stats.complete);
+            assert_eq!(sink.ids, (1..=128).collect::<Vec<_>>());
+            assert_eq!(stats.keys, 512);
+            for stop in [0, 1, 13, 63] {
+                let mut sink = Sink { ids: Vec::new(), stop, keys: 0 };
+                let stats = convert_parallel(&db, &mut sink, threads, batch).unwrap();
+                assert!(!stats.complete);
+                assert_eq!(sink.ids, (1..=stop as u32).collect::<Vec<_>>());
+                assert_eq!(stats.games, stop as u64);
+                assert_eq!(stats.keys, stop as u64 * 4);
+            }
+        }
+    }
+}

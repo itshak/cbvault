@@ -1084,6 +1084,18 @@ impl Database {
     /// the shape that answers "show me this game with its comments".
     pub fn game_with<'a>(&'a self, id: u32, buf: &'a mut GameBuf, want_annotations: bool) -> Result<GameRef<'a>> {
         let header = self.header_ref(id)?;
+        self.game_with_header(header, buf, want_annotations)
+    }
+
+    // The streaming reader already has a validated header. Do not read it
+    // again (particularly costly when mmap is disabled).
+    fn game_with_header<'a>(
+        &'a self,
+        header: GameHeaderRef<'a>,
+        buf: &'a mut GameBuf,
+        want_annotations: bool,
+    ) -> Result<GameRef<'a>> {
+        let id = header.id();
         let at = self.move_offset(&header)?;
         match &self.backend {
             Backend::Classic(_) => {
