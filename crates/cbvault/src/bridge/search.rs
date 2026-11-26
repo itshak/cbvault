@@ -455,21 +455,46 @@ fn parse_eco(text: &str) -> Option<(u16, Option<u8>)> {
 }
 
 /// An entity name from either database generation. Classic names remain
-/// borrowed; 2CBH .2lid names are decoded on demand for matched rows only.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// borrowed; 2CBH .2lid names are decoded on demand for matched rows only,
+/// borrowing valid mapped UTF-8 where possible.
+#[derive(Clone, Debug)]
 pub enum SearchName<'a> {
     /// Borrowed classic namebase record.
     Classic(Name<'a>),
     /// The two native v2 UTF-8 entity fields.
     TwoCbh { last: String, first: String },
+    /// Valid UTF-8 fields borrowed from the mapped native entity file.
+    TwoCbhBorrowed { last: &'a str, first: &'a str },
 }
 
-impl SearchName<'_> {
+impl PartialEq for SearchName<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Classic(a), Self::Classic(b)) => a == b,
+            (Self::Classic(_), _) | (_, Self::Classic(_)) => false,
+            _ => self.last() == other.last() && self.first() == other.first(),
+        }
+    }
+}
+
+impl Eq for SearchName<'_> {}
+
+impl<'a> SearchName<'a> {
+    fn from_native(last: std::borrow::Cow<'a, str>, first: std::borrow::Cow<'a, str>) -> Self {
+        match (last, first) {
+            (std::borrow::Cow::Borrowed(last), std::borrow::Cow::Borrowed(first)) => {
+                Self::TwoCbhBorrowed { last, first }
+            }
+            (last, first) => Self::TwoCbh { last: last.into_owned(), first: first.into_owned() },
+        }
+    }
+
     /// First field, usually a surname or tournament title.
     pub fn last(&self) -> &[u8] {
         match self {
             Self::Classic(name) => name.last(),
             Self::TwoCbh { last, .. } => last.as_bytes(),
+            Self::TwoCbhBorrowed { last, .. } => last.as_bytes(),
         }
     }
 
@@ -478,6 +503,7 @@ impl SearchName<'_> {
         match self {
             Self::Classic(name) => name.first(),
             Self::TwoCbh { first, .. } => first.as_bytes(),
+            Self::TwoCbhBorrowed { first, .. } => first.as_bytes(),
         }
     }
 
@@ -491,7 +517,8 @@ impl SearchName<'_> {
         match self {
             Self::Classic(name) => name.as_str(),
             Self::TwoCbh { last, first } if first.is_empty() => Some(last),
-            Self::TwoCbh { .. } => None,
+            Self::TwoCbhBorrowed { last, first: "" } => Some(last),
+            Self::TwoCbh { .. } | Self::TwoCbhBorrowed { .. } => None,
         }
     }
 
@@ -499,17 +526,31 @@ impl SearchName<'_> {
     pub fn push_text(&self, out: &mut String) {
         match self {
             Self::Classic(name) => name.push_text(out),
-            Self::TwoCbh { last, first } => {
-                out.push_str(last);
-                if !first.is_empty() {
-                    if !last.is_empty() {
-                        out.push_str(", ");
-                    }
-                    out.push_str(first);
-                }
-            }
+            Self::TwoCbh { last, first } => push_native(out, last, first),
+            Self::TwoCbhBorrowed { last, first } => push_native(out, last, first),
         }
     }
+}
+
+fn push_native(out: &mut String, last: &str, first: &str) {
+    out.push_str(last);
+    if !first.is_empty() {
+        if !last.is_empty() {
+            out.push_str(", ");
+        }
+        out.push_str(first);
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn native_search_names_compare_by_content_across_storage_modes() {
+    let a = SearchName::TwoCbh { last: "Юрьев".into(), first: "Éric".into() };
+    let b = SearchName::TwoCbhBorrowed { last: "Юрьев", first: "Éric" };
+    assert_eq!(a, b);
+    let mut text = String::new();
+    b.push_text(&mut text);
+    assert_eq!(text, "Юрьев, Éric");
 }
 
 /// One game a scan matched, with generation-aware header and names.
@@ -679,15 +720,15 @@ fn scan_ranges<'db>(db: &'db Database, ranges: &[(u32, u32)], filter: &Filter, t
                 if !filter.matches(id, &header) {
                     continue;
                 }
-                let white = entities.player(header.white())?.unwrap_or_default();
-                let black = entities.player(header.black())?.unwrap_or_default();
-                let event = entities.tournament(header.tournament())?.unwrap_or_default();
+                let (wl, wf) = entities.player_name(header.white())?.unwrap_or_default();
+                let (bl, bf) = entities.player_name(header.black())?.unwrap_or_default();
+                let (event, _) = entities.tournament_name(header.tournament())?.unwrap_or_default();
                 out.push(Match {
                     id,
                     header,
-                    white: SearchName::TwoCbh { last: white.last, first: white.first },
-                    black: SearchName::TwoCbh { last: black.last, first: black.first },
-                    event: SearchName::TwoCbh { last: event.title, first: String::new() },
+                    white: SearchName::from_native(wl, wf),
+                    black: SearchName::from_native(bl, bf),
+                    event: SearchName::from_native(event, std::borrow::Cow::Borrowed("")),
                 });
             }
         } else if let Some(entities) = classic_entities {
