@@ -389,7 +389,7 @@ mod tests {
         for (i, a) in all.iter().enumerate() {
             assert!(!all[i + 1..].contains(a), "{a:?} appears twice");
         }
-        assert_eq!(all.len(), 170);
+        assert_eq!(all.len(), 179); // 170 original + 9 independently verified codes.
     }
 
     #[test]
