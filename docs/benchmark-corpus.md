@@ -1,6 +1,6 @@
 # Public benchmark corpus and CI plan
 
-Status: proposal, data not downloaded, converted or published. This is the prerequisite phase of consolidate-readers-and-benchmark. Public fixtures must be separately licensed and documented; code remains MIT. Never use private Mega, commercial books, unauthorized study annotations or proprietary ChessBase sample data.
+Status: public source PGNs generated and validated; native conversion audit in progress. The 25,000-game native smoke tier has passed local replay and cross-format byte parity. This is the prerequisite phase of consolidate-readers-and-benchmark. Public fixtures must be separately licensed and documented; code remains MIT. Never use private Mega, commercial books, unauthorized study annotations or proprietary ChessBase sample data.
 
 ## Sources
 
@@ -34,3 +34,31 @@ Use standard public GitHub-hosted runners (standard runner compute is free for p
 ## Workloads and output
 
 Benchmark actual release-mode library/CLI code: header scan, selective and broad filters, random game read (fixed seed), mainline/tree decode, key feed, annotations on/off, PGN export to counting/hash sink and real file separately, sequential/parallel, cold-ish/warm access, memory modes, CTG open/probe/tree/stream when available. Report games, plies, bytes, wall time, throughput, P50/P95/P99 for random probes, peak RSS, allocation counts, workers, CPU/OS/toolchain, commit and corpus hash. Exclude download, compile, decompress from timed region. Alternate base/candidate, warmup, at least five paired repetitions where practical; report median, dispersion, relative changes and noisy runs. Distinguish filesystem cache conditions; do not claim cold OS cache without control. Keep existing gold semantic/byte normalization and strict sequential/parallel identity gates; establish independent expected counts and hashes per format before optimizing. Store baseline v0.2.0 and subsequent benchmark records with exact environment; no made-up benchmark values.
+
+
+## Native CI ingestion (2026-11-26)
+
+The maintainer supplied native archive checksums and CBH/2CBH companions. The
+smoke fixture is pinned in `scripts/bench-corpus/native-manifest.json`; extraction
+rejects path traversal, non-regular members and unexpected extensions and drops
+AppleDouble and application INI metadata. The release asset is a normalized
+repack of the audited native files, not a private database. The source corpus
+contains 25,000 CC0 Lichess games plus original synthetic annotations. Native
+source slots differ (classic 25,000; 2CBH 25,001 including its non-game slot).
+Both readers replay 1,648,722 main-line plies and 1,710,550 total plies and
+export identical PGN bytes. These counts are independently pinned to the source
+PGN. The PGN byte hash is a cbvault regression baseline, not an independently
+exported ChessBase oracle; native annotation semantic parity is not yet proven.
+
+The new native workflow runs a bounded Linux PR smoke and manual smoke, pairing
+v0.2.0 (commit 59f66f921e82a813f96dd6f289084d7ca9f99416) with the candidate,
+checking counts and exact output hashes in sequential, parallel, and unmapped
+modes before measuring five paired repetitions. The reports contain timings,
+CLI counts, environment and dispersion; timing is not a release gate yet.
+The existing three-platform correctness workflow remains unchanged.
+
+Audit blockers: classic 1M fails at game 226476, while 2CBH passes. The special
+archive contains 110120 games instead of 120; quarantine it until provenance
+and intended contents are verified. The CTG corpus, independent ChessBase
+reference PGNs, full scale audit, allocation and RSS gates, and broader
+workloads remain pending. No private gold data is uploaded.

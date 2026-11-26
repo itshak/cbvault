@@ -1,0 +1,57 @@
+name: Native corpus benchmarks
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, roadmap/reader-performance-and-benchmarks]
+  workflow_dispatch:
+    inputs:
+      tier:
+        type: choice
+        options: [smoke]
+        default: smoke
+permissions:
+  contents: read
+concurrency:
+  group: native-corpus-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  paired:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      BASELINE: 59f66f921e82a813f96dd6f289084d7ca9f99416
+      TIER: ${{ inputs.tier || 'smoke' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: 59f66f921e82a813f96dd6f289084d7ca9f99416
+          path: baseline-src
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.97.1'
+      - name: Fetch and verify native corpus
+        run: |
+          set -euo pipefail
+          read -r stem sha url < <(python3 -c 'import json,os; m=json.load(open("scripts/bench-corpus/native-manifest.json"))["tiers"][os.environ["TIER"]]; print(m["stem"],m["sha256"],m["url"])')
+          curl --fail --location --retry 3 "$url" -o "$RUNNER_TEMP/fixture.tar.zst"
+          python3 scripts/bench-corpus/native-fixtures.py "$RUNNER_TEMP/fixture.tar.zst" "$sha" "$stem" "$RUNNER_TEMP/native" > "$RUNNER_TEMP/member-hashes.json"
+          df -h "$RUNNER_TEMP"
+      - name: Build release baseline and candidate
+        run: |
+          cargo +1.97.1 build --locked --release -p cbvault-cli --manifest-path baseline-src/Cargo.toml --target-dir "$RUNNER_TEMP/base-target"
+          cargo +1.97.1 build --locked --release -p cbvault-cli --target-dir "$RUNNER_TEMP/head-target"
+      - name: Verify and benchmark both database generations
+        run: |
+          mkdir -p benchmark-report
+          { rustc --version; uname -a; lscpu; echo "base=$BASELINE"; git rev-parse HEAD; } > benchmark-report/environment.txt
+          python3 scripts/bench-corpus/native-bench.py --tier "$TIER" --fixtures "$RUNNER_TEMP/native" --base "$RUNNER_TEMP/base-target/release/cbvault" --head "$RUNNER_TEMP/head-target/release/cbvault" --report benchmark-report/results.json --repetitions 5
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-benchmark-${{ env.TIER }}-${{ github.run_id }}
+          path: benchmark-report/
+          retention-days: 14
+          if-no-files-found: ignore

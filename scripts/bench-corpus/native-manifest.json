@@ -1,0 +1,113 @@
+{
+  "version": "20261125-v1",
+  "baseline": "59f66f921e82a813f96dd6f289084d7ca9f99416",
+  "license": "Lichess CC0 and maintainer original annotations; no private Mega data",
+  "tiers": {
+    "smoke": {
+      "stem": "realistic-25000",
+      "games": 25000,
+      "mainline_plies": 1648722,
+      "all_plies": 1710550,
+      "slots": {
+        "cbh": 25000,
+        "2cbh": 25001
+      },
+      "sha256": "e876bcdf98527f254ca4c4f6e0562a1ac0a0c9b7fc892f7c4783ff35ff0c7e04",
+      "url": "https://github.com/itshak/cbvault/releases/download/benchmark-corpus-20261125-v1/realistic-25000-native-v1.tar.zst",
+      "export_sha256": {
+        "cbh": "6e6eb235825d0d44891765b173333afeb48048a65b83cc3097ef66a168f13995",
+        "2cbh": "6e6eb235825d0d44891765b173333afeb48048a65b83cc3097ef66a168f13995"
+      },
+      "members": {
+        "realistic-25000.2cba": {
+          "bytes": 7607096,
+          "sha256": "dc26a6921cc45062e4c33435ca319053c8708ce56d40a557ec6a053665f0e3e3"
+        },
+        "realistic-25000.2cbg": {
+          "bytes": 6929992,
+          "sha256": "89e20d37091347b48f47e85d94c5fe1c9d249ba7b46ecf8ba22b7867562901f3"
+        },
+        "realistic-25000.2cbh": {
+          "bytes": 4800192,
+          "sha256": "e237abcf6d299e09b443f31118673b2822e06f715eb5f6850984ae4a87a0f446"
+        },
+        "realistic-25000.2lcd": {
+          "bytes": 327680,
+          "sha256": "ee2a028e0d962138b28e916013f9bdc5d47b424e586177991b9bd4f2354427e9"
+        },
+        "realistic-25000.2lgd": {
+          "bytes": 3586572,
+          "sha256": "81af2039f9280c2f64f1076eff79c4956483dc46d6590a01b52860a2971ca632"
+        },
+        "realistic-25000.2lid": {
+          "bytes": 22483101,
+          "sha256": "44c9e402ae278084b9c0467d21f8650f5a3b55aa72b789a6e3c11aa20a5d7e19"
+        },
+        "realistic-25000.cba": {
+          "bytes": 1667933,
+          "sha256": "8e8a0ec1876e7a9c489fb855c848ccb2df25a98b7d79f21c977a2a9781be8f6c"
+        },
+        "realistic-25000.cbc": {
+          "bytes": 94,
+          "sha256": "05cb9caad41ddb39b6cdfa3731adfd6bf09c55b7c0864c93c6679b275a08e49f"
+        },
+        "realistic-25000.cbe": {
+          "bytes": 32,
+          "sha256": "0f2b24067c28854c2caca9d1815dde5caa8d36743b6a92d230b3a0fb088b938f"
+        },
+        "realistic-25000.cbg": {
+          "bytes": 1860314,
+          "sha256": "7fcdc329fd4b872bb86d118e15d344ec9d91ea62151175cb52e4c5977c8c59d9"
+        },
+        "realistic-25000.cbh": {
+          "bytes": 1150046,
+          "sha256": "6ee698dff3d655a6679f1287f6b72739b28ba473140f73dab51ecb60d893b544"
+        },
+        "realistic-25000.cbj": {
+          "bytes": 3000032,
+          "sha256": "0fd048fca06eafe58f5352c79df6b5b009525c6467f4a2e5d46e89b1bbfefa24"
+        },
+        "realistic-25000.cbl": {
+          "bytes": 1649,
+          "sha256": "00ac972bd236bd259678a3abc8778149af223e6210e3d838f1bf790db5e96650"
+        },
+        "realistic-25000.cbm": {
+          "bytes": 32,
+          "sha256": "d51318e338fc4c6d34c16934950ef25213af014fc5a60e8f8f4f90a098e289e5"
+        },
+        "realistic-25000.cbp": {
+          "bytes": 469300,
+          "sha256": "c446b66ec10706036ef22615c12fc1aeb0f8a6154859d5143e287514d82815f9"
+        },
+        "realistic-25000.cbs": {
+          "bytes": 100,
+          "sha256": "062699088006243534b05acf8ec534636084cdd74fec2b3aceac116de67595b9"
+        },
+        "realistic-25000.cbt": {
+          "bytes": 4883,
+          "sha256": "02c38f4c6823c898757753fecaa07a15711ee3d0fb116e5f83aede0a1df6c831"
+        },
+        "realistic-25000.cbtt": {
+          "bytes": 437,
+          "sha256": "6ecd2fedd3320d67ce55fad44a0c9180e3b2ae927840c058a1a9b9f38a459ff0"
+        },
+        "realistic-25000.cib": {
+          "bytes": 921164,
+          "sha256": "eee616fd30b78942aaf8394af50284ef3393093f4a8a98e55fb7ad7126421e8d"
+        },
+        "realistic-25000.cib2": {
+          "bytes": 123148,
+          "sha256": "85278a9a9efe425675024459a31ccd6656c5c01a23f4b68fe3e8018dadcaa65f"
+        },
+        "realistic-25000.cit": {
+          "bytes": 280172,
+          "sha256": "2c2b8d62229a2879fc52989a2dfd9b7bb9bf6cd102e5d7dce456fecf68f71696"
+        },
+        "realistic-25000.cit2": {
+          "bytes": 20,
+          "sha256": "bffa14240c0ba936889af382f912ddfd4bbf07c386439aab7465b131cdd83a76"
+        }
+      }
+    }
+  }
+}
