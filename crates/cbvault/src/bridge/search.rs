@@ -1107,7 +1107,8 @@ pub struct PositionQuery<'p> {
     /// Polled before and during replay batches and before hit delivery. A true
     /// answer stops delivery and prevents another wave.
     pub cancelled: Option<&'p (dyn Fn() -> bool + Sync)>,
-    /// Early-stop predicate evaluated per move during replay.
+    /// Pure early-stop predicate evaluated at the start and after main-line moves.
+    /// Workers may evaluate it speculatively, including beyond an ordered stop.
     pub early_stop: Option<&'p (dyn Fn(&gigachess::Board) -> super::walk::Flow + Sync)>,
 }
 
@@ -1148,7 +1149,8 @@ impl<'p> PositionQuery<'p> {
         self
     }
 
-    /// Early-stop predicate evaluated per move during replay.
+    /// Pure early-stop predicate evaluated at the start and after main-line moves.
+    /// Workers may evaluate it speculatively, including beyond an ordered stop.
     pub fn early_stop_with(
         mut self,
         early_stop: &'p (dyn Fn(&gigachess::Board) -> super::walk::Flow + Sync),
@@ -1220,6 +1222,9 @@ impl MoveSink for PositionSink<'_> {
     }
     fn wants_zobrist(&self) -> bool {
         true
+    }
+    fn wants_checkers(&self) -> bool {
+        self.query.early_stop.is_some()
     }
 }
 

@@ -167,10 +167,13 @@ impl MoveSink for Line<'_, '_> {
     fn branch(&mut self) {}
     fn resume(&mut self) {}
 
-    /// Keys, and only keys: the hash is maintained and the checkers cache is
-    /// not, which is `play_hashed` rather than the slower `play`.
+    // A public predicate receives a complete Board, not a cache-limited view.
     fn wants_zobrist(&self) -> bool {
-        self.keep
+        self.keep || self.predicate.is_some()
+    }
+
+    fn wants_checkers(&self) -> bool {
+        self.predicate.is_some()
     }
 }
 

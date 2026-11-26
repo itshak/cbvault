@@ -715,3 +715,31 @@ fn v2_header_windows_preserve_named_results_across_boundaries() {
         assert!(scan_range(&db, 17002, 17003, &Filter::All, threads).unwrap().is_empty());
     }
 }
+
+#[test]
+fn v2_early_stop_predicate_sees_current_hash_and_checkers() {
+    use cbvault::bridge::{Flow, PositionQuery, for_each_position_key};
+    let temp = TempDb::create("v2_predicate_caches");
+    let mut builder = Builder::new();
+    let mut board = Board::startpos();
+    let at = builder.moves(1, &words(&mut board, "e2e4 f7f6 d1h5"));
+    builder.game(at);
+    builder.write_to(&temp);
+    let db = Database::open(temp.base()).unwrap();
+    let predicate = |board: &Board| {
+        let rebuilt = gigachess::fen::parse_fen(&board.to_fen()).unwrap();
+        assert_eq!(board.zobrist(), rebuilt.zobrist());
+        assert_eq!(board.checkers_bb(), rebuilt.checkers_bb());
+        Flow::Continue
+    };
+    let seg = cbvault_format::twocbh::Segment::open(temp.base().with_extension("2cbg")).unwrap();
+    let frame = seg.record_at(at as u64).unwrap();
+    let game = cbvault_format::twocbh::moves::GameMoves::from_record(seg.path(), frame.record()).unwrap();
+    let mut buf = GameBuf::new();
+    buf.set_wants(false, false);
+    assert!(buf.walk_v2_with(1, at as u64, &game, Some(&predicate)).unwrap());
+    assert!(buf.keys().is_empty());
+    let result = for_each_position_key(&db, &PositionQuery::of(0).early_stop_with(&predicate), 4, |_| {}).unwrap();
+    assert_eq!(result.failures, 0);
+    assert_eq!(result.plies, 3);
+}

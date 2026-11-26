@@ -1188,3 +1188,28 @@ fn bounded_id_page_matches_full_classic_scan() {
         }
     }
 }
+
+#[test]
+fn classic_early_stop_predicate_sees_current_hash_and_checkers() {
+    let mut builder = Builder::new();
+    let toks = [Tok::Mv("e2e4"), Tok::End, Tok::Mv("f7f6"), Tok::End, Tok::Mv("d1h5"), Tok::End];
+    let stream = classic::encode(&Board::startpos(), &toks, 0, false);
+    let raw = classic::move_record(0, None, None, &stream);
+    builder.game(&raw);
+    let temp = builder.write("classic-predicate-caches");
+    let db = Database::open(temp.base()).unwrap();
+    let predicate = |board: &Board| {
+        let rebuilt = gigachess::fen::parse_fen(&board.to_fen()).unwrap();
+        assert_eq!(board.zobrist(), rebuilt.zobrist());
+        assert_eq!(board.checkers_bb(), rebuilt.checkers_bb());
+        Flow::Continue
+    };
+    let game = GameMoves::parse(&db.members().moves, &raw).unwrap();
+    let mut buf = GameBuf::new();
+    buf.set_wants(false, false);
+    assert!(buf.walk_with(1, 0, &game, Some(&predicate)).unwrap());
+    assert!(buf.keys().is_empty());
+    let result = for_each_position_key(&db, &PositionQuery::of(0).early_stop_with(&predicate), 4, |_| {}).unwrap();
+    assert_eq!(result.failures, 0);
+    assert_eq!(result.plies, 3);
+}
