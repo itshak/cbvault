@@ -1,7 +1,7 @@
 name: Native CTG benchmarks
 on:
   push:
-    branches: [roadmap/reader-performance-and-benchmarks, roadmap/ctg-native-benchmarks, experiment/ctg-hot-path]
+    branches: [roadmap/reader-performance-and-benchmarks, roadmap/ctg-native-benchmarks, experiment/ctg-hot-path, experiment/ctg-bounded-index]
     paths:
       - '.github/workflows/native-book-bench.yml'
       - 'scripts/bench-corpus/native-book-*'
@@ -23,12 +23,12 @@ jobs:
     timeout-minutes: 90
     env:
       RAYON_NUM_THREADS: '4'
-      BASELINE: 39a9552852973abd63e4f84caa74486035070ed0
+      BASELINE: bd87af0d0199f66cbec4306db2462c2463707566
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
-          ref: 39a9552852973abd63e4f84caa74486035070ed0
+          ref: bd87af0d0199f66cbec4306db2462c2463707566
           path: baseline-src
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@master
@@ -48,6 +48,10 @@ jobs:
           cargo +1.97.1 test --locked --release -p cbvault-chess ctg:: --target-dir "$RUNNER_TEMP/head-target"
           cargo +1.97.1 test --locked --release -p cbvault --test ctg_regressions --target-dir "$RUNNER_TEMP/head-target"
           cargo +1.97.1 clippy --locked -p cbvault-chess -p cbvault-format -p cbvault --lib --target-dir "$RUNNER_TEMP/head-target" -- -D warnings
+      - name: Bounded index differential tests
+        run: |
+          cargo +1.97.1 test --locked --release -p cbvault --lib bounded_index_matches_validated_page_walk --target-dir "$RUNNER_TEMP/head-target"
+          CBVAULT_NO_MMAP=1 cargo +1.97.1 test --locked --release -p cbvault --lib bounded_index_matches_validated_page_walk --target-dir "$RUNNER_TEMP/head-target"
       - name: Verify and extract CTG companions
         run: |
           mkdir -p benchmark-report
