@@ -208,3 +208,9 @@ Shared v2 header windows ([45875468249](https://github.com/itshak/cbvault/action
 ID page ([45875714097](https://github.com/itshak/cbvault/actions/runs/45875714097)): first 100 IDs, exact total, four workers, scale mapped all filter 2.28x CBH and 1.37x 2CBH versus materializing all IDs; positioned peak process RSS 30,776 -> 3,968 KiB CBH and 36,200 -> 10,236 KiB 2CBH. Selective pages may have negligible gain. Sources must remain immutable through both passes.
 
 Previous combined gates passed [45872314054](https://github.com/itshak/cbvault/actions/runs/45872314054) and [45872314117](https://github.com/itshak/cbvault/actions/runs/45872314117). This batch is consolidated pending new combined gates. CTG native/adaptive real-book work remains deferred.
+
+### Reusable pagination plan
+
+[45884342303](https://github.com/itshak/cbvault/actions/runs/45884342303) passed all three tiers. Scale (3,410,497 games), mapped, 4 workers, all-filter, 48 page requests: CBH 515.01 -> 13.54 ms including setup, p95 11.334 -> 0.059 ms; 2CBH 1366.17 -> 45.75 ms including setup, p95 28.936 -> 0.246 ms. Positioned 2CBH broad 2.936 -> 0.07159 s including setup. Exact totals and fingerprints agree across fresh/reused plans. Plan holds per-chunk cumulative counts and requires immutable database contents.
+
+Combined prior batch passed all six checks [45884229668](https://github.com/itshak/cbvault/actions/runs/45884229668) and both native benchmark tiers [45884229874](https://github.com/itshak/cbvault/actions/runs/45884229874). Standard verification/export ratios versus roadmap baseline: CBH 0.987x/0.996x; 2CBH 1.000x/1.025x. No claim of universal speedup.
