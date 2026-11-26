@@ -509,6 +509,26 @@ fn v2_id_only_scan_matches_named_scan_across_batches() {
     builder.write_to(&temp);
     let db = Database::open(temp.base()).unwrap();
     for filter in [Filter::All, Filter::WhiteEloAtLeast(2000), Filter::WhiteEloAtLeast(3100)] {
+        let full = cbvault::bridge::scan_ids(&db, &filter, 1).unwrap();
+        for threads in [1, 4] {
+            let ctx = cbvault::bridge::SearchContext::new(threads).unwrap();
+            for (offset, limit) in [
+                (0, 0),
+                (0, 50),
+                (8150, 200),
+                (full.ids().len().saturating_sub(10) as u64, 50),
+                (u64::MAX, 50),
+                (0, 20000),
+            ] {
+                let page = ctx.scan_id_page(&db, &filter, offset, limit).unwrap();
+                let start = offset.min(full.ids().len() as u64) as usize;
+                let end = start.saturating_add(limit).min(full.ids().len());
+                assert_eq!(page.ids(), &full.ids()[start..end]);
+                assert_eq!(page.stats().matches, full.stats().matches);
+                assert_eq!(page.stats().records, full.stats().records);
+                assert_eq!(page.offset(), offset);
+            }
+        }
         for threads in [1, 2, 4] {
             let want = scan_range(&db, 3, 16999, &filter, threads).unwrap();
             let got = scan_ids_range(&db, 3, 16999, &filter, threads).unwrap();
