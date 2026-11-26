@@ -1,13 +1,14 @@
 name: Native CTG benchmarks
 on:
   push:
-    branches: [roadmap/reader-performance-and-benchmarks, roadmap/ctg-native-benchmarks]
+    branches: [roadmap/reader-performance-and-benchmarks, roadmap/ctg-native-benchmarks, experiment/ctg-hot-path]
     paths:
       - '.github/workflows/native-book-bench.yml'
       - 'scripts/bench-corpus/native-book-*'
       - 'crates/cbvault/examples/native_book_workload.rs'
       - 'crates/cbvault-format/src/ctg/**'
       - 'crates/cbvault-chess/src/ctg.rs'
+      - 'crates/cbvault/src/book.rs'
   workflow_dispatch:
   schedule:
     - cron: '15 3 1 * *'
@@ -22,17 +23,18 @@ jobs:
     timeout-minutes: 90
     env:
       RAYON_NUM_THREADS: '4'
-      BASELINE: 59f66f921e82a813f96dd6f289084d7ca9f99416
+      BASELINE: 39a9552852973abd63e4f84caa74486035070ed0
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
-          ref: 59f66f921e82a813f96dd6f289084d7ca9f99416
+          ref: 39a9552852973abd63e4f84caa74486035070ed0
           path: baseline-src
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: '1.97.1'
+          components: clippy
       - name: Build paired readers and probe driver
         run: |
           set -euo pipefail
@@ -41,6 +43,11 @@ jobs:
           cp crates/cbvault/examples/native_book_workload.rs baseline-src/crates/cbvault/examples/native_book_workload.rs
           cargo +1.97.1 build --locked --release -p cbvault --example native_book_workload --manifest-path baseline-src/Cargo.toml --target-dir "$RUNNER_TEMP/base-target"
           cargo +1.97.1 build --locked --release -p cbvault --example native_book_workload --target-dir "$RUNNER_TEMP/head-target"
+      - name: CTG correctness regressions
+        run: |
+          cargo +1.97.1 test --locked --release -p cbvault-chess ctg:: --target-dir "$RUNNER_TEMP/head-target"
+          cargo +1.97.1 test --locked --release -p cbvault --test ctg_regressions --target-dir "$RUNNER_TEMP/head-target"
+          cargo +1.97.1 clippy --locked -p cbvault-chess -p cbvault-format -p cbvault --lib --target-dir "$RUNNER_TEMP/head-target" -- -D warnings
       - name: Verify and extract CTG companions
         run: |
           mkdir -p benchmark-report
@@ -48,7 +55,7 @@ jobs:
           python3 scripts/bench-corpus/native-book-fetch.py scripts/bench-corpus/native-book-manifest.json "$RUNNER_TEMP/book" > benchmark-report/fixture.json
       - name: Strict full-book verification and paired probe benchmarks
         run: |
-          python3 scripts/bench-corpus/native-book-bench.py --book "$RUNNER_TEMP/book/realistic-3410497.ctg" --base "$RUNNER_TEMP/base-target/release/cbvault" --head "$RUNNER_TEMP/head-target/release/cbvault" --base-workload "$RUNNER_TEMP/base-target/release/examples/native_book_workload" --head-workload "$RUNNER_TEMP/head-target/release/examples/native_book_workload" --report benchmark-report/ctg.json
+          python3 scripts/bench-corpus/native-book-bench.py --book "$RUNNER_TEMP/book/realistic-3410497.ctg" --base "$RUNNER_TEMP/base-target/release/cbvault" --head "$RUNNER_TEMP/head-target/release/cbvault" --base-workload "$RUNNER_TEMP/base-target/release/examples/native_book_workload" --head-workload "$RUNNER_TEMP/head-target/release/examples/native_book_workload" --report benchmark-report/ctg.json --baseline-unknown 0
       - uses: actions/upload-artifact@v4
         if: always()
         with:
