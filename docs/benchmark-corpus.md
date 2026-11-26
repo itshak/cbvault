@@ -196,3 +196,15 @@ requiring the old wave overshoot to be preserved.
 - Bounded position replay: [45857489568](https://github.com/itshak/cbvault/actions/runs/45857489568), all three tiers pass in both mapping modes. Scale first-hit latency improves 403.4x CBH and 389.65x 2CBH, mapped four workers; callback cancellation at 1,024 hits reduces replay from 3,410,497 to 8,192 games. Full replay throughput stays within 2%; exact complete-search fingerprints agree.
 - Combined CI [45856202092](https://github.com/itshak/cbvault/actions/runs/45856202092) failed on the outdated fixed move-table cardinality assertion (170 vs 179); uniqueness itself passed. Updated the assertion to include the nine previously verified mappings, and retain the uniqueness gate.
 - Native/adaptive reader differential runs passed [45856298025](https://github.com/itshak/cbvault/actions/runs/45856298025) and [45857248389](https://github.com/itshak/cbvault/actions/runs/45857248389). Further real-book CTG validation is deferred to the maintainer's local PowerBook test; not included in this integration.
+
+### Second consolidated reader batch (2026-11-26)
+
+All four paired runs passed every configured tier; full-scale corpus has 3,410,497 games. Four-worker mapped direct position matching improves CBH root/e4/absent 1.047x/1.040x/1.049x, 2CBH 1.009x/1.055x/1.035x ([45872032842](https://github.com/itshak/cbvault/actions/runs/45872032842)). The rich v2 tier is slightly slower; report mixed results rather than universal gains.
+
+2CBH cache policy ([45872292876](https://github.com/itshak/cbvault/actions/runs/45872292876)): scale keyed stream 7.848 -> 7.001 s; root 7.245 -> 6.363 s; e4 7.237 -> 6.322 s. All four cache modes checked against full position keys, including nulls, variations and Chess960. Small smoke timings mixed.
+
+Shared v2 header windows ([45875468249](https://github.com/itshak/cbvault/actions/runs/45875468249)): scale mapped named selective 104.18 -> 75.41 ms; positioned named selective 647.52 -> 177.91 ms, broad 1.702 -> 1.362 s; positioned position replay 1.06x, streaming 1.057x. Exact full metadata fingerprints.
+
+ID page ([45875714097](https://github.com/itshak/cbvault/actions/runs/45875714097)): first 100 IDs, exact total, four workers, scale mapped all filter 2.28x CBH and 1.37x 2CBH versus materializing all IDs; positioned peak process RSS 30,776 -> 3,968 KiB CBH and 36,200 -> 10,236 KiB 2CBH. Selective pages may have negligible gain. Sources must remain immutable through both passes.
+
+Previous combined gates passed [45872314054](https://github.com/itshak/cbvault/actions/runs/45872314054) and [45872314117](https://github.com/itshak/cbvault/actions/runs/45872314117). This batch is consolidated pending new combined gates. CTG native/adaptive real-book work remains deferred.
