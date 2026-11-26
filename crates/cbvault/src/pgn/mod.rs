@@ -866,7 +866,6 @@ impl PgnWriter {
                 // Never turn an unreadable annotation record into a successful
                 // bare PGN: unknown valid types and corrupt positions are
                 // failures that the caller and strict gold gate must see.
-                a.check_positions(stats.total_plies).map_err(as_io)?;
                 self.prepare_v2(a).map_err(as_io)?;
                 let mut notes = Commentary {
                     anns: comments::AnnotationsRef::TwoCbh(a),
@@ -897,6 +896,11 @@ impl PgnWriter {
         let mut evp = false;
         for item in a.iter_items() {
             let item = item?;
+            // Same negative-position check as check_positions. Positions
+            // past the final move were counted there but never rejected.
+            if item.position < GAME_POSITION {
+                return Err(Error::corrupt("<.2cba>", item.offset as u64, "negative position below -1"));
+            }
             ascending &= item.position >= prev;
             prev = item.position;
             self.index.push((item.position, item.offset));
