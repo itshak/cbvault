@@ -116,3 +116,17 @@ fingerprints, with peak RSS and latency percentiles. The workflow is manual or
 monthly after integration, and runs on the CTG benchmark branch during initial
 validation. No assumption of successful CTG verification is made before that
 real-data run completes.
+
+### Experiment: borrowed native entity names
+
+The 2CBH scanner previously allocated raw payloads and decoded owned names for
+every matching row. The experiment borrows validated mapped UTF-8 strings,
+retains lossy replacement and positioned-read fallbacks, and uses those fields
+when populating reusable random-game buffers. Local alternating three-pair
+runs (4 workers, matching IDs and move/PGN fingerprints) reduced standard
+broad search from 0.268 s to 0.162 s and 3,059,135 to 1,569 allocation calls;
+scale broad search from 1.083 s to 0.644 s and 10,591,101 to 4,858 calls.
+Scale selective search improved 1.23x; standard random-move reads 1.21x.
+Random PGN timings were mixed. These are preliminary local measurements,
+not GitHub-runner performance claims. Unicode, invalid UTF-8, malformed
+entity records and unmapped name resolution have explicit regression coverage.

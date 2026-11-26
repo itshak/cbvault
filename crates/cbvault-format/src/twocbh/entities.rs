@@ -3,6 +3,7 @@
 
 //! `.2lid`: entity database for players, tournaments, sources, teams and game tags.
 
+use std::borrow::Cow;
 use std::ops::Range;
 use std::path::Path;
 
@@ -30,6 +31,9 @@ pub const ANNOTATOR_SOURCE: usize = 3;
 pub const SOURCE: usize = 3;
 /// Entity type index for teams.
 pub const TEAM: usize = 4;
+
+/// Two entity display fields, borrowed from the mapping or owned when necessary.
+pub type EntityName<'a> = (Cow<'a, str>, Cow<'a, str>);
 
 /// The `.2lid` entity file reader.
 #[derive(Debug)]
@@ -129,6 +133,12 @@ impl Entities {
 
     /// Reads at most `limit` bytes of entity `id` of type `typ`.
     pub fn raw_within(&self, typ: usize, id: i64, limit: usize) -> Result<Option<Vec<u8>>> {
+        Ok(self.raw_cow_within(typ, id, limit)?.map(Cow::into_owned))
+    }
+
+    /// Reads the entity payload, borrowing the validated mapped bytes when
+    /// possible and owning the positioned-read fallback otherwise.
+    fn raw_cow_within(&self, typ: usize, id: i64, limit: usize) -> Result<Option<Cow<'_, [u8]>>> {
         let Some(&(size, count, _)) = self.types.get(typ) else { return Ok(None) };
         if id < 0 || id >= count {
             return Ok(None);
@@ -145,13 +155,41 @@ impl Entities {
         if want < 4 {
             return Ok(None);
         }
+        let length = |buf: &[u8]| usize::try_from(le_i32(buf, 0)).ok().filter(|&n| n != 0 && n <= want - 4);
+        if let Some(buf) = self.file.slice_at(o, want) {
+            return Ok(length(buf).map(|n| Cow::Borrowed(&buf[4..4 + n])));
+        }
         let mut buf = self.file.read(o, want)?;
-        let Some(n) = usize::try_from(le_i32(&buf, 0)).ok().filter(|&n| n != 0 && n <= want - 4) else {
-            return Ok(None);
-        };
+        let Some(n) = length(&buf) else { return Ok(None) };
         buf.truncate(4 + n);
         buf.drain(..4);
-        Ok(Some(buf))
+        Ok(Some(Cow::Owned(buf)))
+    }
+
+    /// Player display fields, borrowed from the mapping for valid UTF-8.
+    /// Unmapped data and invalid UTF-8 retain the old owned/lossy semantics.
+    pub fn player_name(&self, id: i64) -> Result<Option<EntityName<'_>>> {
+        Ok(match self.raw_cow_within(PLAYER, id, usize::MAX)? {
+            Some(Cow::Borrowed(raw)) => {
+                let mut c = Cursor(raw, 0);
+                c.text().zip(c.text())
+            }
+            Some(Cow::Owned(raw)) => player_of(&raw).map(|p| (Cow::Owned(p.last), Cow::Owned(p.first))),
+            None => None,
+        })
+    }
+
+    /// Tournament title and place, borrowed where the record permits.
+    pub fn tournament_name(&self, id: i64) -> Result<Option<EntityName<'_>>> {
+        Ok(match self.raw_cow_within(TOURNAMENT, id, usize::MAX)? {
+            Some(Cow::Borrowed(raw)) => {
+                let mut c = Cursor(raw, 0);
+                let fields = c.text().zip(c.text()).map(|(place, title)| (title, place));
+                if c.i32().is_some() { fields } else { None }
+            }
+            Some(Cow::Owned(raw)) => tournament_of(&raw).map(|t| (Cow::Owned(t.title), Cow::Owned(t.place))),
+            None => None,
+        })
     }
 
     /// Reads consecutive records in batches.
@@ -208,7 +246,7 @@ impl Entities {
 
     /// Decodes player entity `id` within `limit` bytes.
     pub fn player_within(&self, id: i64, limit: usize) -> Result<Option<Player>> {
-        Ok(self.raw_within(PLAYER, id, limit)?.and_then(|r| player_of(&r)))
+        Ok(self.raw_cow_within(PLAYER, id, limit)?.and_then(|r| player_of(&r)))
     }
 
     /// Reads player entities in batch.
@@ -229,7 +267,7 @@ impl Entities {
 
     /// Decodes tournament entity `id` within `limit` bytes.
     pub fn tournament_within(&self, id: i64, limit: usize) -> Result<Option<Tournament>> {
-        Ok(self.raw_within(TOURNAMENT, id, limit)?.and_then(|r| tournament_of(&r)))
+        Ok(self.raw_cow_within(TOURNAMENT, id, limit)?.and_then(|r| tournament_of(&r)))
     }
 
     /// Reads tournament entities in batch.
@@ -302,8 +340,8 @@ fn tournament_of(r: &[u8]) -> Option<Tournament> {
 
 struct Cursor<'a>(&'a [u8], usize);
 
-impl Cursor<'_> {
-    fn take(&mut self, n: usize) -> Option<&[u8]> {
+impl<'a> Cursor<'a> {
+    fn take(&mut self, n: usize) -> Option<&'a [u8]> {
         let v = self.0.get(self.1..self.1.checked_add(n)?)?;
         self.1 += n;
         Some(v)
@@ -311,9 +349,12 @@ impl Cursor<'_> {
     fn i32(&mut self) -> Option<i32> {
         self.take(4).map(|v| i32::from_le_bytes(v.try_into().unwrap()))
     }
-    fn string(&mut self) -> Option<String> {
+    fn text(&mut self) -> Option<Cow<'a, str>> {
         let n = usize::try_from(self.i32()?).ok()?;
-        self.take(n).map(|v| String::from_utf8_lossy(v).into_owned())
+        self.take(n).map(String::from_utf8_lossy)
+    }
+    fn string(&mut self) -> Option<String> {
+        self.text().map(Cow::into_owned)
     }
 }
 
@@ -325,6 +366,59 @@ mod tests {
         let mut v = (s.len() as i32).to_le_bytes().to_vec();
         v.extend_from_slice(s.as_bytes());
         v
+    }
+
+    #[test]
+    fn borrowed_names_preserve_unicode_lossy_and_unmapped_semantics() {
+        // Two types of 64-byte interleaved containers, 3 IDs each.
+        let mut bytes = vec![0u8; 64 + 128 * 3];
+        bytes[..4].copy_from_slice(&64i32.to_le_bytes());
+        bytes[4..8].copy_from_slice(&2i32.to_le_bytes());
+        for i in 0..2 {
+            let at = 8 + 20 * i;
+            bytes[at..at + 4].copy_from_slice(&64i32.to_le_bytes());
+            bytes[at + 4..at + 12].copy_from_slice(&3i64.to_le_bytes());
+        }
+        fn put(bytes: &mut [u8], offset: usize, payload: &[u8]) {
+            bytes[offset..offset + 4].copy_from_slice(&(payload.len() as i32).to_le_bytes());
+            bytes[offset + 4..offset + 4 + payload.len()].copy_from_slice(payload);
+        }
+        let mut player = encode_string("Юрьев");
+        player.extend_from_slice(&encode_string("Éric"));
+        put(&mut bytes, 64, &player);
+        let mut tournament = encode_string("ישראל");
+        tournament.extend_from_slice(&encode_string("大会"));
+        tournament.extend_from_slice(&20260101i32.to_le_bytes());
+        put(&mut bytes, 128, &tournament);
+        let mut invalid = vec![1, 0, 0, 0, 0xff];
+        invalid.extend_from_slice(&encode_string("A"));
+        put(&mut bytes, 192, &invalid);
+        // Malformed string length and missing tournament date.
+        put(&mut bytes, 320, &[255, 255, 255, 127]);
+        put(&mut bytes, 256, &encode_string("bad"));
+        let temp = cbvault_fixtures::TempDb::create("native_borrowed_entity_names");
+        let path = temp.write(".2lid", &bytes);
+        let mapped = Entities::open(&path).unwrap();
+        let unmapped = Entities::new(DbFile::open_unmapped(path).unwrap()).unwrap();
+        for e in [&mapped, &unmapped] {
+            let (last, first) = e.player_name(0).unwrap().unwrap();
+            assert_eq!((last.as_ref(), first.as_ref()), ("Юрьев", "Éric"));
+            let (title, place) = e.tournament_name(0).unwrap().unwrap();
+            assert_eq!((title.as_ref(), place.as_ref()), ("大会", "ישראל"));
+            let (last, first) = e.player_name(1).unwrap().unwrap();
+            assert_eq!((last.as_ref(), first.as_ref()), ("�", "A"));
+            assert!(e.player_name(2).unwrap().is_none());
+            assert!(e.player_name(-1).unwrap().is_none());
+            assert!(e.player_name(i64::MAX).unwrap().is_none());
+            assert!(e.tournament_name(1).unwrap().is_none());
+            let old = e.player(0).unwrap().unwrap();
+            assert_eq!((old.last.as_str(), old.first.as_str()), ("Юрьев", "Éric"));
+        }
+        assert!(matches!(unmapped.player_name(0).unwrap().unwrap().0, Cow::Owned(_)));
+        if mapped.file.as_slice().is_some() {
+            assert!(matches!(mapped.player_name(0).unwrap().unwrap().0, Cow::Borrowed(_)));
+            assert!(matches!(mapped.player_name(1).unwrap().unwrap().0, Cow::Owned(_)));
+        }
     }
 
     #[test]

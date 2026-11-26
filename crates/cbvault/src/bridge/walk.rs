@@ -627,26 +627,26 @@ pub fn resolve_names_v2(
     buf.source.clear();
 
     if header.white() >= 0
-        && let Some(p) = entities.player(header.white())?
+        && let Some((last, first)) = entities.player_name(header.white())?
     {
-        buf.white.push_str(&p.last);
-        if !p.first.is_empty() {
+        buf.white.push_str(&last);
+        if !first.is_empty() {
             if !buf.white.is_empty() {
                 buf.white.push_str(", ");
             }
-            buf.white.push_str(&p.first);
+            buf.white.push_str(&first);
         }
     }
 
     if header.black() >= 0
-        && let Some(p) = entities.player(header.black())?
+        && let Some((last, first)) = entities.player_name(header.black())?
     {
-        buf.black.push_str(&p.last);
-        if !p.first.is_empty() {
+        buf.black.push_str(&last);
+        if !first.is_empty() {
             if !buf.black.is_empty() {
                 buf.black.push_str(", ");
             }
-            buf.black.push_str(&p.first);
+            buf.black.push_str(&first);
         }
     }
 
@@ -659,21 +659,21 @@ pub fn resolve_names_v2(
                 buf.event.push_str(&title);
             }
             if h.analysis_author() >= 0
-                && let Some(p) = entities.player(h.analysis_author())?
+                && let Some((last, first)) = entities.player_name(h.analysis_author())?
                 && buf.white.is_empty()
             {
-                buf.white.push_str(&p.last);
-                if !p.first.is_empty() {
+                buf.white.push_str(&last);
+                if !first.is_empty() {
                     buf.white.push_str(", ");
-                    buf.white.push_str(&p.first);
+                    buf.white.push_str(&first);
                 }
             }
         }
     } else if header.tournament() >= 0
-        && let Some(t) = entities.tournament(header.tournament())?
+        && let Some((title, place)) = entities.tournament_name(header.tournament())?
     {
-        buf.event.push_str(&t.title);
-        buf.site.push_str(&t.place);
+        buf.event.push_str(&title);
+        buf.site.push_str(&place);
     }
 
     if header.annotator() >= 0
