@@ -72,3 +72,31 @@ slot); full replay found two classic failures (games 226476 and 2712614), zero
 2CBH failures. The 3.43 GiB upload contains an approximately 7.94 GB CTG
 file. Its verified archive is kept local until book testing and split assets
 are possible; only the DB files were extracted to preserve disk space.
+
+### Hardened native gate
+
+Fixed two classic mode-0 decoder failures: at most three pieces of each
+non-pawn role have compact codes; overflow promoted pieces remain square-only
+even after captures, while a later promotion can claim the next compact number.
+Two embedded native move-record regressions cover the originally failing games.
+Full 1M and 3,410,497-game CBH and 2CBH replay and export now match exactly
+(0 failures; scale 227,472,245 mainline and 236,686,657 total plies).
+The standard and scale DB-only assets are published separately from CTG.
+Their comparison baseline is the first corrected revision 72c629e; the three
+smaller corpora retain v0.2.0 as baseline.
+
+CI gates exact source record counts, replay counts, full PGN SHA-256, companion
+hashes, and pinned workload fingerprints. Full replay/export is tested at
+1/2/4 workers and without mmap. Additional paired API workloads exercise
+header count, broad Elo filter, selective two-player Elo filter, seeded 2,048
+random game reads, and annotated/unannotated random PGN export. Search tests
+check ordered match IDs at 1/2/4 workers; random reads check exact move/output
+fingerprints, P50/P95/P99 latency and operation counts. Separate allocator
+passes measure alloc/realloc calls (all worker threads); GNU time measures
+process peak RSS on Linux. Allocation and timing observations are not hard
+performance thresholds. The API fingerprint is FNV-1a, a deterministic
+regression checksum; full export uses SHA-256. The existing PR gate covers
+smoke and extreme; weekly runs cover standard, rich and extreme; scale is
+available manually, with all five triggered on the current roadmap branch.
+Special-120 remains excluded pending maintainer regeneration. No private gold
+is uploaded, and independent ChessBase-export annotation parity is still pending.
