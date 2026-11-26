@@ -3,7 +3,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, roadmap/reader-performance-and-benchmarks]
+    branches: [main, roadmap/reader-performance-and-benchmarks, experiment/v2-borrowed-entity-names]
   schedule:
     - cron: '23 2 * * 1'
   workflow_dispatch:
@@ -24,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        tier: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', inputs.tier) || github.event_name == 'schedule' && '["standard","rich","extreme"]' || github.event_name == 'push' && github.ref_name == 'roadmap/reader-performance-and-benchmarks' && '["smoke","rich","extreme","standard","scale"]' || '["smoke","extreme"]') }}
+        tier: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', inputs.tier) || github.event_name == 'schedule' && '["standard","rich","extreme"]' || github.event_name == 'push' && (github.ref_name == 'roadmap/reader-performance-and-benchmarks' || github.ref_name == 'experiment/v2-borrowed-entity-names') && '["smoke","rich","extreme","standard","scale"]' || '["smoke","extreme"]') }}
     env:
       TIER: ${{ matrix.tier }}
     steps:
@@ -36,7 +36,7 @@ jobs:
           import json, os, shutil
           m = json.load(open("scripts/bench-corpus/native-manifest.json"))["tiers"][os.environ["TIER"]]
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-              print("baseline=" + m["baseline"], file=f)
+              print("baseline=" + ("8152f9a94d2c140e5377bbe79f23041c6a5903a0" if os.environ["GITHUB_REF_NAME"] == "experiment/v2-borrowed-entity-names" else m["baseline"]), file=f)
           # Extracted DB, archive, export scratch, and two release builds.
           needed = sum(x["bytes"] for x in m["members"].values()) + (3 * 1024**3)
           if os.environ["TIER"] == "scale":
