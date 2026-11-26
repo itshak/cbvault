@@ -97,8 +97,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
             let mv = p.moves[((seed >> 32) % p.moves.len() as u64) as usize].mv.map_err(|_| "invalid book move")?;
-            if book.probe_after(&board, mv)?.is_some() {
-                children += 1;
+            // A real opening explorer needs each child's statistics,
+            // not the child's decoded continuation moves.
+            for m in &p.moves {
+                let candidate = m.mv.map_err(|_| "invalid book move")?;
+                let child = book.probe_stats_after(&board, candidate)?;
+                if let Some(c) = child {
+                    children += 1;
+                    hash(&mut fingerprint, &[1]);
+                    for n in [
+                        c.stats.games,
+                        c.stats.wins,
+                        c.stats.losses,
+                        c.stats.draws,
+                        c.stats.raw_score,
+                        c.stats.rated_games,
+                        c.stats.rating_sum,
+                        c.stats.opponent_rated_games,
+                        c.stats.opponent_rating_sum,
+                    ] {
+                        hash(&mut fingerprint, &n.to_le_bytes());
+                    }
+                    hash(&mut fingerprint, &c.stats.raw_tail);
+                    hash(&mut fingerprint, &(c.continuation_count as u64).to_le_bytes());
+                    hash(&mut fingerprint, &c.offset.to_le_bytes());
+                } else {
+                    hash(&mut fingerprint, &[0]);
+                }
             }
             board.play(mv).map_err(|_| "illegal book move")?;
         }

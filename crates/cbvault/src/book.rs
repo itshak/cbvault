@@ -66,6 +66,29 @@ pub struct BookPosition {
     pub offset: u64,
 }
 
+/// Statistics and continuation count without decoding the continuation moves.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BookPositionStats {
+    /// Statistics from the side to move of this position.
+    pub stats: Stats,
+    /// Evaluation oriented to the actual board, as in [`BookPosition`].
+    pub evaluation: Option<Evaluation>,
+    /// Number of stored continuation move bytes (including unknown codes).
+    pub continuation_count: usize,
+    /// Source entry offset.
+    pub offset: u64,
+}
+
+/// A one-level opening tree, preserving stored move order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BookTree {
+    /// Statistics and move codes of the parent.
+    pub parent: BookPosition,
+    /// Child statistics parallel to parent.moves. An absent child is None;
+    /// an undecoded parent move retains its typed error in parent.moves.
+    pub children: Vec<Option<BookPositionStats>>,
+}
+
 /// One move of a book position.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BookMove {
@@ -170,6 +193,52 @@ impl Book {
             return Ok(None);
         }
         self.probe(&next)
+    }
+
+    /// Look up statistics without allocating or decoding a continuation list.
+    pub fn probe_stats(&self, board: &Board) -> Result<Option<BookPositionStats>> {
+        let stored = chess_ctg::stored_form(board);
+        for (key, len) in chess_ctg::key_candidates(&stored) {
+            if let Some(found) = self.find(&key[..len], |entry| {
+                let stats = entry.stats();
+                BookPositionStats {
+                    stats,
+                    evaluation: stats.evaluation().map(|e| e.for_real_position(stored.flipped)),
+                    continuation_count: entry.moves.len() / 2,
+                    offset: entry.offset,
+                }
+            })? {
+                return Ok(Some(found));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Statistics of the child after a legal move, without decoding its moves.
+    pub fn probe_stats_after(&self, board: &Board, mv: Move) -> Result<Option<BookPositionStats>> {
+        let mut next = *board;
+        if next.play(mv).is_err() {
+            return Ok(None);
+        }
+        self.probe_stats(&next)
+    }
+
+    /// Read one level of the opening tree. Child results are from the child
+    /// side to move (the opposite of the parent mover); unknown moves remain
+    /// typed errors. No grandchildren are decoded.
+    pub fn probe_tree(&self, board: &Board) -> Result<Option<BookTree>> {
+        let Some(parent) = self.probe(board)? else {
+            return Ok(None);
+        };
+        let children = parent
+            .moves
+            .iter()
+            .map(|m| match m.mv {
+                Ok(mv) => self.probe_stats_after(board, mv),
+                Err(_) => Ok(None),
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Some(BookTree { parent, children }))
     }
 
     /// Whether the book has an entry with exactly `key`.

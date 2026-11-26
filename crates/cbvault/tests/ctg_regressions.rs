@@ -191,3 +191,41 @@ fn rare_promoted_move_bytes_decode_via_move_table() {
     let pos5 = book.probe(&b5).unwrap().expect("b5 in book");
     assert_eq!(pos5.moves[0].mv.as_ref().unwrap().to_string(), "g8f6");
 }
+
+#[test]
+fn stats_only_and_tree_match_full_probes() {
+    let temp = TempDb::create("ctg_stats_tree");
+    let path = temp.write(".ctg", &connected_parent_child_book());
+    let book = Book::open(&path).unwrap();
+    let board = Board::startpos();
+    let root = book.probe(&board).unwrap().unwrap();
+    let tree = book.probe_tree(&board).unwrap().unwrap();
+    assert_eq!(tree.parent, root);
+    let stats = book.probe_stats(&board).unwrap().unwrap();
+    assert_eq!(stats.stats, root.stats);
+    assert_eq!(stats.evaluation, root.evaluation);
+    assert_eq!(stats.continuation_count, root.moves.len());
+    assert_eq!(stats.offset, root.offset);
+    for (m, child) in root.moves.iter().zip(tree.children) {
+        let mv = m.mv.unwrap();
+        let full = book.probe_after(&board, mv).unwrap().unwrap();
+        let child = child.unwrap();
+        assert_eq!(child.stats, full.stats);
+        assert_eq!(child.evaluation, full.evaluation);
+        assert_eq!(child.offset, full.offset);
+        assert_eq!(child.continuation_count, full.moves.len());
+        let mut next = board;
+        next.play(mv).unwrap();
+        let leaf = book.probe_tree(&next).unwrap().unwrap();
+        assert!(leaf.children.iter().all(Option::is_none));
+    }
+    let missing = gigachess::fen::parse_fen("7k/8/8/8/8/8/8/K7 w - - 0 1").unwrap();
+    assert!(book.probe_stats(&missing).unwrap().is_none());
+    assert!(book.probe_tree(&missing).unwrap().is_none());
+    let temp = TempDb::create("ctg_stats_unknown");
+    let path = temp.write(".ctg", &unknown_move_byte_book());
+    let book = Book::open(path).unwrap();
+    let tree = book.probe_tree(&board).unwrap().unwrap();
+    assert!(tree.parent.moves[0].mv.is_err());
+    assert!(tree.children[0].is_none());
+}
