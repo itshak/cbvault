@@ -27,7 +27,10 @@ use rayon::prelude::*;
 
 use super::namebase::Name;
 use super::sink::GameHeaderRef;
-use super::{Database, GameBuf};
+use super::{Database, walk::Flow};
+use cbvault_chess::decode::{GameRef as Walked, MoveSink, TreeStats, start_as_played, walk_from};
+use cbvault_chess::start::{Start, StartCache, start_board_cached};
+use gigachess::Board;
 
 /// Games where either player is one of `ids`.
 ///
@@ -1037,6 +1040,93 @@ struct Replay {
     cancelled: bool,
 }
 
+// Position searches only need matching keys and a main-line ply count, not
+// the entire decoded line or FEN text. Roll back provisional hits when any
+// part of the game fails, exactly as the materialized path did.
+struct PositionSink<'a> {
+    query: &'a PositionQuery<'a>,
+    hits: &'a mut Vec<Hit>,
+    id: u32,
+    ply: u32,
+    main: bool,
+    stopped: bool,
+    stop_all: bool,
+}
+
+impl PositionSink<'_> {
+    #[inline]
+    fn position(&mut self, board: &Board) {
+        let key = board.zobrist();
+        if key == self.query.key {
+            self.hits.push(Hit { game: self.id, ply: self.ply, key });
+        }
+        if let Some(pred) = self.query.early_stop {
+            match pred(board) {
+                Flow::Continue => {}
+                Flow::SkipGame => self.stopped = true,
+                Flow::Stop => {
+                    self.stopped = true;
+                    self.stop_all = true;
+                }
+            }
+        }
+    }
+}
+
+impl MoveSink for PositionSink<'_> {
+    #[inline]
+    fn play(&mut self, _: &Board, _: u16, main: bool) {
+        self.main = main;
+    }
+    #[inline]
+    fn played(&mut self, board: &Board) {
+        if self.main {
+            self.ply += 1;
+            self.position(board);
+        }
+    }
+    fn branch(&mut self) {}
+    fn resume(&mut self) {}
+    fn stopped(&self) -> bool {
+        self.stopped
+    }
+    fn wants_zobrist(&self) -> bool {
+        true
+    }
+}
+
+impl Replay {
+    fn one(
+        &mut self,
+        id: u32,
+        query: &PositionQuery<'_>,
+        cache: &mut StartCache,
+        start: Result<Start>,
+        walk: impl FnOnce(&Start, &mut PositionSink<'_>) -> Result<TreeStats>,
+    ) -> bool {
+        let Ok(start) = start else {
+            self.stats.failures += 1;
+            return true;
+        };
+        let Ok(board) = start_board_cached(&start, cache) else {
+            self.stats.failures += 1;
+            return true;
+        };
+        let prior = self.hits.len();
+        let mut sink =
+            PositionSink { query, hits: &mut self.hits, id, ply: 0, main: true, stopped: false, stop_all: false };
+        sink.position(&board);
+        if !sink.stopped && walk(&start, &mut sink).is_err() {
+            self.hits.truncate(prior);
+            self.stats.failures += 1;
+            return true;
+        }
+        self.stats.games += 1;
+        self.stats.plies += u64::from(sink.ply);
+        !sink.stop_all
+    }
+}
+
 /// Games a position-search worker replays between two cancel polls: a few
 /// milliseconds of work, so a superseded explorer query is released at once.
 const CANCEL_POLL_GAMES: u32 = 256;
@@ -1155,14 +1245,12 @@ fn replay_ranges(
     if db.generation() == super::Generation::TwoCbh {
         return for_each_position_key_range_v2(db, ranges, query, threads, on_hit, pool);
     }
-    let want = query.key;
     let is_cancelled = || query.cancelled.is_some_and(|cancel| cancel());
     let moves = db.moves()?;
     let path = db.members().moves.clone();
     let replay_chunk = |&(first, last): &(u32, u32)| -> Result<Replay> {
         let mut out = Replay::default();
-        let mut buf = GameBuf::with_capacity(super::walk::DEFAULT_PLY_ROOM);
-        buf.set_wants(true, false);
+        let mut cache = StartCache::new();
         let mut record = Vec::new();
         // The cancel is asked before a chunk starts and every
         // `CANCEL_POLL_GAMES` games inside it, so a cancelled search stops
@@ -1197,20 +1285,10 @@ fn replay_ranges(
                 out.stats.failures += 1;
                 continue;
             };
-            let keep_going = match buf.walk_with(header.id(), at, &game, query.early_stop) {
-                Ok(cont) => cont,
-                Err(_) => {
-                    out.stats.failures += 1;
-                    continue;
-                }
-            };
-            out.stats.games += 1;
-            out.stats.plies += buf.moves().len() as u64;
-            for (ply, key) in buf.keys().iter().enumerate() {
-                if *key == want {
-                    out.hits.push(Hit { game: header.id(), ply: ply as u32, key: *key });
-                }
-            }
+            let what = Walked::at(header.id(), at);
+            let keep_going = out.one(header.id(), query, &mut cache, start_as_played(what, &game), |start, sink| {
+                walk_from(what, &game, start, sink)
+            });
             if !keep_going {
                 out.cancelled = true;
                 break;
@@ -1233,13 +1311,11 @@ fn for_each_position_key_range_v2(
     on_hit: &mut (impl FnMut(Hit) + Send),
     pool: Option<&rayon::ThreadPool>,
 ) -> Result<PositionSearch> {
-    let want = query.key;
     let is_cancelled = || query.cancelled.is_some_and(|cancel| cancel());
     let moves = db.moves_segment()?;
     let replay_chunk = |&(first, last): &(u32, u32)| -> Result<Replay> {
         let mut out = Replay::default();
-        let mut buf = GameBuf::with_capacity(super::walk::DEFAULT_PLY_ROOM);
-        buf.set_wants(true, false);
+        let mut cache = StartCache::new();
         if is_cancelled() {
             out.cancelled = true;
             return Ok(out);
@@ -1279,20 +1355,11 @@ fn for_each_position_key_range_v2(
                     continue;
                 }
             };
-            let keep_going = match buf.walk_v2_with(id, at, &game, query.early_stop) {
-                Ok(cont) => cont,
-                Err(_) => {
-                    out.stats.failures += 1;
-                    continue;
-                }
-            };
-            out.stats.games += 1;
-            out.stats.plies += buf.moves().len() as u64;
-            for (ply, key) in buf.keys().iter().enumerate() {
-                if *key == want {
-                    out.hits.push(Hit { game: id, ply: ply as u32, key: *key });
-                }
-            }
+            let what = Walked::at(id, at);
+            let keep_going =
+                out.one(id, query, &mut cache, cbvault_chess::v2::decode_v2_start(&game), |start, sink| {
+                    cbvault_chess::v2::walk_v2_from(what, &game, start, sink)
+                });
             if !keep_going {
                 out.cancelled = true;
                 break;
