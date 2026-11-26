@@ -1,0 +1,702 @@
+{
+  "version": "20261125-v1",
+  "baseline": "59f66f921e82a813f96dd6f289084d7ca9f99416",
+  "license": "Lichess CC0 and maintainer original annotations; no private Mega data",
+  "tiers": {
+    "smoke": {
+      "stem": "realistic-25000",
+      "games": 25000,
+      "mainline_plies": 1648722,
+      "all_plies": 1710550,
+      "slots": {
+        "cbh": 25000,
+        "2cbh": 25001
+      },
+      "sha256": "e876bcdf98527f254ca4c4f6e0562a1ac0a0c9b7fc892f7c4783ff35ff0c7e04",
+      "url": "https://github.com/itshak/cbvault/releases/download/benchmark-corpus-20261125-v1/realistic-25000-native-v1.tar.zst",
+      "export_sha256": {
+        "cbh": "6e6eb235825d0d44891765b173333afeb48048a65b83cc3097ef66a168f13995",
+        "2cbh": "6e6eb235825d0d44891765b173333afeb48048a65b83cc3097ef66a168f13995"
+      },
+      "members": {
+        "realistic-25000.2cba": {
+          "bytes": 7607096,
+          "sha256": "dc26a6921cc45062e4c33435ca319053c8708ce56d40a557ec6a053665f0e3e3"
+        },
+        "realistic-25000.2cbg": {
+          "bytes": 6929992,
+          "sha256": "89e20d37091347b48f47e85d94c5fe1c9d249ba7b46ecf8ba22b7867562901f3"
+        },
+        "realistic-25000.2cbh": {
+          "bytes": 4800192,
+          "sha256": "e237abcf6d299e09b443f31118673b2822e06f715eb5f6850984ae4a87a0f446"
+        },
+        "realistic-25000.2lcd": {
+          "bytes": 327680,
+          "sha256": "ee2a028e0d962138b28e916013f9bdc5d47b424e586177991b9bd4f2354427e9"
+        },
+        "realistic-25000.2lgd": {
+          "bytes": 3586572,
+          "sha256": "81af2039f9280c2f64f1076eff79c4956483dc46d6590a01b52860a2971ca632"
+        },
+        "realistic-25000.2lid": {
+          "bytes": 22483101,
+          "sha256": "44c9e402ae278084b9c0467d21f8650f5a3b55aa72b789a6e3c11aa20a5d7e19"
+        },
+        "realistic-25000.cba": {
+          "bytes": 1667933,
+          "sha256": "8e8a0ec1876e7a9c489fb855c848ccb2df25a98b7d79f21c977a2a9781be8f6c"
+        },
+        "realistic-25000.cbc": {
+          "bytes": 94,
+          "sha256": "05cb9caad41ddb39b6cdfa3731adfd6bf09c55b7c0864c93c6679b275a08e49f"
+        },
+        "realistic-25000.cbe": {
+          "bytes": 32,
+          "sha256": "0f2b24067c28854c2caca9d1815dde5caa8d36743b6a92d230b3a0fb088b938f"
+        },
+        "realistic-25000.cbg": {
+          "bytes": 1860314,
+          "sha256": "7fcdc329fd4b872bb86d118e15d344ec9d91ea62151175cb52e4c5977c8c59d9"
+        },
+        "realistic-25000.cbh": {
+          "bytes": 1150046,
+          "sha256": "6ee698dff3d655a6679f1287f6b72739b28ba473140f73dab51ecb60d893b544"
+        },
+        "realistic-25000.cbj": {
+          "bytes": 3000032,
+          "sha256": "0fd048fca06eafe58f5352c79df6b5b009525c6467f4a2e5d46e89b1bbfefa24"
+        },
+        "realistic-25000.cbl": {
+          "bytes": 1649,
+          "sha256": "00ac972bd236bd259678a3abc8778149af223e6210e3d838f1bf790db5e96650"
+        },
+        "realistic-25000.cbm": {
+          "bytes": 32,
+          "sha256": "d51318e338fc4c6d34c16934950ef25213af014fc5a60e8f8f4f90a098e289e5"
+        },
+        "realistic-25000.cbp": {
+          "bytes": 469300,
+          "sha256": "c446b66ec10706036ef22615c12fc1aeb0f8a6154859d5143e287514d82815f9"
+        },
+        "realistic-25000.cbs": {
+          "bytes": 100,
+          "sha256": "062699088006243534b05acf8ec534636084cdd74fec2b3aceac116de67595b9"
+        },
+        "realistic-25000.cbt": {
+          "bytes": 4883,
+          "sha256": "02c38f4c6823c898757753fecaa07a15711ee3d0fb116e5f83aede0a1df6c831"
+        },
+        "realistic-25000.cbtt": {
+          "bytes": 437,
+          "sha256": "6ecd2fedd3320d67ce55fad44a0c9180e3b2ae927840c058a1a9b9f38a459ff0"
+        },
+        "realistic-25000.cib": {
+          "bytes": 921164,
+          "sha256": "eee616fd30b78942aaf8394af50284ef3393093f4a8a98e55fb7ad7126421e8d"
+        },
+        "realistic-25000.cib2": {
+          "bytes": 123148,
+          "sha256": "85278a9a9efe425675024459a31ccd6656c5c01a23f4b68fe3e8018dadcaa65f"
+        },
+        "realistic-25000.cit": {
+          "bytes": 280172,
+          "sha256": "2c2b8d62229a2879fc52989a2dfd9b7bb9bf6cd102e5d7dce456fecf68f71696"
+        },
+        "realistic-25000.cit2": {
+          "bytes": 20,
+          "sha256": "bffa14240c0ba936889af382f912ddfd4bbf07c386439aab7465b131cdd83a76"
+        }
+      },
+      "baseline": "59f66f921e82a813f96dd6f289084d7ca9f99416",
+      "workloads": {
+        "headers": {
+          "count": 25000,
+          "units": 0,
+          "fingerprint": "7844ac32f6eb9672"
+        },
+        "broad": {
+          "count": 11464,
+          "units": 25000,
+          "fingerprint": "5847294b88946ade"
+        },
+        "selective": {
+          "count": 775,
+          "units": 25000,
+          "fingerprint": "60e5bc382d0fab80"
+        },
+        "random-moves": {
+          "count": 2048,
+          "units": 133223,
+          "fingerprint": "4523e2232df3cd5f"
+        },
+        "random-pgn": {
+          "count": 2048,
+          "units": 1257455,
+          "fingerprint": "aa40b744638469da"
+        },
+        "random-pgn-noann": {
+          "count": 2048,
+          "units": 1233547,
+          "fingerprint": "e7d32c0688e5d25c"
+        }
+      }
+    },
+    "rich": {
+      "stem": "rich-100000",
+      "games": 100000,
+      "mainline_plies": 6717385,
+      "all_plies": 17353987,
+      "slots": {
+        "cbh": 100000,
+        "2cbh": 100001
+      },
+      "sha256": "35bc45ad9f22dd7a0324895578f86ca2f3fd2453e96c0a1c0860384bd4c311ed",
+      "url": "https://github.com/itshak/cbvault/releases/download/benchmark-corpus-20261125-v1/rich-100000-native-v1.tar.zst",
+      "export_sha256": {
+        "cbh": "60fb20a5261abd6f0700f4c575d261ceddcc11db4f3cb4a87405a39b2a884a0c",
+        "2cbh": "60fb20a5261abd6f0700f4c575d261ceddcc11db4f3cb4a87405a39b2a884a0c"
+      },
+      "members": {
+        "rich-100000.2cba": {
+          "bytes": 86953136,
+          "sha256": "fa21b52f854edcb7f70bb94ff257eb6b5c0d857605540272499e343d963553aa"
+        },
+        "rich-100000.2cbg": {
+          "bytes": 54287888,
+          "sha256": "28a244ee0041361df1f7245a62a651976b37b191651d3ee63b5b6ae0f68f9c5d"
+        },
+        "rich-100000.2cbh": {
+          "bytes": 19200192,
+          "sha256": "e4f08fedd33c28e78943e1134fd87a1ab926d007b935f856370b58efb8ceb44e"
+        },
+        "rich-100000.2lcd": {
+          "bytes": 229376,
+          "sha256": "ac0f31ab20f22edcc585986824a07a86e54a2853b42a664e9502c6f3a44382c8"
+        },
+        "rich-100000.2lgd": {
+          "bytes": 6115852,
+          "sha256": "97123c62946906d114421ab6c629be8e6736106fe3fcb38e1efa9adff4589892"
+        },
+        "rich-100000.2lid": {
+          "bytes": 13851411,
+          "sha256": "afa29b4d23d3a2054babb447d602ffb2dbd82ed1bb1adec0241b0614a4ee41f2"
+        },
+        "rich-100000.cba": {
+          "bytes": 49773544,
+          "sha256": "5b2dec65d52b1b1743b78d66ef188d40ae14753fd2ea9f1b9b871a5eacc5b948"
+        },
+        "rich-100000.cbc": {
+          "bytes": 94,
+          "sha256": "af50b298b4286021cce12449d1c9535296b987edd2f290307b8fab4cb8ff6031"
+        },
+        "rich-100000.cbe": {
+          "bytes": 32,
+          "sha256": "0f2b24067c28854c2caca9d1815dde5caa8d36743b6a92d230b3a0fb088b938f"
+        },
+        "rich-100000.cbg": {
+          "bytes": 20756057,
+          "sha256": "fe0ac471f41c5843ee2c8103676202f1e71b64dc5ce50fbf9ecf16dfc7a5a752"
+        },
+        "rich-100000.cbh": {
+          "bytes": 4600046,
+          "sha256": "35d2a1f199f42a23a6eefcb1079c9c49690b466553f924a6d8148cd0951105a7"
+        },
+        "rich-100000.cbj": {
+          "bytes": 12000032,
+          "sha256": "0268999a8b564365e52eb0a0a887b93ea3bb97a1c6ae0a55c23c875f07ca88b0"
+        },
+        "rich-100000.cbl": {
+          "bytes": 1649,
+          "sha256": "d596a62f00981be992b021b6baa6f7860be88cb023e388e73d8a061450683f15"
+        },
+        "rich-100000.cbm": {
+          "bytes": 32,
+          "sha256": "275bca850788b873782d43b7b3bd408168038a6fa43452fb11f4e82c4fd1a6a7"
+        },
+        "rich-100000.cbp": {
+          "bytes": 289204,
+          "sha256": "cd788af36149dc816cd908bccc067b17e8bbd362e4b467504e2b5aacb2324a1f"
+        },
+        "rich-100000.cbs": {
+          "bytes": 100,
+          "sha256": "b4ad8b4e80afd5df9c73e6bb0151710080868466cc2b5ab495996cd91a9da566"
+        },
+        "rich-100000.cbt": {
+          "bytes": 11516,
+          "sha256": "657181b82d71e415c02b99f54d1b1717333825cf47e9ccf690e08d7e951aa47f"
+        },
+        "rich-100000.cbtt": {
+          "bytes": 437,
+          "sha256": "92f08eac42f3ff3e4df9a7eaa894aea7dc4fd5c1f8c2af8fa2ca4a164d136d1d"
+        },
+        "rich-100000.cib": {
+          "bytes": 2627340,
+          "sha256": "bb64e74c031d0266de5aafbe080ec8dd84e8011785fd538e11cbdc95f5372f78"
+        },
+        "rich-100000.cib2": {
+          "bytes": 492364,
+          "sha256": "f2bc9405edaa6399e951643929752d908c35c86972fd4f1f61e866fcd9311262"
+        },
+        "rich-100000.cit": {
+          "bytes": 172652,
+          "sha256": "333170c7d52b8048e6d12e60d8b271308eec9b9a959cbb1bad74894fa0fe8a27"
+        },
+        "rich-100000.cit2": {
+          "bytes": 20,
+          "sha256": "2c9d641d5b446d7b2c0234ff240bc0dc35d03f2d9cd6b0a74cbad43b9f4dc9ab"
+        }
+      },
+      "baseline": "59f66f921e82a813f96dd6f289084d7ca9f99416",
+      "workloads": {
+        "headers": {
+          "count": 100000,
+          "units": 0,
+          "fingerprint": "210f8cfc7f03e14a"
+        },
+        "broad": {
+          "count": 25200,
+          "units": 100000,
+          "fingerprint": "faabbec4be3d36f6"
+        },
+        "selective": {
+          "count": 64,
+          "units": 100000,
+          "fingerprint": "a65b98fbb8d576ce"
+        },
+        "random-moves": {
+          "count": 2048,
+          "units": 136298,
+          "fingerprint": "1165cae0506e0ea1"
+        },
+        "random-pgn": {
+          "count": 2048,
+          "units": 3423778,
+          "fingerprint": "c4341832e6f591a5"
+        },
+        "random-pgn-noann": {
+          "count": 2048,
+          "units": 2615483,
+          "fingerprint": "abf4776fe1a5a201"
+        }
+      }
+    },
+    "extreme": {
+      "stem": "extreme-10000",
+      "games": 10000,
+      "mainline_plies": 651314,
+      "all_plies": 10807926,
+      "slots": {
+        "cbh": 10000,
+        "2cbh": 10001
+      },
+      "sha256": "f7582c0262f0b35fc7d8282edaeea929eedaf20a3d65766dc3677160f1b4df44",
+      "url": "https://github.com/itshak/cbvault/releases/download/benchmark-corpus-20261125-v1/extreme-10000-native-v1.tar.zst",
+      "export_sha256": {
+        "cbh": "04c629ddc81934c4f744b9bda5f4d2db3380102f24e318eb7888c635c9dd29bd",
+        "2cbh": "04c629ddc81934c4f744b9bda5f4d2db3380102f24e318eb7888c635c9dd29bd"
+      },
+      "members": {
+        "extreme-10000.2cba": {
+          "bytes": 465435064,
+          "sha256": "0ca0544d55aad01c84df993f50d40e90fa4666e0ebf881b37eeaa5057b0a62ae"
+        },
+        "extreme-10000.2cbg": {
+          "bytes": 28431736,
+          "sha256": "99cd2795ffe941a13020245b55e74b6d4abdbf1be559db069dfa660c1f1576da"
+        },
+        "extreme-10000.2cbh": {
+          "bytes": 1920192,
+          "sha256": "98445e8afe18fe8c7465f39eb156a4c65fa84af4d18a8a3d8b9a6f6a44a18920"
+        },
+        "extreme-10000.2lcd": {
+          "bytes": 102400,
+          "sha256": "0d11cb8b58a8e654613e4e523ea11c721a86f99760ebf4f3fb53d41d25091884"
+        },
+        "extreme-10000.2lgd": {
+          "bytes": 818188,
+          "sha256": "32b17b9344faca92f6453ac5087385ee031d93460d627a1e65f08b8126244d21"
+        },
+        "extreme-10000.2lid": {
+          "bytes": 4523150,
+          "sha256": "fcfad5b806bfb10e428f08a5f7b8bbf4cbde3dd87aa4fd0665df853b50e902e9"
+        },
+        "extreme-10000.cba": {
+          "bytes": 446501145,
+          "sha256": "c31a979e3cc0c318eae6bc436f44a99ffebab3c5e341e2ca391e91134917415d"
+        },
+        "extreme-10000.cbc": {
+          "bytes": 94,
+          "sha256": "720552c87a8537dd1470e4cacb9092329537f72296f185dd7f35ce519f05df20"
+        },
+        "extreme-10000.cbe": {
+          "bytes": 32,
+          "sha256": "0f2b24067c28854c2caca9d1815dde5caa8d36743b6a92d230b3a0fb088b938f"
+        },
+        "extreme-10000.cbg": {
+          "bytes": 13600056,
+          "sha256": "86de48e2050c4cead20ecc5effa0c33bc70830ba50558c2bfc62845a0928ec1e"
+        },
+        "extreme-10000.cbh": {
+          "bytes": 460046,
+          "sha256": "177fc8f230478b9c30519350f0f9a0792ed081f653e6c723b404816c0a5a3fda"
+        },
+        "extreme-10000.cbj": {
+          "bytes": 1200032,
+          "sha256": "ed957157fc671516cbea9a06931a33b6977f88064f0fc67e78f4e54007bf8798"
+        },
+        "extreme-10000.cbl": {
+          "bytes": 1649,
+          "sha256": "48a78ccc42bfce2a91aa85222edf7cc0aa4f15f92be342620c6e22b90db978e4"
+        },
+        "extreme-10000.cbm": {
+          "bytes": 32,
+          "sha256": "b7c5b4fd833475e42f827e97804a3a325f1332f91ce2d8497d2da6e8ccc3ff46"
+        },
+        "extreme-10000.cbp": {
+          "bytes": 94502,
+          "sha256": "8eeefa806f05ac3ea0502991bf643a34fd6cdf57530222dab6eaa785fac49895"
+        },
+        "extreme-10000.cbs": {
+          "bytes": 100,
+          "sha256": "68645f1f6c2c19a3434d43dccfb71cb7b7d95fb8efea15e1008bdf559af2f2a5"
+        },
+        "extreme-10000.cbt": {
+          "bytes": 725,
+          "sha256": "9d4f7f6432f6e70332c936b1ed21a522918fbdf08600a367432eb85d16973671"
+        },
+        "extreme-10000.cbtt": {
+          "bytes": 437,
+          "sha256": "a9ed8d8379afa192b0c450ef1a14e57f34ed8d73c1e5723ddeb6b4d7add38e51"
+        },
+        "extreme-10000.cib": {
+          "bytes": 301452,
+          "sha256": "10176869646abc0537a4b80130f88187e844ec9cbdbfd38dd55a293184ed0c09"
+        },
+        "extreme-10000.cib2": {
+          "bytes": 49292,
+          "sha256": "0086adb40c49b8763a62b0ed3b750606267874bcffe25ee67736f9b03b5a6254"
+        },
+        "extreme-10000.cit": {
+          "bytes": 56412,
+          "sha256": "a406e558baa4fea45ef81563e79a3b069038710ec4a4d3c293d18f8c93863f4b"
+        },
+        "extreme-10000.cit2": {
+          "bytes": 20,
+          "sha256": "275e256d006bd2e11ba4852b1d4c03bb844b8034990809c162fe87f9e6acb40c"
+        }
+      },
+      "baseline": "59f66f921e82a813f96dd6f289084d7ca9f99416",
+      "workloads": {
+        "headers": {
+          "count": 10000,
+          "units": 0,
+          "fingerprint": "dd827944d4be7338"
+        },
+        "broad": {
+          "count": 2691,
+          "units": 10000,
+          "fingerprint": "0f992035924f9032"
+        },
+        "selective": {
+          "count": 1,
+          "units": 10000,
+          "fingerprint": "4d4e968357c98c82"
+        },
+        "random-moves": {
+          "count": 2048,
+          "units": 133869,
+          "fingerprint": "d1b1e29c0dceb795"
+        },
+        "random-pgn": {
+          "count": 2048,
+          "units": 106868314,
+          "fingerprint": "481cb2451afd5d5e"
+        },
+        "random-pgn-noann": {
+          "count": 2048,
+          "units": 15367203,
+          "fingerprint": "352f47bc67670f26"
+        }
+      }
+    },
+    "standard": {
+      "stem": "realistic-1000000",
+      "games": 1000000,
+      "mainline_plies": 66636922,
+      "all_plies": 69329076,
+      "slots": {
+        "cbh": 1000000,
+        "2cbh": 1000001
+      },
+      "sha256": "ed120c9ce9504ef254e9e445513ac399de9d6e8aed92c5c6bcadf957d5be60fd",
+      "url": "https://github.com/itshak/cbvault/releases/download/benchmark-corpus-20261125-v1/realistic-1000000-native-v1.tar.zst",
+      "export_sha256": {
+        "cbh": "b0142bc62c541615fbbc4bfca539155d083f73c7cea1966368da7f65eeca947a",
+        "2cbh": "b0142bc62c541615fbbc4bfca539155d083f73c7cea1966368da7f65eeca947a"
+      },
+      "members": {
+        "realistic-1000000.2cba": {
+          "bytes": 304281264,
+          "sha256": "125b6767f52a6ce67b89620e7e51d0b10dafef8d5ee32ce777cf389b37409679"
+        },
+        "realistic-1000000.2cbg": {
+          "bytes": 279121392,
+          "sha256": "d3e89363b28d633d16d9b87937d66ad5e068bb846b1f8fae7aee1d486362744e"
+        },
+        "realistic-1000000.2cbh": {
+          "bytes": 192000192,
+          "sha256": "30a546d3806dfb55f63ab5dcdb07e2fa7f890806387dfbc21f1352050ad9d499"
+        },
+        "realistic-1000000.2lcd": {
+          "bytes": 1810432,
+          "sha256": "b40881dec689da5a6b634ac12825a220d64a767c2ea2cd121bcea007cc39454c"
+        },
+        "realistic-1000000.2lgd": {
+          "bytes": 61707788,
+          "sha256": "71e045a80a5607fe4693f382f1d152acef9028a5d1755a113ada5abd8c295700"
+        },
+        "realistic-1000000.2lid": {
+          "bytes": 137731732,
+          "sha256": "2f612bbf0f08cd8fdf5948e321eedf2aa89b3a00ea83a157dea2b0df41b0303e"
+        },
+        "realistic-1000000.cba": {
+          "bytes": 66670333,
+          "sha256": "14014be88532040463b93104830e2cecaa005ea2ee0854e45ca7805998e03efd"
+        },
+        "realistic-1000000.cbc": {
+          "bytes": 94,
+          "sha256": "349503151a02e67b07bc47cf2c1581d20c8fb2e34064af6c91bcb16f7c04a157"
+        },
+        "realistic-1000000.cbe": {
+          "bytes": 32,
+          "sha256": "0f2b24067c28854c2caca9d1815dde5caa8d36743b6a92d230b3a0fb088b938f"
+        },
+        "realistic-1000000.cbg": {
+          "bytes": 75387664,
+          "sha256": "d7bdad88717b227a8e941bb9c47516ec115379034cd7a23b42129d70b3d6620d"
+        },
+        "realistic-1000000.cbh": {
+          "bytes": 46000046,
+          "sha256": "ab6db4f2e351e8fac3fd2fa17cc0587bd58fe84f938015d014d29cc548e9bfc1"
+        },
+        "realistic-1000000.cbj": {
+          "bytes": 120000032,
+          "sha256": "6917453aa5113c2b1cfe0c7f0769a6030a165799a25b2328817ee483d2fa3e1c"
+        },
+        "realistic-1000000.cbl": {
+          "bytes": 1649,
+          "sha256": "c0f7431406b354a947cc7c4dad57cbfb64808ebcf0dbe0a66ad67bca152065fa"
+        },
+        "realistic-1000000.cbm": {
+          "bytes": 32,
+          "sha256": "04706910bd824adc3c01bcbe3738acdac096dafb083b308f7655da64f518c419"
+        },
+        "realistic-1000000.cbp": {
+          "bytes": 2874868,
+          "sha256": "3a120a8f83613dfc82a46a1bd807074d53348c961d46c763c7743d14ea0c81f4"
+        },
+        "realistic-1000000.cbs": {
+          "bytes": 100,
+          "sha256": "e54c12dd095c389a367439b875c1b5fd316ea8f39c635b83f2ec04b540c5c0f3"
+        },
+        "realistic-1000000.cbt": {
+          "bytes": 100121,
+          "sha256": "af11418caa11856b1a5816ddb0a3a4ca7364ac72c8540427e74af96bfe32ec9d"
+        },
+        "realistic-1000000.cbtt": {
+          "bytes": 437,
+          "sha256": "575fd085d07206eb35f12edf2569ee0c650ed103765c78bbc290d3e3b6f693a2"
+        },
+        "realistic-1000000.cib": {
+          "bytes": 26155276,
+          "sha256": "6087e6177076340772863afc700132d303ca0be3dd65ea8fc07b99dc3ce8f162"
+        },
+        "realistic-1000000.cib2": {
+          "bytes": 4923148,
+          "sha256": "9964379a5c19489eec66e7b197089ec83c6a8a558fd32635c0d47417d5bd1e2a"
+        },
+        "realistic-1000000.cit": {
+          "bytes": 1716332,
+          "sha256": "9ca20fc2912be989a3d296fab476578201790090c05d6f0e3e344c121b2cdedf"
+        },
+        "realistic-1000000.cit2": {
+          "bytes": 20,
+          "sha256": "c6cc4a38a7b0fd88f989dd8ff79911ecca6f55368c28784e3273a2730674a57e"
+        }
+      },
+      "baseline": "72c629e958c0a0c477be4366959442bf9e179019",
+      "workloads": {
+        "headers": {
+          "count": 1000000,
+          "units": 0,
+          "fingerprint": "0e0a0a27a32b9948"
+        },
+        "broad": {
+          "count": 436799,
+          "units": 1000000,
+          "fingerprint": "9ea0a504da1de2b9"
+        },
+        "selective": {
+          "count": 34905,
+          "units": 1000000,
+          "fingerprint": "ffb862441ba7b2fe"
+        },
+        "random-moves": {
+          "count": 2048,
+          "units": 136908,
+          "fingerprint": "d76ce94f664b25af"
+        },
+        "random-pgn": {
+          "count": 2048,
+          "units": 1286215,
+          "fingerprint": "1f02110a42246c55"
+        },
+        "random-pgn-noann": {
+          "count": 2048,
+          "units": 1259539,
+          "fingerprint": "6268a11cb6e41e0f"
+        }
+      }
+    },
+    "scale": {
+      "stem": "realistic-3410497",
+      "games": 3410497,
+      "mainline_plies": 227472245,
+      "all_plies": 236686657,
+      "slots": {
+        "cbh": 3410497,
+        "2cbh": 3410498
+      },
+      "sha256": "95884872953a86451e37ec99c4f4ebcb9070e5914d2e154ab7a6996ec29458aa",
+      "url": "https://github.com/itshak/cbvault/releases/download/benchmark-corpus-20261125-v1/realistic-3410497-native-v1.tar.zst",
+      "export_sha256": {
+        "cbh": "8e392fcda227c832b64cca89ead8da498fe34825d0cb0460b7f87dd2d9a06235",
+        "2cbh": "8e392fcda227c832b64cca89ead8da498fe34825d0cb0460b7f87dd2d9a06235"
+      },
+      "members": {
+        "realistic-3410497.2cba": {
+          "bytes": 1039114816,
+          "sha256": "ddfe68f4fdb783b3fc998aa63be0a292082198be681270b8fc7766e728cc8a1c"
+        },
+        "realistic-3410497.2cbg": {
+          "bytes": 952445504,
+          "sha256": "a91cd0920212a91abfb67233a26c2d3b6dec4680396c5a0ed7d8a1e7664ea57d"
+        },
+        "realistic-3410497.2cbh": {
+          "bytes": 654815616,
+          "sha256": "f3d2ee21668faa5964e687c16fd71f25b0142b7ffe960996b919d5daf40985ac"
+        },
+        "realistic-3410497.2lcd": {
+          "bytes": 2904064,
+          "sha256": "220a076abb83d16bdb46e087f462346ceee397efb244261b87a03d41e762b241"
+        },
+        "realistic-3410497.2lgd": {
+          "bytes": 191377420,
+          "sha256": "8923f1321ea1b3f3aaeb6779200951586ca8a2b43b86636d7851fdb8ff657cc8"
+        },
+        "realistic-3410497.2lid": {
+          "bytes": 217448871,
+          "sha256": "5b5abe934ad483fd1d3e0dbb495c1353de122801e807234cab1a66ca97b6552d"
+        },
+        "realistic-3410497.cba": {
+          "bytes": 228852594,
+          "sha256": "f1a612ea12b5ba834f41fc699245ede44b9e844cff71125cce62e5a2f8ca37f2"
+        },
+        "realistic-3410497.cbc": {
+          "bytes": 94,
+          "sha256": "439ccf2d03ec10b04fd7f4181ce6f46aef09c5aa8305f021b7c3f1ea7743b977"
+        },
+        "realistic-3410497.cbe": {
+          "bytes": 32,
+          "sha256": "0f2b24067c28854c2caca9d1815dde5caa8d36743b6a92d230b3a0fb088b938f"
+        },
+        "realistic-3410497.cbg": {
+          "bytes": 257367640,
+          "sha256": "e261ad39fd40398fa268a2d6f15f295751c42e4ecc05a9d6c7a6ef982eb84256"
+        },
+        "realistic-3410497.cbh": {
+          "bytes": 156882908,
+          "sha256": "d1675866b740322730c6aa37ba6e9af8d5142f293ceb607bc548bbcbfacc55d2"
+        },
+        "realistic-3410497.cbj": {
+          "bytes": 409259672,
+          "sha256": "2e220e4d223dd2d87e256683c5d2d65347a5e57deb3df6f94d6713ae1e3689a5"
+        },
+        "realistic-3410497.cbl": {
+          "bytes": 1649,
+          "sha256": "b696f311a36c7555d9fe555f011de3bbfdf9efdb7687f42a3f11edc5589f31a0"
+        },
+        "realistic-3410497.cbm": {
+          "bytes": 32,
+          "sha256": "1f02137bea5d194fa53b96c9e9ad33b67280ad5091cf83c3636d99de91b0e496"
+        },
+        "realistic-3410497.cbp": {
+          "bytes": 4538746,
+          "sha256": "b24279a1dda6460338748e1931c46c1d8e2e0f5a6203d0b9c3efb10073fad407"
+        },
+        "realistic-3410497.cbs": {
+          "bytes": 100,
+          "sha256": "8b71d66169233de97b1ea5e98c65b8ce3e7301cb6b6a714bca8990afe88ce401"
+        },
+        "realistic-3410497.cbt": {
+          "bytes": 332771,
+          "sha256": "3725ceaef896ae15e4386b809a0f298c931bd17e568a8f899a41f798983fee80"
+        },
+        "realistic-3410497.cbtt": {
+          "bytes": 437,
+          "sha256": "6b75eec8fd6fcdfc347ba849ca05ee798831368fb65a17fe70ce41342580c06c"
+        },
+        "realistic-3410497.cib": {
+          "bytes": 86444044,
+          "sha256": "fe9dc26b4b94d52ce0d072f4ce8c251d5496fbd9429ddccaf626385db2167b6b"
+        },
+        "realistic-3410497.cib2": {
+          "bytes": 16790156,
+          "sha256": "38471f6e07b2cafc8bc8bef52c5b2927239df41c9bd4bbb80f3a611ba243526f"
+        },
+        "realistic-3410497.cit": {
+          "bytes": 2709692,
+          "sha256": "b817c3450d9ee2e6323c21f3b5355cf87ffdbd2b37941666c1abd4810a25654b"
+        },
+        "realistic-3410497.cit2": {
+          "bytes": 20,
+          "sha256": "a8f33cde81b44036c10fe96a9978129cf578c5b1a6be98e0e5d36d0e61a01bb4"
+        }
+      },
+      "baseline": "72c629e958c0a0c477be4366959442bf9e179019",
+      "workloads": {
+        "headers": {
+          "count": 3410497,
+          "units": 0,
+          "fingerprint": "e44fe22884ea0336"
+        },
+        "broad": {
+          "count": 1512321,
+          "units": 3410497,
+          "fingerprint": "f9bd7ae56a5f75b4"
+        },
+        "selective": {
+          "count": 135182,
+          "units": 3410497,
+          "fingerprint": "66c77193626ec5bd"
+        },
+        "random-moves": {
+          "count": 2048,
+          "units": 136792,
+          "fingerprint": "94b6462901cc815f"
+        },
+        "random-pgn": {
+          "count": 2048,
+          "units": 1288470,
+          "fingerprint": "9e634ee00fa5d6f5"
+        },
+        "random-pgn-noann": {
+          "count": 2048,
+          "units": 1267549,
+          "fingerprint": "cb3fba4c8eb6da40"
+        }
+      }
+    }
+  }
+}

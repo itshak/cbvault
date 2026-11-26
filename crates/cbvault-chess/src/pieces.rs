@@ -1,7 +1,10 @@
 //! The piece lists of the compact encoding. Pieces of a kind are numbered in
 //! the order a scan of the start position finds them (`a1`, `a2`, … `h8`); a
 //! captured piece other than a pawn makes the ones above it move down, and a
-//! pawn keeps its number all game.
+//! pawn keeps its number all game. Only three pieces of a non-pawn kind
+//! have compact numbers; further promotions use square-addressed moves and
+//! remain unnumbered even after a numbered piece is captured. A subsequent
+//! promotion fills the next available compact number.
 //!
 //! Ported from `cbformat`'s `cbh/pieces.rs` (MIT, `oschess-cb-bridge` @
 //! `ca9e8f8e`), re-based on `gigachess`. See `docs/provenance.md`.
@@ -19,12 +22,14 @@ pub(crate) const KINDS: [Role; 4] = [Role::Queen, Role::Rook, Role::Bishop, Role
 pub(crate) struct Kind {
     sq: [u8; 10],
     len: u8,
+    // Numbered prefix; the remaining live squares are explicit-address-only.
+    numbered: u8,
 }
 
 impl Kind {
     #[inline(always)]
     pub(crate) fn get(&self, i: usize) -> Option<u8> {
-        (i < self.len as usize).then(|| self.sq[i])
+        (i < self.numbered as usize).then(|| self.sq[i])
     }
     #[inline(always)]
     fn position(&self, s: u8) -> Option<usize> {
@@ -35,7 +40,13 @@ impl Kind {
     fn push(&mut self, s: u8) -> bool {
         let ok = (self.len as usize) < self.sq.len();
         if ok {
-            self.sq[self.len as usize] = s;
+            if self.numbered < 3 {
+                self.sq.copy_within(self.numbered as usize..self.len as usize, self.numbered as usize + 1);
+                self.sq[self.numbered as usize] = s;
+                self.numbered += 1;
+            } else {
+                self.sq[self.len as usize] = s;
+            }
             self.len += 1;
         }
         ok
@@ -45,6 +56,9 @@ impl Kind {
         let Some(i) = self.position(s) else { return false };
         self.sq.copy_within(i + 1..self.len as usize, i);
         self.len -= 1;
+        if i < self.numbered as usize {
+            self.numbered -= 1;
+        }
         true
     }
     #[inline(always)]
@@ -101,17 +115,17 @@ impl Pieces {
             kinds: [
                 [
                     // Black
-                    Kind { sq: [31, 0, 0, 0, 0, 0, 0, 0, 0, 0], len: 1 },
-                    Kind { sq: [7, 63, 0, 0, 0, 0, 0, 0, 0, 0], len: 2 },
-                    Kind { sq: [23, 47, 0, 0, 0, 0, 0, 0, 0, 0], len: 2 },
-                    Kind { sq: [15, 55, 0, 0, 0, 0, 0, 0, 0, 0], len: 2 },
+                    Kind { sq: [31, 0, 0, 0, 0, 0, 0, 0, 0, 0], len: 1, numbered: 1 },
+                    Kind { sq: [7, 63, 0, 0, 0, 0, 0, 0, 0, 0], len: 2, numbered: 2 },
+                    Kind { sq: [23, 47, 0, 0, 0, 0, 0, 0, 0, 0], len: 2, numbered: 2 },
+                    Kind { sq: [15, 55, 0, 0, 0, 0, 0, 0, 0, 0], len: 2, numbered: 2 },
                 ],
                 [
                     // White
-                    Kind { sq: [24, 0, 0, 0, 0, 0, 0, 0, 0, 0], len: 1 },
-                    Kind { sq: [0, 56, 0, 0, 0, 0, 0, 0, 0, 0], len: 2 },
-                    Kind { sq: [16, 40, 0, 0, 0, 0, 0, 0, 0, 0], len: 2 },
-                    Kind { sq: [8, 48, 0, 0, 0, 0, 0, 0, 0, 0], len: 2 },
+                    Kind { sq: [24, 0, 0, 0, 0, 0, 0, 0, 0, 0], len: 1, numbered: 1 },
+                    Kind { sq: [0, 56, 0, 0, 0, 0, 0, 0, 0, 0], len: 2, numbered: 2 },
+                    Kind { sq: [16, 40, 0, 0, 0, 0, 0, 0, 0, 0], len: 2, numbered: 2 },
+                    Kind { sq: [8, 48, 0, 0, 0, 0, 0, 0, 0, 0], len: 2, numbered: 2 },
                 ],
             ],
             pawns: [
@@ -248,6 +262,7 @@ mod tests {
             for k in 0..4 {
                 assert_eq!(scanned.kinds[c][k].sq, standard.kinds[c][k].sq);
                 assert_eq!(scanned.kinds[c][k].len, standard.kinds[c][k].len);
+                assert_eq!(scanned.kinds[c][k].numbered, standard.kinds[c][k].numbered);
             }
         }
     }

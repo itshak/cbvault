@@ -1,0 +1,5 @@
+# Design: Advanced position search and incremental index feeds
+
+Use oschess 716e2f819c/a394449c56 and Morphy 2a617ad439/ffb70b681f as facts/behavior references, not code. Bitboard masks for specified pieces, empty squares, arbitrary squares, side-to-move and material; combine header predicates; compare against exhaustive legal replay. Reuse existing position-key sinks and direct move decoding; emit source game ID, ply, key, optional next move, result and relevant metadata; allow early stop and explicit mainline/variation semantics. Expose stable source identity and change-detection signals; append-only changes may feed new segments, ambiguous replacements/deletions force consumer invalidation unless exact revisions proven. Application owns persistent segments and compaction. Bound memory, threads, cancellation latency; benchmark narrow and broad queries, hit equality, streaming rate and allocations.
+
+Acceptance: no unsupported feature may be advertised; document failed experiments and report absent real-data gates explicitly.

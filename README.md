@@ -129,3 +129,5 @@ No second chess engine is bundled. The library reads source databases without mo
 ## More information
 
 [API guide](https://github.com/itshak/cbvault/blob/main/docs/bridge.md) · [CTG validation](docs/ctg-validation.md) · [Format specifications](https://github.com/itshak/cbvault/blob/main/SPEC.md) · [2CBH research and limitations](https://github.com/itshak/cbvault/blob/main/docs/format-spec-2cbh.md) · [Performance/codec reference](https://github.com/itshak/cbvault/blob/main/docs/cbv-reference.md) · [Changelog](https://github.com/itshak/cbvault/blob/main/CHANGELOG.md) · [Contributing](https://github.com/itshak/cbvault/blob/main/CONTRIBUTING.md)
+
+Development plans: [roadmap](docs/roadmap.md), [public benchmark corpus](docs/benchmark-corpus.md), and [deferred write support](docs/future-write-support.md).

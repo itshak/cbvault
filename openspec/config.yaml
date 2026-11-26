@@ -44,7 +44,7 @@ rules:
     - Keep gigachess as the single chess core; never add a second chess implementation
   tasks:
     - Each task is completable in one coding session with verification steps
-    - Real databases stay local; public CI uses generated fixtures
+    - Private/commercial databases stay local; public CI uses generated fixtures or explicitly approved hash-pinned redistributable benchmark artifacts after the corpus gate
     - Include a final verification task (fmt, clippy, tests, benchmarks)
 
 operations:

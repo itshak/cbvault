@@ -1,0 +1,216 @@
+{
+  "version": "2026-11-25-v1",
+  "status": "generated and semantically validated; ChessBase conversion and redistribution approval pending",
+  "data_license": "Source Lichess CC0-1.0; original generated annotations and special fixtures prepared for CC0 dedication by maintainer",
+  "license_url": "https://database.lichess.org/",
+  "generator": "gigachess 0.1.10; source scripts/bench-corpus/generator; pinned Cargo.lock",
+  "validation": "Full semantic replay using separately implemented PGN reader; all mainline headers/move words compared to CC0 source for full scale, rich and extreme. Smoke and standard are exact prefixes of validated scale; special is original.",
+  "sources": {
+    "2013-01": {
+      "url": "https://database.lichess.org/standard/lichess_db_standard_rated_2013-01.pgn.zst",
+      "sha256": "aa40b3671fa3cf1072eb182892cd90b0e1e003a4a5943492f64b77e7f3fd1635"
+    },
+    "2015-11": {
+      "url": "https://database.lichess.org/standard/lichess_db_standard_rated_2015-11.pgn.zst",
+      "sha256": "ae64086175cb8b041743572c3694fd9fdd7410a54251b3b112f865ca53279141"
+    }
+  },
+  "profiles": {
+    "realistic": "d4ec324a30bd378ab80c1a68a00a1e5ab05262d6d9d37a63cfb179d5a2f4efab",
+    "extreme": "d865d7a433559b02ff15780c17ac6b5e1ef0cbc398e4670b4a1271031e93a70e"
+  },
+  "corpora": [
+    {
+      "tier": "smoke",
+      "file": "realistic-25000.pgn.zst",
+      "games": 25000,
+      "source": "2015-11",
+      "seed": 20261125,
+      "selection": "first N complete source records; source comments replaced",
+      "sha256_zst": "6a29253d82a9e20da8ecbc92f7fb33a3b92cbf79192643e606f294be74840dff",
+      "sha256_pgn": "2871aedd81be9e797b02b7ce8e259441a91a1957fb7059ba5cdb9f8c79621664",
+      "compressed_bytes": 6275798,
+      "pgn_bytes": 24726594,
+      "validation": {
+        "games": 25000,
+        "mainline_plies": 1648722,
+        "variation_plies": 61828,
+        "mainline_and_headers_sha256": "3e8db7c14d259db9a2b9726a23944b555e33b4b7d32f62cbc91bde2a4a62c5a5"
+      },
+      "annotation_counts": {
+        "annotated_games": 1216,
+        "commented_games": 1059,
+        "variation_games": 607,
+        "nag_games": 663,
+        "comments": 6972,
+        "variations": 8264,
+        "nags": 13219,
+        "arrow_comments": 741,
+        "square_comments": 551,
+        "eval_comments": 0,
+        "clock_comments": 0,
+        "setup_games": 0
+      }
+    },
+    {
+      "tier": "standard",
+      "file": "realistic-1000000.pgn.zst",
+      "games": 1000000,
+      "source": "2015-11",
+      "seed": 20261125,
+      "selection": "first N complete source records; source comments replaced",
+      "sha256_zst": "64cff7d3ac1887c723a7dbc7f5f5d1b2cbdc683a9d85c7c06250aaca59f2f26f",
+      "sha256_pgn": "d7fd2dea19629ee7afcf2fdb8fb38b0f30cd7a1e4c4eebeded80edb23d35fcfb",
+      "compressed_bytes": 254722335,
+      "pgn_bytes": 994758449,
+      "validation": {
+        "games": 1000000,
+        "mainline_plies": 66636922,
+        "variation_plies": 2692154,
+        "mainline_and_headers_sha256": "68a0a7c319220d44b0574418a4c3e7cf405bd4ea38b66259e3aecf784c827277"
+      },
+      "annotation_counts": {
+        "annotated_games": 49364,
+        "commented_games": 43172,
+        "variation_games": 25271,
+        "nag_games": 27364,
+        "comments": 285956,
+        "variations": 358626,
+        "nags": 527840,
+        "arrow_comments": 29815,
+        "square_comments": 24661,
+        "eval_comments": 0,
+        "clock_comments": 0,
+        "setup_games": 0
+      }
+    },
+    {
+      "tier": "scale",
+      "file": "realistic-3410497.pgn.zst",
+      "games": 3410497,
+      "source": "2015-11",
+      "seed": 20261125,
+      "selection": "first N complete source records; source comments replaced",
+      "sha256_zst": "932f88e4a9d469ec2f7eb1f5d731916eb20030d88d5771b4adce741f659b3d1b",
+      "sha256_pgn": "4098e2bc80681f2187d42e39fac6879652ed74d92669b51c91f43e2dde4f5292",
+      "compressed_bytes": 869772419,
+      "pgn_bytes": 3394299958,
+      "validation": {
+        "games": 3410497,
+        "mainline_plies": 227472245,
+        "variation_plies": 9214412,
+        "mainline_and_headers_sha256": "03a58d3c2cf2a93004dfac7175b2a66973016f7ec8315a154a7be8299583a26d"
+      },
+      "annotation_counts": {
+        "annotated_games": 168265,
+        "commented_games": 147144,
+        "variation_games": 86167,
+        "nag_games": 93449,
+        "comments": 961211,
+        "variations": 1228727,
+        "nags": 1794086,
+        "arrow_comments": 100561,
+        "square_comments": 82691,
+        "eval_comments": 0,
+        "clock_comments": 0,
+        "setup_games": 0
+      }
+    },
+    {
+      "tier": "rich",
+      "file": "rich-100000.pgn.zst",
+      "games": 100000,
+      "source": "2013-01",
+      "seed": 20261126,
+      "selection": "first N complete source records; source comments replaced",
+      "sha256_zst": "b78631247f1b3a897b9e1cb70036b2f24c8effd04641321a380d7b3415b50bf8",
+      "sha256_pgn": "64fb4d15f291b23aebcbd5a6592dcd08aec5d49045278bd8dae134ccece58f71",
+      "compressed_bytes": 66676668,
+      "pgn_bytes": 229171472,
+      "validation": {
+        "games": 100000,
+        "mainline_plies": 6717385,
+        "variation_plies": 10636602,
+        "mainline_and_headers_sha256": "ab943f511bc1d1cfaee6b3f6e4261867a957d5eaf3bc66f5aa80d1e3e185efc9"
+      },
+      "annotation_counts": {
+        "annotated_games": 100000,
+        "commented_games": 100000,
+        "variation_games": 100000,
+        "nag_games": 100000,
+        "comments": 675476,
+        "variations": 1420293,
+        "nags": 1934875,
+        "arrow_comments": 71188,
+        "square_comments": 57853,
+        "eval_comments": 67147,
+        "clock_comments": 67147,
+        "setup_games": 0
+      }
+    },
+    {
+      "tier": "extreme",
+      "file": "extreme-10000.pgn.zst",
+      "games": 10000,
+      "source": "2013-01",
+      "seed": 20261127,
+      "selection": "first N complete source records; source comments replaced",
+      "sha256_zst": "506eedb036991c24bc6dd9090c81e882c6e769a39de01df2715c66996bda5337",
+      "sha256_pgn": "ba32004d483c73798ec86256f952a67dd87a9735c97390a83f4b15e2b96965c7",
+      "compressed_bytes": 47314211,
+      "pgn_bytes": 539973421,
+      "validation": {
+        "games": 10000,
+        "mainline_plies": 651314,
+        "variation_plies": 10156612,
+        "mainline_and_headers_sha256": "c3fe20999533a8fa523fdd7bfa29a55e08e7fecedd74d949ce4ebf054af1aaac"
+      },
+      "annotation_counts": {
+        "annotated_games": 10000,
+        "commented_games": 10000,
+        "variation_games": 10000,
+        "nag_games": 10000,
+        "comments": 1093754,
+        "variations": 1356489,
+        "nags": 1802981,
+        "arrow_comments": 115038,
+        "square_comments": 94375,
+        "eval_comments": 109329,
+        "clock_comments": 109329,
+        "setup_games": 0
+      }
+    },
+    {
+      "tier": "special",
+      "file": "special-120.pgn.zst",
+      "games": 120,
+      "source": null,
+      "seed": null,
+      "selection": "120 independently authored setup fixtures",
+      "sha256_zst": "dc844ae41bba5f75e1e2e992e18b67edcf913de15af612bd60591cb17e1c421f",
+      "sha256_pgn": "b1df7b6535efd141a46a20a11e971d5eb723d595b6d780dcc1161302593917b7",
+      "compressed_bytes": 2020,
+      "pgn_bytes": 133052,
+      "validation": {
+        "games": 120,
+        "mainline_plies": 120,
+        "variation_plies": 360,
+        "mainline_and_headers_sha256": "e5d124760fbde32e6c72c2915b5e94b321bcf383fd0a5344df2779fcac726ee9"
+      },
+      "annotation_counts": {
+        "annotated_games": 120,
+        "commented_games": 120,
+        "variation_games": 120,
+        "nag_games": 120,
+        "comments": 480,
+        "variations": 360,
+        "nags": 480,
+        "arrow_comments": 120,
+        "square_comments": 120,
+        "eval_comments": 120,
+        "clock_comments": 120,
+        "setup_games": 120
+      }
+    }
+  ]
+}
