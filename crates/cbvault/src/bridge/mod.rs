@@ -277,6 +277,11 @@ pub enum EntitySource<'a> {
 
 /// A read-only view of one ChessBase database.
 ///
+/// Open an immutable set of companion files. Do not edit or truncate them
+/// externally while a database, borrowed view, or query plan is alive.
+/// Read-only mapping is not a snapshot. Positioned I/O avoids mapped-file
+/// faults from truncation, but cannot guarantee cross-file consistency.
+///
 /// A `Database` holds no writable handle on anything and creates, modifies and
 /// deletes nothing in the set's directory: every file is opened for reading
 /// only, and the moves and annotation files are not opened at all until

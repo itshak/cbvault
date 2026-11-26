@@ -269,6 +269,14 @@ therefore a predicate over a *narrower* range, or a warm cache, or both.
 
 ## Read-only serving
 
+Use an immutable source set for the lifetime of a database and its views:
+read-only mapping does not prevent external writes or truncation, and a
+metadata check alone cannot close the race with a concurrent writer. Close
+all readers before editing a source in ChessBase, or read a separate stable
+copy. `CBVAULT_NO_MMAP=1` selects positioned I/O instead of file mappings
+where supported; this is not a transactional snapshot of the companion files.
+External modification while mapped is not supported.
+
 ### List the games
 
 ```rust

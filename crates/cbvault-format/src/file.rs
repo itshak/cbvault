@@ -21,6 +21,12 @@ use crate::error::{Error, Result};
 const SPARE_HANDLES: usize = 64;
 
 /// One file of a database, read at positions.
+///
+/// Mapped sources must not be changed or truncated by another process while
+/// this reader or its borrowed views are alive. Read-only access does not
+/// protect a mapping from external writes. Use positioned I/O for sources
+/// whose immutability cannot be established; a coherent snapshot is still
+/// required for consistent multi-file reads.
 #[derive(Debug)]
 pub struct DbFile {
     file: File,
@@ -56,15 +62,17 @@ impl DbFile {
     /// Honors [`mmap_disabled`]: with `CBVAULT_NO_MMAP=1` (or `CBVAULT_MMAP=off`)
     /// no mapping is created and reads go through `pread`, so resident memory
     /// stays at buffer size instead of growing with the files touched.
+    /// On Unix, experimental `CBVAULT_MMAP_ADVICE` selects normal, random,
+    /// none, or the default sequential hint. It does not affect correctness.
     pub fn open(path: PathBuf) -> Result<DbFile> {
         if mmap_disabled() {
             return Self::open_unmapped(path);
         }
         let file = File::open(&path).map_err(|source| Error::Io { path: path.clone(), source })?;
         #[cfg(feature = "mmap")]
-        // SAFETY: the file is opened read-only and the mapping is read-only;
-        // `memmap2` upholds the slice's invariants for the file's lifetime,
-        // which `DbFile` owns. Databases are never written (BYOD contract).
+        // SAFETY: relies on the documented immutable-source contract:
+        // read-only mapping alone does not prevent external modification.
+        // The file and mapping are retained for the lifetime of the views.
         #[allow(unsafe_code)]
         let mmap = unsafe {
             let m = memmap2::MmapOptions::new().map(&file).ok();
@@ -76,7 +84,15 @@ impl DbFile {
             // costs nothing that any caller could observe.
             #[cfg(unix)]
             if let Some(ref mmap) = m {
-                let _ = mmap.advise(memmap2::Advice::Sequential);
+                let advice = match std::env::var("CBVAULT_MMAP_ADVICE").as_deref() {
+                    Ok("normal") => Some(memmap2::Advice::Normal),
+                    Ok("random") => Some(memmap2::Advice::Random),
+                    Ok("none") => None,
+                    _ => Some(memmap2::Advice::Sequential),
+                };
+                if let Some(advice) = advice {
+                    let _ = mmap.advise(advice);
+                }
             }
             m
         };
