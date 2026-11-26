@@ -156,10 +156,10 @@ impl NativeBook {
                     "unclosed native page",
                 ));
             }
-            if let Some(found) = found {
-                if best.as_ref().is_none_or(|(p, _)| page < *p) {
-                    best = Some((page, found));
-                }
+            if let Some(found) = found
+                && best.as_ref().is_none_or(|(p, _)| page < *p)
+            {
+                best = Some((page, found));
             }
         }
         Ok(best.map(|(_, v)| v))

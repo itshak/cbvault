@@ -123,14 +123,10 @@ impl NativeDirectory {
     pub fn validate_pages(&self) -> Result<()> {
         let mut seen = vec![false; self.pages as usize];
         for slot in 0..self.slots {
-            if let Some(page) = self.page_at(slot)? {
-                if std::mem::replace(&mut seen[page as usize], true) {
-                    return Err(Error::corrupt(
-                        self.file.path(),
-                        16 + u64::from(slot) * 4,
-                        "duplicate native page slot",
-                    ));
-                }
+            if let Some(page) = self.page_at(slot)?
+                && std::mem::replace(&mut seen[page as usize], true)
+            {
+                return Err(Error::corrupt(self.file.path(), 16 + u64::from(slot) * 4, "duplicate native page slot"));
             }
         }
         if seen[1..].iter().any(|&x| !x) {
