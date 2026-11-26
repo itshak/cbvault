@@ -372,19 +372,54 @@ pub fn export_span_report_v2(
     let mut stats = ExportStats::default();
     let sink = &mut *out;
 
-    let buffers: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
+    // Recycle the writer, its SAN/annotation arenas and header scratch as
+    // well as the output buffer. A chunk owns all state until delivery.
+    struct ExportChunk {
+        bytes: Vec<u8>,
+        writer: PgnWriter,
+        header_scratch: Vec<u8>,
+    }
+    let buffers: Mutex<Vec<ExportChunk>> = Mutex::new(Vec::new());
     let high_water = AtomicUsize::new(0);
 
-    let render_chunk = |(start_id, end_id): (u32, u32)| -> (Vec<u8>, ExportStats) {
+    let render_chunk = |(start_id, end_id): (u32, u32)| -> (ExportChunk, ExportStats) {
         let mut local_stats = ExportStats::default();
-        let mut writer = PgnWriter::new();
+        use cbvault_format::twocbh::{GameHeader, RECORD_SIZE};
         let target_capacity = high_water.load(Ordering::Relaxed);
-        let mut buf = buffers.lock().unwrap().pop().unwrap_or_else(|| Vec::with_capacity(target_capacity));
-        buf.clear();
+        let mut chunk = buffers.lock().unwrap().pop().unwrap_or_else(|| ExportChunk {
+            bytes: Vec::with_capacity(target_capacity),
+            writer: PgnWriter::new(),
+            header_scratch: Vec::new(),
+        });
+        chunk.bytes.clear();
+        if chunk.bytes.capacity() < target_capacity {
+            chunk.bytes.reserve(target_capacity);
+        }
+        let count = end_id - start_id + 1;
+        let len = (count as usize).checked_mul(RECORD_SIZE);
+        let offset = u64::from(start_id) * RECORD_SIZE as u64;
+        // On bulk read failure, fall back to individual reads to preserve
+        // per-record error reporting and any intact prefix.
+        let raw = len.and_then(|len| {
+            if let Some(mapped) = headers.db_file().slice_at(offset, len) {
+                Some(mapped)
+            } else {
+                chunk.header_scratch.resize(len, 0);
+                match headers.read_records(start_id, count, &mut chunk.header_scratch) {
+                    Ok(n) if n == count => Some(chunk.header_scratch.as_slice()),
+                    _ => None,
+                }
+            }
+        });
+        let window = raw.map(|bytes| bytes.as_chunks::<RECORD_SIZE>().0);
 
         for rec_id in start_id..=end_id {
             local_stats.records += 1;
-            let header = match headers.record(rec_id) {
+            let header = match window
+                .and_then(|w| w.get((rec_id - start_id) as usize))
+                .map(|b| GameHeader::from_bytes(rec_id, b))
+                .map_or_else(|| headers.record(rec_id), Ok)
+            {
                 Ok(h) => h,
                 Err(e) => {
                     local_stats.failures += 1;
@@ -448,7 +483,7 @@ pub fn export_span_report_v2(
             };
             let anns = anns_rec.as_ref().map(|r| cbvault_format::twocbh::Annotations::from_record(r.record()));
 
-            match writer.write_game_v2(&mut buf, &header, &entities, &moves, anns.as_ref()) {
+            match chunk.writer.write_game_v2(&mut chunk.bytes, &header, &entities, &moves, anns.as_ref()) {
                 Ok(()) => local_stats.games += 1,
                 Err(e) => {
                     local_stats.failures += 1;
@@ -457,10 +492,10 @@ pub fn export_span_report_v2(
             }
         }
 
-        high_water.fetch_max(buf.capacity(), Ordering::Relaxed);
-        local_stats.bytes = buf.len() as u64;
-        local_stats.peak_writer = writer.capacity() as u64;
-        (buf, local_stats)
+        high_water.fetch_max(chunk.bytes.len(), Ordering::Relaxed);
+        local_stats.bytes = chunk.bytes.len() as u64;
+        local_stats.peak_writer = chunk.writer.capacity() as u64;
+        (chunk, local_stats)
     };
 
     let merge_chunk = |stats: &mut ExportStats, s: &ExportStats| {
@@ -475,7 +510,7 @@ pub fn export_span_report_v2(
     if threads <= 1 {
         for chunk in chunks {
             let (buf, chunk_stats) = render_chunk(chunk);
-            if let Err(e) = sink.write_all(&buf) {
+            if let Err(e) = sink.write_all(&buf.bytes) {
                 return Err(cbvault_format::error::Error::corrupt(base, 0, format!("write failed: {e}")));
             }
             merge_chunk(&mut stats, &chunk_stats);
@@ -489,10 +524,10 @@ pub fn export_span_report_v2(
             .map_err(|e| cbvault_format::error::Error::corrupt(base, 0, format!("thread pool creation failed: {e}")))?;
         let wave_size = threads * 2;
         for wave in chunks.chunks(wave_size) {
-            let rendered: Vec<(Vec<u8>, ExportStats)> =
+            let rendered: Vec<(ExportChunk, ExportStats)> =
                 pool.install(|| wave.par_iter().copied().map(render_chunk).collect());
             for (buf, chunk_stats) in rendered {
-                if let Err(e) = sink.write_all(&buf) {
+                if let Err(e) = sink.write_all(&buf.bytes) {
                     return Err(cbvault_format::error::Error::corrupt(base, 0, format!("write failed: {e}")));
                 }
                 merge_chunk(&mut stats, &chunk_stats);
