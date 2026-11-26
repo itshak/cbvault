@@ -658,3 +658,38 @@ fn direct_position_search_discards_hits_from_a_corrupt_game() {
         assert_eq!(hits[0].game, 2);
     }
 }
+
+#[test]
+fn v2_header_windows_preserve_named_results_across_boundaries() {
+    use cbvault::bridge::{Filter, scan_range};
+    let temp = TempDb::create("v2_header_windows");
+    let mut builder = Builder::new();
+    let white = builder.player("Юрьев", "Éric");
+    let black = builder.player("Nakamura", "Hikaru");
+    let event = builder.tournament("World Blitz", "Samarkand", 20231230);
+    let mut board = Board::startpos();
+    let at = builder.moves(1, &words(&mut board, "e2e4 e7e5"));
+    for id in 1..=17001 {
+        let h = builder.game(at);
+        set_entities(h, white, black, event);
+        set_elos(h, 2700, 2600);
+        if id % 7 == 0 {
+            h[0] |= 0x80;
+        }
+    }
+    builder.write_to(&temp);
+    let db = Database::open(temp.base()).unwrap();
+    let expected: Vec<_> = (3..=17000).filter(|id| id % 7 != 0).collect();
+    for threads in [1, 4] {
+        let got = scan_range(&db, 3, 17000, &Filter::All, threads).unwrap();
+        assert_eq!(got.ids(), expected);
+        for m in got.matches() {
+            assert_eq!(m.header.bytes(), db.header_ref(m.id).unwrap().bytes());
+            assert_eq!(m.white.last(), "Юрьев".as_bytes());
+            assert_eq!(m.white.first(), "Éric".as_bytes());
+            assert_eq!(m.black.last(), b"Nakamura");
+            assert_eq!(m.event.last(), b"World Blitz");
+        }
+        assert!(scan_range(&db, 17002, 17003, &Filter::All, threads).unwrap().is_empty());
+    }
+}

@@ -813,24 +813,11 @@ fn scan_ids_range_impl(
                     }
                 }
             }
-            super::HeaderSource::TwoCbh(headers) => {
-                use cbvault_format::twocbh::{GameHeader, RECORD_SIZE};
-                let count = last - first + 1;
-                let bytes = count as usize * RECORD_SIZE;
-                let offset = u64::from(first) * RECORD_SIZE as u64;
+            super::HeaderSource::TwoCbh(_) => {
                 let mut scratch = Vec::new();
-                let data = if let Some(mapped) = headers.db_file().slice_at(offset, bytes) {
-                    mapped
-                } else {
-                    scratch.resize(bytes, 0);
-                    if headers.read_records(first, count, &mut scratch)? != count {
-                        return Err(Error::corrupt(headers.path(), offset, "short v2 header batch"));
-                    }
-                    &scratch
-                };
-                for (i, b) in data.as_chunks::<RECORD_SIZE>().0.iter().enumerate() {
-                    let id = first + i as u32;
-                    let header = GameHeaderRef::TwoCbh(GameHeader::from_bytes(id, b));
+                let window = db.v2_header_window(first, last, &mut scratch)?;
+                for id in first..=last {
+                    let header = GameHeaderRef::TwoCbh(window.get(id).ok_or(Error::NoSuchGame { id })?);
                     if header.kind() == RecordKind::Game && !header.is_deleted() && filter.matches(id, &header) {
                         out.push(id);
                     }
@@ -877,8 +864,10 @@ fn scan_ranges<'db>(
         if let Some(entities) = v2_entities {
             // Native 2CBH headers are 192 bytes and .2lid entities are
             // interleaved. Never reinterpret them as classic 46-byte records.
+            let mut scratch = Vec::new();
+            let window = db.v2_header_window(first, last, &mut scratch)?;
             for id in first..=last {
-                let header = db.header_ref(id)?;
+                let header = GameHeaderRef::TwoCbh(window.get(id).ok_or(Error::NoSuchGame { id })?);
                 if !matches!(header.kind(), RecordKind::Game) || header.is_deleted() {
                     continue;
                 }
@@ -1320,6 +1309,9 @@ fn for_each_position_key_range_v2(
             out.cancelled = true;
             return Ok(out);
         }
+        let mut scratch = Vec::new();
+        // Preserve per-record recovery on a failed bulk read.
+        let window = db.v2_header_window(first, last, &mut scratch).ok();
         let mut since_poll = 0u32;
         for id in first..=last {
             since_poll += 1;
@@ -1330,7 +1322,12 @@ fn for_each_position_key_range_v2(
                     break;
                 }
             }
-            let header = match db.header_ref(id) {
+            let header = match window
+                .as_ref()
+                .and_then(|w| w.get(id))
+                .map(GameHeaderRef::TwoCbh)
+                .map_or_else(|| db.header_ref(id), Ok)
+            {
                 Ok(h) => h,
                 Err(_) => {
                     out.stats.failures += 1;
