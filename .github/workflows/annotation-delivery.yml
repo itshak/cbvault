@@ -1,0 +1,55 @@
+name: Native annotation delivery benchmarks
+on:
+  push:
+    branches: [experiment/v2-annotation-delivery]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  paired:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        tier: [smoke, rich, extreme]
+    env:
+      TIER: ${{ matrix.tier }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: 6d5cc9800b9fd682bd8766ee3dc2095b21a63f91
+          path: baseline-src
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.97.1'
+          components: clippy
+      - name: Correctness and build
+        run: |
+          cargo +1.97.1 test --locked -p cbvault --test twocbh_parallel_sink
+          CBVAULT_NO_MMAP=1 cargo +1.97.1 test --locked -p cbvault --test twocbh_parallel_sink
+          cargo +1.97.1 clippy --locked -p cbvault --lib --example annotation_delivery_workload -- -D warnings
+          cp crates/cbvault/examples/annotation_delivery_workload.rs baseline-src/crates/cbvault/examples/
+          cargo +1.97.1 build --locked --release -p cbvault --example annotation_delivery_workload --manifest-path baseline-src/Cargo.toml --target-dir "$RUNNER_TEMP/base-target"
+          cargo +1.97.1 build --locked --release -p cbvault --example annotation_delivery_workload --target-dir "$RUNNER_TEMP/head-target"
+      - name: Fetch and verify public corpus
+        run: |
+          mkdir -p benchmark-report
+          read -r stem sha url < <(python3 -c 'import json,os; m=json.load(open("scripts/bench-corpus/native-manifest.json"))["tiers"][os.environ["TIER"]]; print(m["stem"],m["sha256"],m["url"])')
+          curl --fail --location --retry 3 "$url" -o "$RUNNER_TEMP/fixture.tar.zst"
+          python3 scripts/bench-corpus/native-fixtures.py "$RUNNER_TEMP/fixture.tar.zst" "$sha" "$stem" "$RUNNER_TEMP/native" > benchmark-report/member-hashes.json
+          python3 - <<'PY'
+          import json,os
+          m=json.load(open("scripts/bench-corpus/native-manifest.json"))["tiers"][os.environ["TIER"]]
+          assert json.load(open("benchmark-report/member-hashes.json"))==m["members"]
+          PY
+      - name: Compare native annotation delivery
+        run: |
+          python3 scripts/bench-corpus/annotation-delivery-bench.py "$TIER" "$RUNNER_TEMP/native" "$RUNNER_TEMP/base-target/release/examples/annotation_delivery_workload" "$RUNNER_TEMP/head-target/release/examples/annotation_delivery_workload" benchmark-report/annotation-delivery.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: annotation-delivery-${{ matrix.tier }}
+          path: benchmark-report/
