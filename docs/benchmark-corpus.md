@@ -100,3 +100,19 @@ smoke and extreme; weekly runs cover standard, rich and extreme; scale is
 available manually, with all five triggered on the current roadmap branch.
 Special-120 remains excluded pending maintainer regeneration. No private gold
 is uploaded, and independent ChessBase-export annotation parity is still pending.
+
+### CTG scale workload
+
+The maintainer's scale opening book is packaged separately from the CBH/2CBH
+datasets. It consists of the 7.94 GB CTG plus CTO and CTB companions, with
+file-level and multipart SHA-256 checks in native-book-manifest.json. The
+fetcher validates individual parts and the concatenated stream, and only
+extracts the three exact expected regular files. This avoids permanently
+extracting the book on aiserver. The dedicated workflow runs complete key
+round-trip, legal move and child-existence verification on both baseline and
+candidate; it then pairs three measured open and deterministic probe passes
+(2,048 bounded opening walks), comparing stable statistics and move
+fingerprints, with peak RSS and latency percentiles. The workflow is manual or
+monthly after integration, and runs on the CTG benchmark branch during initial
+validation. No assumption of successful CTG verification is made before that
+real-data run completes.

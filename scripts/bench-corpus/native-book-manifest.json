@@ -1,0 +1,33 @@
+{
+  "stem": "realistic-3410497",
+  "source_archive_sha256": "92c8a23891fc4356d77a6c2d33ac84144deaf2c4126ba1084c04acd305eb0897",
+  "archive_sha256": "d224a9d801ff8dfc1f4294d938abe9f8b4e0f580eefde7b6550b8dace04071be",
+  "members": {
+    "realistic-3410497.ctb": {
+      "bytes": 393645,
+      "sha256": "c2a52bd8ce9d216cf83174a72c52aab28bd11e5455aa002d1d763351d1f8f589"
+    },
+    "realistic-3410497.ctg": {
+      "bytes": 7938195456,
+      "sha256": "07ee73e350545ed2f94dffe97b252539cbe961eef8a721eb9a5f4fc538fd72a6"
+    },
+    "realistic-3410497.cto": {
+      "bytes": 29373480,
+      "sha256": "023537042ae916664bcd070c144e489b14cd61d2490284c39fd3a4113da4c877"
+    }
+  },
+  "parts": [
+    {
+      "name": "realistic-3410497-book-v1.tar.zst.part-00",
+      "bytes": 1572864000,
+      "sha256": "ad439d251977c77cba67af962ee34bbd2ce8542900ce4b73a803eb57449bb5a0",
+      "url": "https://github.com/itshak/cbvault/releases/download/benchmark-corpus-20261125-v1/realistic-3410497-book-v1.tar.zst.part-00"
+    },
+    {
+      "name": "realistic-3410497-book-v1.tar.zst.part-01",
+      "bytes": 1034441284,
+      "sha256": "78348035505c6a9d3ebe60fd05c5280c698a2e55696bc6a6ca4cf60a77acbe34",
+      "url": "https://github.com/itshak/cbvault/releases/download/benchmark-corpus-20261125-v1/realistic-3410497-book-v1.tar.zst.part-01"
+    }
+  ]
+}
