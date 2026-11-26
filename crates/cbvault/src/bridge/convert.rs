@@ -405,29 +405,24 @@ impl V2Chunk {
     }
 }
 
-fn v2_read_annotations<'a>(
-    db: &Database,
-    offset: u64,
-    scratch: &'a mut Vec<u8>,
-) -> Result<cbvault_format::twocbh::Annotations<'a>> {
+// Keep the validated frame alive across the synchronous callback. Mapped
+// frames borrow their source; positioned frames own their read buffer.
+fn v2_read_annotations(db: &Database, offset: u64) -> Result<cbvault_format::twocbh::segment::SegmentRecord<'_>> {
     let seg = db
         .annotations_segment()?
         .ok_or_else(|| Error::corrupt(&db.members().annotations, offset, "referenced 2CBA missing"))?;
     let frame = seg.record_at(offset)?;
-    scratch.clear();
-    scratch.extend_from_slice(frame.bytes());
-    let anns = cbvault_format::twocbh::Annotations::parse(&db.members().annotations, scratch)?;
+    let anns = cbvault_format::twocbh::Annotations::from_record(frame.record());
     for item in anns.iter_items() {
         item?;
     }
-    Ok(anns)
+    Ok(frame)
 }
 
 fn v2_deliver(
     db: &Database,
     sink: &mut impl GameSink,
     chunk: &V2Chunk,
-    scratch: &mut Vec<u8>,
     want_annotations: bool,
     stats: &mut ConvertStats,
 ) {
@@ -447,10 +442,8 @@ fn v2_deliver(
                 stats.failures += 1;
             }
             V2Entry::Game(row) => {
-                let native = if row.annotated && want_annotations {
-                    // A no-mmap SegmentRecord may own its read bytes; borrow
-                    // from our reusable scratch until the synchronous callback.
-                    let result = v2_read_annotations(db, row.header.annotations_offset(), scratch);
+                let frame = if row.annotated && want_annotations {
+                    let result = v2_read_annotations(db, row.header.annotations_offset());
                     match result {
                         Ok(anns) => Some(anns),
                         Err(e) => {
@@ -481,7 +474,8 @@ fn v2_deliver(
                     v2_span(&chunk.keys, row.keys),
                     None,
                 );
-                game.twocbh_annotations = native;
+                game.twocbh_annotations =
+                    frame.as_ref().map(|frame| cbvault_format::twocbh::Annotations::from_record(frame.record()));
                 sink.game(game);
                 stats.games += 1;
                 stats.plies += row.moves.1 as u64;
@@ -510,7 +504,6 @@ fn convert_parallel_v2(db: &Database, sink: &mut impl GameSink, threads: usize, 
     let capacity = workers.saturating_mul(2).min(ranges.len()).max(1);
     let want_keys = sink.wants_keys();
     let want_annotations = sink.wants_annotations();
-    let mut annotation_scratch = Vec::new();
     let cancelled = AtomicBool::new(false);
     // Exactly capacity arenas can be queued, decoding, awaiting order, or
     // being delivered. Reissue one only after ordered synchronous delivery.
@@ -580,7 +573,7 @@ fn convert_parallel_v2(db: &Database, sink: &mut impl GameSink, threads: usize, 
                 }
             }
             while let Some(chunk) = ready.remove(&expected) {
-                v2_deliver(db, sink, &chunk, &mut annotation_scratch, want_annotations, stats);
+                v2_deliver(db, sink, &chunk, want_annotations, stats);
                 if !stats.complete {
                     break;
                 }

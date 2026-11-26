@@ -129,3 +129,32 @@ fn multiworker_v2_cancel_is_an_ordered_prefix_not_an_entire_prefetched_wave() {
         assert_eq!(stats.records, 1);
     }
 }
+
+#[test]
+fn annotation_delivery_rejects_bad_frame_checksum_and_preserves_order() {
+    let temp = TempDb::create("v2_bad_annotation_checksum");
+    let mut b = Builder::new();
+    let mut board = Board::startpos();
+    let at = b.moves(1, &words(&mut board, "e2e4 e7e5"));
+    let data = annotations(&[(0, vec![text_annotation(false, 1, "Unicode: Éric")])]);
+    let good = b.annotations(&data);
+    let bad = b.annotations(&data);
+    b.annotated_game(at, good);
+    b.annotated_game(at, bad);
+    b.annotated_game(at, good);
+    b.write_to(&temp);
+    let path = temp.base().with_extension("2cba");
+    let mut bytes = std::fs::read(&path).unwrap();
+    bytes[bad as usize + 16] ^= 1;
+    std::fs::write(path, bytes).unwrap();
+    let db = Database::open(temp.base()).unwrap();
+    let mut serial = Collector::default();
+    let expected = for_each_game(&db, &mut serial).unwrap();
+    assert_eq!(serial.failed, vec![2]);
+    let mut parallel = Collector::default();
+    let got = convert_parallel(&db, &mut parallel, 4, 1).unwrap();
+    assert_eq!(got.games, expected.games);
+    assert_eq!(got.failures, expected.failures);
+    assert_eq!(parallel.games, serial.games);
+    assert_eq!(parallel.failed, serial.failed);
+}
