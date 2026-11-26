@@ -699,6 +699,11 @@ impl SearchContext {
         self.scan_ids_range(db, 1, 0, filter)
     }
 
+    /// Prepare a reusable paginated query using this worker pool.
+    pub fn prepare_id_pages<'db>(&self, db: &'db Database, filter: &Filter) -> Result<IdPagePlan<'db>> {
+        IdPagePlan::build(db, filter, self.threads, self.pool.as_ref())
+    }
+
     /// Exact count and bounded page, reusing this worker pool.
     pub fn scan_id_page(&self, db: &Database, filter: &Filter, offset: u64, limit: usize) -> Result<IdPage> {
         scan_id_page_impl(db, filter, offset, limit, self.threads, self.pool.as_ref())
@@ -883,50 +888,88 @@ fn scan_id_page_impl(
     threads: usize,
     pool: Option<&rayon::ThreadPool>,
 ) -> Result<IdPage> {
-    let ranges = ranges_of(db, 1, 0);
-    let counts = collect_chunks(db, &ranges, threads, pool, |&(first, last)| {
-        let mut count = 0u64;
-        visit_matching_ids(db, first, last, filter, |_| count += 1)?;
-        Ok(count)
-    })?;
-    let matches = counts.iter().sum::<u64>();
-    let end = offset.saturating_add(limit as u64).min(matches);
-    let expected = end.saturating_sub(offset);
-    let mut ids = Vec::with_capacity(expected as usize);
-    let mut prefix = 0u64;
-    if expected > 0 {
-        for (&(first, last), count) in ranges.iter().zip(counts) {
-            let chunk_end = prefix + count;
-            if prefix >= end {
-                break;
-            }
-            if chunk_end > offset && prefix < end {
-                let mut rank = prefix;
-                visit_matching_ids(db, first, last, filter, |id| {
-                    if rank >= offset && rank < end {
-                        ids.push(id);
-                    }
-                    rank += 1;
-                })?;
-                if rank != chunk_end {
-                    return Err(Error::corrupt(db.base(), 0, "header results changed between page passes"));
-                }
-            }
-            prefix = chunk_end;
+    IdPagePlan::build(db, filter, threads, pool)?.page(offset, limit)
+}
+
+/// A reusable exact-count query over an immutable database. Retains one
+/// cumulative count per header chunk, not one ID per match. Subsequent pages
+/// seek directly to their first matching chunk. The source must not change
+/// for the lifetime of this plan; reopen and rebuild after database changes.
+pub struct IdPagePlan<'db> {
+    db: &'db Database,
+    filter: Filter,
+    ranges: Vec<(u32, u32)>,
+    ends: Vec<u64>,
+    stats: SearchStats,
+}
+
+impl<'db> IdPagePlan<'db> {
+    /// Prepare once; the plan can outlive the temporary worker pool.
+    pub fn new(db: &'db Database, filter: &Filter, threads: usize) -> Result<Self> {
+        Self::build(db, filter, threads, None)
+    }
+
+    fn build(db: &'db Database, filter: &Filter, threads: usize, pool: Option<&rayon::ThreadPool>) -> Result<Self> {
+        let ranges = ranges_of(db, 1, 0);
+        let mut ends = collect_chunks(db, &ranges, threads, pool, |&(first, last)| {
+            let mut count = 0u64;
+            visit_matching_ids(db, first, last, filter, |_| count += 1)?;
+            Ok(count)
+        })?;
+        let mut matches = 0;
+        for count in &mut ends {
+            matches += *count;
+            *count = matches;
         }
-    }
-    if ids.len() as u64 != expected {
-        return Err(Error::corrupt(db.base(), 0, "incomplete ID page"));
-    }
-    Ok(IdPage {
-        ids,
-        offset,
-        stats: SearchStats {
+        let stats = SearchStats {
             records: ranges.iter().map(|(a, b)| u64::from(b - a + 1)).sum(),
             matches,
             threads: threads.max(1),
-        },
-    })
+        };
+        Ok(Self { db, filter: filter.clone(), ranges, ends, stats })
+    }
+
+    /// Exact counts from the preparation scan.
+    pub fn stats(&self) -> SearchStats {
+        self.stats
+    }
+
+    /// Return a page without recounting the database.
+    pub fn page(&self, offset: u64, limit: usize) -> Result<IdPage> {
+        let end = offset.saturating_add(limit as u64).min(self.stats.matches);
+        let expected = end.saturating_sub(offset);
+        let mut ids = Vec::with_capacity(expected as usize);
+        if expected > 0 {
+            let first_chunk = self.ends.partition_point(|&n| n <= offset);
+            let mut prefix = if first_chunk == 0 { 0 } else { self.ends[first_chunk - 1] };
+            for (&(first, last), &chunk_end) in self.ranges[first_chunk..].iter().zip(&self.ends[first_chunk..]) {
+                if prefix >= end {
+                    break;
+                }
+                if chunk_end > prefix {
+                    let mut rank = prefix;
+                    visit_matching_ids(self.db, first, last, &self.filter, |id| {
+                        if rank >= offset && rank < end {
+                            ids.push(id);
+                        }
+                        rank += 1;
+                    })?;
+                    if rank != chunk_end {
+                        return Err(Error::corrupt(
+                            self.db.base(),
+                            0,
+                            "header results changed since page plan preparation",
+                        ));
+                    }
+                }
+                prefix = chunk_end;
+            }
+        }
+        if ids.len() as u64 != expected {
+            return Err(Error::corrupt(self.db.base(), 0, "incomplete ID page"));
+        }
+        Ok(IdPage { ids, offset, stats: self.stats })
+    }
 }
 
 /// The chunk boundaries of `first..=last`, or of the whole database.

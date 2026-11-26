@@ -54,8 +54,9 @@ mod tests;
 pub use convert::{ConvertStats, DEFAULT_BATCH, convert_parallel, for_each_game, for_each_range};
 pub use namebase::{Entities, Found, Name, Via};
 pub use search::{
-    AllOf, Filter, Hit, IdPage, IdScan, IdSet, Match, PositionQuery, PositionSearch, Range, Scan, SearchContext,
-    SearchStats, any_player, for_each_position_key, scan, scan_id_page, scan_ids, scan_ids_range, scan_range,
+    AllOf, Filter, Hit, IdPage, IdPagePlan, IdScan, IdSet, Match, PositionQuery, PositionSearch, Range, Scan,
+    SearchContext, SearchStats, any_player, for_each_position_key, scan, scan_id_page, scan_ids, scan_ids_range,
+    scan_range,
 };
 pub use sink::{GameHeaderRef, GameRef, GameSink};
 pub use walk::{Flow, GameBuf, MovesBuf, Names};
