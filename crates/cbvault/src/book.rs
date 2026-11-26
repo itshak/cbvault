@@ -113,15 +113,7 @@ impl Book {
             .step_by(PAGES_PER_TASK as usize)
             .map(|s| (s, s.saturating_add(PAGES_PER_TASK).min(pages)))
             .collect();
-        let parts: Vec<(Vec<u64>, Vec<Damage>)> =
-            tasks.par_iter().map(|&(start, end)| index_pages(&ctg, start, end, page_mask)).collect();
-        let total = parts.iter().map(|(v, _)| v.len()).sum();
-        let mut index = Vec::with_capacity(total);
-        let mut damaged = Vec::new();
-        for (v, d) in parts {
-            index.extend_from_slice(&v);
-            damaged.extend(d);
-        }
+        let (mut index, damaged) = build_index(&ctg, &tasks, page_mask)?;
         index.par_sort_unstable();
         Ok(Book { ctg, index, page_mask, damaged })
     }
@@ -310,6 +302,49 @@ impl Book {
     }
 }
 
+/// Bounds temporary index arenas to two tasks per worker. For mapped files,
+/// page headers give a reserve hint, never an authority for the final count.
+/// Every entry is still parsed and every damaged page is reported.
+fn build_index(ctg: &Ctg, tasks: &[(u32, u32)], page_mask: u64) -> Result<(Vec<u64>, Vec<Damage>)> {
+    let mut index = Vec::new();
+    let mut damaged = Vec::new();
+    if ctg.mapped_page(1).is_some() {
+        let hint: u64 = tasks
+            .par_iter()
+            .map(|&(start, end)| {
+                (start..end)
+                    .map(|page| {
+                        let Some(bytes) = ctg.mapped_page(page) else {
+                            return 0;
+                        };
+                        let count = u16::from_be_bytes([bytes[0], bytes[1]]) as usize;
+                        let used = u16::from_be_bytes([bytes[2], bytes[3]]) as usize;
+                        // Never reserve more than can physically fit. Even a corrupt
+                        // count cannot request arbitrary memory.
+                        if !(4..=PAGE_SIZE).contains(&used) {
+                            return 0;
+                        }
+                        let maximum = (used - 4) / (2 + 1 + cbvault_format::ctg::STATS_LEN);
+                        count.min(maximum) as u64
+                    })
+                    .sum::<u64>()
+            })
+            .sum();
+        let hint = usize::try_from(hint).map_err(|_| Error::corrupt(ctg.path(), 0, "index exceeds address space"))?;
+        index.try_reserve_exact(hint).map_err(|e| Error::corrupt(ctg.path(), 0, format!("index reserve: {e}")))?;
+    }
+    let wave = rayon::current_num_threads().saturating_mul(2).max(1);
+    for tasks in tasks.chunks(wave) {
+        let parts: Vec<_> = tasks.par_iter().map(|&(start, end)| index_pages(ctg, start, end, page_mask)).collect();
+        for (v, d) in parts {
+            index.try_reserve(v.len()).map_err(|e| Error::corrupt(ctg.path(), 0, format!("index reserve: {e}")))?;
+            index.extend_from_slice(&v);
+            damaged.extend(d);
+        }
+    }
+    Ok((index, damaged))
+}
+
 /// Indexes data pages `start..end`.
 fn index_pages(ctg: &Ctg, start: u32, end: u32, page_mask: u64) -> (Vec<u64>, Vec<Damage>) {
     let mut out = Vec::with_capacity(((end - start) as usize) * 56);
@@ -423,6 +458,29 @@ mod tests {
     fn the_hash_spreads_neighbouring_keys() {
         assert_ne!(key_hash(&[0x02, 0x00]), key_hash(&[0x02, 0x01]));
         assert_ne!(key_hash(&[]) >> 40, key_hash(&[0]) >> 40);
+    }
+
+    #[test]
+    fn bounded_index_matches_validated_page_walk() {
+        use cbvault_fixtures::TempDb;
+        use cbvault_fixtures::ctg::{connected_parent_child_book, malformed_unclosed_book};
+        for bytes in [connected_parent_child_book(), malformed_unclosed_book()] {
+            let temp = TempDb::create("ctg_bounded_index");
+            let path = temp.write(".ctg", &bytes);
+            let ctg = Ctg::open(path).unwrap();
+            let mask = (1u64 << (32 - ctg.pages().leading_zeros())) - 1;
+            let tasks: Vec<_> = (1..ctg.pages()).map(|p| (p, p + 1)).collect();
+            let mut expected = Vec::new();
+            let mut damage = Vec::new();
+            for &(start, end) in &tasks {
+                let (v, d) = index_pages(&ctg, start, end, mask);
+                expected.extend(v);
+                damage.extend(d);
+            }
+            let (got, got_damage) = build_index(&ctg, &tasks, mask).unwrap();
+            assert_eq!(got, expected);
+            assert_eq!(got_damage, damage);
+        }
     }
 
     /// Runs against a real book named by `CBVAULT_TEST_CTG` (never committed).
