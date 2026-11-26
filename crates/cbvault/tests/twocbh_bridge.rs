@@ -487,3 +487,33 @@ fn reused_pgn_writer_matches_fresh_across_games_and_modes() {
         assert_eq!(db.game_pgn_with(id, &mut reused, annotations).unwrap(), expected);
     }
 }
+
+#[test]
+fn v2_id_only_scan_matches_named_scan_across_batches() {
+    use cbvault::bridge::{Filter, scan_ids_range, scan_range};
+    let temp = TempDb::create("v2_idscan");
+    let mut builder = Builder::new();
+    let white = builder.player("Carlsen", "Magnus");
+    let black = builder.player("Nakamura", "Hikaru");
+    let event = builder.tournament("World Blitz", "Samarkand", 20231230);
+    let mut board = Board::startpos();
+    let at = builder.moves(1, &words(&mut board, "e2e4"));
+    for i in 0..17000 {
+        let g = builder.game(at);
+        set_entities(g, white, black, event);
+        set_elos(g, if i % 3 == 0 { 2800 } else { 1600 }, 1800);
+        if i % 7 == 0 {
+            g[0] |= 0x80;
+        }
+    }
+    builder.write_to(&temp);
+    let db = Database::open(temp.base()).unwrap();
+    for filter in [Filter::All, Filter::WhiteEloAtLeast(2000), Filter::WhiteEloAtLeast(3100)] {
+        for threads in [1, 2, 4] {
+            let want = scan_range(&db, 3, 16999, &filter, threads).unwrap();
+            let got = scan_ids_range(&db, 3, 16999, &filter, threads).unwrap();
+            assert_eq!(got.ids(), want.ids());
+            assert_eq!(got.stats(), want.stats());
+        }
+    }
+}

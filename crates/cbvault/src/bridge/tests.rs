@@ -357,6 +357,21 @@ fn a_tag_search_never_opens_the_moves_file() {
 }
 
 #[test]
+fn classic_id_only_scan_matches_named_scan() {
+    let db = fixture("bridge-idscan", 48);
+    let database = Database::open(db.base()).unwrap();
+    for filter in [Filter::All, Filter::EloAtLeast(1), Filter::WhiteEloAtLeast(3000)] {
+        for threads in [0, 1, 4] {
+            let want = search::scan_range(&database, 3, 41, &filter, threads).unwrap();
+            let got = search::scan_ids_range(&database, 3, 41, &filter, threads).unwrap();
+            assert_eq!(got.ids(), want.ids());
+            assert_eq!(got.stats(), want.stats());
+        }
+    }
+    assert!(search::scan_ids_range(&database, 99, 0, &Filter::All, 2).unwrap().ids().is_empty());
+}
+
+#[test]
 fn a_game_is_what_the_conversion_hands_a_sink() {
     let db = fixture("bridge-game", 16);
     let database = Database::open(db.base()).expect("open");

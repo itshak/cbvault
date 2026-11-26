@@ -690,6 +690,90 @@ pub fn scan_range<'db>(db: &'db Database, first: u32, last: u32, filter: &Filter
     scan_ranges(db, &ranges_of(db, first, last), filter, threads)
 }
 
+/// Compact result of a metadata search that needs only matching game IDs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IdScan {
+    ids: Vec<u32>,
+    stats: SearchStats,
+}
+
+impl IdScan {
+    /// Matching IDs, in ascending source record order.
+    pub fn ids(&self) -> &[u32] {
+        &self.ids
+    }
+    /// Take ownership of the IDs without copying them.
+    pub fn into_ids(self) -> Vec<u32> {
+        self.ids
+    }
+    /// Number of scanned records, matches and requested worker count.
+    pub fn stats(&self) -> SearchStats {
+        self.stats
+    }
+}
+
+/// Scan metadata without resolving entities or retaining full game headers.
+/// A corrupt entity not needed by the predicate does not affect an ID scan;
+/// header errors are still returned. Moves and annotations are never read.
+pub fn scan_ids(db: &Database, filter: &Filter, threads: usize) -> Result<IdScan> {
+    scan_ids_range(db, 1, 0, filter, threads)
+}
+
+/// ID-only scan over the inclusive range; zero last means end of database.
+pub fn scan_ids_range(db: &Database, first: u32, last: u32, filter: &Filter, threads: usize) -> Result<IdScan> {
+    let ranges = ranges_of(db, first, last);
+    let scan_chunk = |&(first, last): &(u32, u32)| -> Result<Vec<u32>> {
+        let mut out = Vec::new();
+        match db.header_source() {
+            super::HeaderSource::Classic(_) => {
+                for header in db.record_batch(first, last)? {
+                    if header.kind() == RecordKind::Game && !header.is_deleted() && filter.matches(header.id(), &header)
+                    {
+                        out.push(header.id());
+                    }
+                }
+            }
+            super::HeaderSource::TwoCbh(headers) => {
+                use cbvault_format::twocbh::{GameHeader, RECORD_SIZE};
+                let count = last - first + 1;
+                let bytes = count as usize * RECORD_SIZE;
+                let offset = u64::from(first) * RECORD_SIZE as u64;
+                let mut scratch = Vec::new();
+                let data = if let Some(mapped) = headers.db_file().slice_at(offset, bytes) {
+                    mapped
+                } else {
+                    scratch.resize(bytes, 0);
+                    if headers.read_records(first, count, &mut scratch)? != count {
+                        return Err(Error::corrupt(headers.path(), offset, "short v2 header batch"));
+                    }
+                    &scratch
+                };
+                for (i, b) in data.as_chunks::<RECORD_SIZE>().0.iter().enumerate() {
+                    let id = first + i as u32;
+                    let header = GameHeaderRef::TwoCbh(GameHeader::from_bytes(id, b));
+                    if header.kind() == RecordKind::Game && !header.is_deleted() && filter.matches(id, &header) {
+                        out.push(id);
+                    }
+                }
+            }
+        }
+        Ok(out)
+    };
+    let found: Vec<Vec<u32>> = if threads <= 1 || ranges.len() <= 1 {
+        ranges.iter().map(&scan_chunk).collect::<Result<_>>()?
+    } else {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .map_err(|e| Error::corrupt(db.base(), 0, format!("thread pool creation failed: {e}")))?;
+        pool.install(|| ranges.par_iter().map(scan_chunk).collect::<Result<Vec<_>>>())?
+    };
+    let records = ranges.iter().map(|(first, last)| u64::from(last - first + 1)).sum();
+    let ids = found.into_iter().flatten().collect::<Vec<_>>();
+    let stats = SearchStats { records, matches: ids.len() as u64, threads: threads.max(1) };
+    Ok(IdScan { ids, stats })
+}
+
 /// The chunk boundaries of `first..=last`, or of the whole database.
 fn ranges_of(db: &Database, first: u32, last: u32) -> Vec<(u32, u32)> {
     let last = if last == 0 { db.records() } else { last.min(db.records()) };
@@ -698,6 +782,9 @@ fn ranges_of(db: &Database, first: u32, last: u32) -> Vec<(u32, u32)> {
     while at <= last {
         let end = at.saturating_add(SCAN_BATCH - 1).min(last);
         out.push((at, end));
+        if end == last {
+            break;
+        }
         at = end + 1;
     }
     out
