@@ -1,0 +1,47 @@
+name: Reusable search context benchmarks
+on:
+  push:
+    branches: [experiment/reusable-search-context]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  paired:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        tier: [smoke, rich, standard, scale]
+    env:
+      TIER: ${{ matrix.tier }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.97.1'
+          components: clippy
+      - name: Build and test search context
+        run: |
+          cargo +1.97.1 test --locked -p cbvault --test twocbh_bridge reusable_search_context_matches_standalone_queries
+          cargo +1.97.1 clippy --locked -p cbvault --lib --example reusable_search_workload -- -D warnings
+          cargo +1.97.1 build --locked --release -p cbvault --example reusable_search_workload
+      - name: Fetch checksum-verified public corpus
+        run: |
+          mkdir -p benchmark-report
+          read -r stem sha url < <(python3 -c 'import json,os; m=json.load(open("scripts/bench-corpus/native-manifest.json"))["tiers"][os.environ["TIER"]]; print(m["stem"],m["sha256"],m["url"])')
+          curl --fail --location --retry 3 "$url" -o "$RUNNER_TEMP/fixture.tar.zst"
+          python3 scripts/bench-corpus/native-fixtures.py "$RUNNER_TEMP/fixture.tar.zst" "$sha" "$stem" "$RUNNER_TEMP/native" > "$RUNNER_TEMP/member-hashes.json"
+          python3 - <<'PY'
+          import json,os,pathlib
+          m=json.load(open("scripts/bench-corpus/native-manifest.json"))["tiers"][os.environ["TIER"]]
+          assert json.loads((pathlib.Path(os.environ["RUNNER_TEMP"])/"member-hashes.json").read_text())==m["members"]
+          PY
+      - name: Compare repeated standalone and reused searches
+        run: |
+          python3 scripts/bench-corpus/reusable-search-bench.py target/release/examples/reusable_search_workload "$RUNNER_TEMP/native" "$TIER" benchmark-report/reusable-search.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reusable-search-${{ matrix.tier }}
+          path: benchmark-report/
