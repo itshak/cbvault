@@ -517,3 +517,33 @@ fn v2_id_only_scan_matches_named_scan_across_batches() {
         }
     }
 }
+
+#[test]
+fn reusable_search_context_matches_standalone_queries() {
+    use cbvault::bridge::{Filter, PositionQuery, SearchContext, for_each_position_key, scan_ids_range};
+    let temp = TempDb::create("reusable_search");
+    let mut builder = Builder::new();
+    let mut board = Board::startpos();
+    let at = builder.moves(1, &words(&mut board, "e2e4 e7e5"));
+    for _ in 0..17000 {
+        builder.game(at);
+    }
+    builder.write_to(&temp);
+    let db = Database::open(temp.base()).unwrap();
+    for threads in [1, 2, 4] {
+        let ctx = SearchContext::new(threads).unwrap();
+        for filter in [Filter::All, Filter::EloAtLeast(2000), Filter::All] {
+            assert_eq!(
+                ctx.scan_ids_range(&db, 3, 16999, &filter).unwrap(),
+                scan_ids_range(&db, 3, 16999, &filter, threads).unwrap()
+            );
+        }
+        let q = PositionQuery::of(Board::startpos().zobrist());
+        let mut old = Vec::new();
+        let mut new = Vec::new();
+        let a = for_each_position_key(&db, &q, threads, |h| old.push(h)).unwrap();
+        let b = ctx.for_each_position_key(&db, &q, |h| new.push(h)).unwrap();
+        assert_eq!(a, b);
+        assert_eq!(old, new);
+    }
+}

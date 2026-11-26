@@ -666,6 +666,72 @@ pub struct SearchStats {
 /// How many records one scan step reads: 8,192, the batch every other path uses.
 const SCAN_BATCH: u32 = 8192;
 
+/// Reusable, explicitly bounded worker pool for repeated database queries.
+/// One context can be shared across databases; it retains no database data.
+pub struct SearchContext {
+    threads: usize,
+    pool: Option<rayon::ThreadPool>,
+}
+
+impl SearchContext {
+    /// Construct a context once. Zero and one worker execute synchronously.
+    pub fn new(threads: usize) -> std::result::Result<Self, rayon::ThreadPoolBuildError> {
+        let threads = threads.max(1);
+        let pool = if threads > 1 { Some(rayon::ThreadPoolBuilder::new().num_threads(threads).build()?) } else { None };
+        Ok(Self { threads, pool })
+    }
+
+    /// Worker budget requested at construction.
+    pub fn threads(&self) -> usize {
+        self.threads
+    }
+
+    /// Scan game IDs over the inclusive range, without creating a new pool.
+    pub fn scan_ids_range(&self, db: &Database, first: u32, last: u32, filter: &Filter) -> Result<IdScan> {
+        scan_ids_range_impl(db, first, last, filter, self.threads, self.pool.as_ref())
+    }
+
+    /// Scan all game IDs without resolving names.
+    pub fn scan_ids(&self, db: &Database, filter: &Filter) -> Result<IdScan> {
+        self.scan_ids_range(db, 1, 0, filter)
+    }
+
+    /// Materialized metadata results, over an inclusive range.
+    pub fn scan_range<'db>(&self, db: &'db Database, first: u32, last: u32, filter: &Filter) -> Result<Scan<'db>> {
+        scan_ranges(db, &ranges_of(db, first, last), filter, self.threads, self.pool.as_ref())
+    }
+
+    /// Replay main lines for a position, using the same bounded worker pool.
+    pub fn for_each_position_key(
+        &self,
+        db: &Database,
+        query: &PositionQuery<'_>,
+        mut on_hit: impl FnMut(Hit) + Send,
+    ) -> Result<PositionSearch> {
+        replay_ranges(db, &ranges_of(db, 1, 0), query, self.threads, &mut on_hit, self.pool.as_ref())
+    }
+}
+
+fn collect_chunks<T: Send>(
+    db: &Database,
+    ranges: &[(u32, u32)],
+    threads: usize,
+    pool: Option<&rayon::ThreadPool>,
+    f: impl Fn(&(u32, u32)) -> Result<T> + Sync + Send,
+) -> Result<Vec<T>> {
+    if threads <= 1 || ranges.len() <= 1 {
+        return ranges.iter().map(f).collect();
+    }
+    if let Some(pool) = pool {
+        return pool.install(|| ranges.par_iter().map(f).collect());
+    }
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .build()
+        .map_err(|e| Error::corrupt(db.base(), 0, format!("thread pool creation failed: {e}")))?;
+    pool.install(|| ranges.par_iter().map(f).collect())
+}
+
 /// Scans the header records of the whole database for the games `filter`
 /// matches, across `threads` workers, in ascending game order.
 ///
@@ -680,14 +746,14 @@ const SCAN_BATCH: u32 = 8192;
 /// calling thread.
 pub fn scan<'db>(db: &'db Database, filter: &Filter, threads: usize) -> Result<Scan<'db>> {
     let ranges = ranges_of(db, 1, 0);
-    scan_ranges(db, &ranges, filter, threads)
+    scan_ranges(db, &ranges, filter, threads, None)
 }
 
 /// [`scan`] over the game numbers `first..=last`, so a caller can narrow the
 /// work to a range it already knows is interesting. `last` of 0 means the end
 /// of the database.
 pub fn scan_range<'db>(db: &'db Database, first: u32, last: u32, filter: &Filter, threads: usize) -> Result<Scan<'db>> {
-    scan_ranges(db, &ranges_of(db, first, last), filter, threads)
+    scan_ranges(db, &ranges_of(db, first, last), filter, threads, None)
 }
 
 /// Compact result of a metadata search that needs only matching game IDs.
@@ -721,6 +787,17 @@ pub fn scan_ids(db: &Database, filter: &Filter, threads: usize) -> Result<IdScan
 
 /// ID-only scan over the inclusive range; zero last means end of database.
 pub fn scan_ids_range(db: &Database, first: u32, last: u32, filter: &Filter, threads: usize) -> Result<IdScan> {
+    scan_ids_range_impl(db, first, last, filter, threads, None)
+}
+
+fn scan_ids_range_impl(
+    db: &Database,
+    first: u32,
+    last: u32,
+    filter: &Filter,
+    threads: usize,
+    pool: Option<&rayon::ThreadPool>,
+) -> Result<IdScan> {
     let ranges = ranges_of(db, first, last);
     let scan_chunk = |&(first, last): &(u32, u32)| -> Result<Vec<u32>> {
         let mut out = Vec::new();
@@ -759,15 +836,7 @@ pub fn scan_ids_range(db: &Database, first: u32, last: u32, filter: &Filter, thr
         }
         Ok(out)
     };
-    let found: Vec<Vec<u32>> = if threads <= 1 || ranges.len() <= 1 {
-        ranges.iter().map(&scan_chunk).collect::<Result<_>>()?
-    } else {
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(threads)
-            .build()
-            .map_err(|e| Error::corrupt(db.base(), 0, format!("thread pool creation failed: {e}")))?;
-        pool.install(|| ranges.par_iter().map(scan_chunk).collect::<Result<Vec<_>>>())?
-    };
+    let found: Vec<Vec<u32>> = collect_chunks(db, &ranges, threads, pool, scan_chunk)?;
     let records = ranges.iter().map(|(first, last)| u64::from(last - first + 1)).sum();
     let ids = found.into_iter().flatten().collect::<Vec<_>>();
     let stats = SearchStats { records, matches: ids.len() as u64, threads: threads.max(1) };
@@ -791,7 +860,13 @@ fn ranges_of(db: &Database, first: u32, last: u32) -> Vec<(u32, u32)> {
 }
 
 /// The scan itself, over `ranges`.
-fn scan_ranges<'db>(db: &'db Database, ranges: &[(u32, u32)], filter: &Filter, threads: usize) -> Result<Scan<'db>> {
+fn scan_ranges<'db>(
+    db: &'db Database,
+    ranges: &[(u32, u32)],
+    filter: &Filter,
+    threads: usize,
+    pool: Option<&rayon::ThreadPool>,
+) -> Result<Scan<'db>> {
     let classic_entities = if db.generation() == super::Generation::Classic { Some(db.entities()) } else { None };
     let v2_entities = db.twocbh_entities();
     let scan_chunk = |&(first, last): &(u32, u32)| -> Result<Vec<Match<'db>>> {
@@ -841,15 +916,7 @@ fn scan_ranges<'db>(db: &'db Database, ranges: &[(u32, u32)], filter: &Filter, t
         Ok(out)
     };
 
-    let found: Vec<Vec<Match<'db>>> = if threads <= 1 || ranges.len() <= 1 {
-        ranges.iter().map(&scan_chunk).collect::<Result<_>>()?
-    } else {
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(threads)
-            .build()
-            .map_err(|e| Error::corrupt(db.base(), 0, format!("thread pool creation failed: {e}")))?;
-        pool.install(|| ranges.par_iter().map(scan_chunk).collect::<Result<Vec<_>>>())?
-    };
+    let found: Vec<Vec<Match<'db>>> = collect_chunks(db, ranges, threads, pool, scan_chunk)?;
 
     let records: u64 = ranges.iter().map(|(first, last)| u64::from(last - first + 1)).sum();
     let matches = found.into_iter().flatten().collect::<Vec<_>>();
@@ -1006,8 +1073,19 @@ pub fn for_each_position_key_range(
     threads: usize,
     on_hit: &mut (impl FnMut(Hit) + Send),
 ) -> Result<PositionSearch> {
+    replay_ranges(db, ranges, query, threads, on_hit, None)
+}
+
+fn replay_ranges(
+    db: &Database,
+    ranges: &[(u32, u32)],
+    query: &PositionQuery<'_>,
+    threads: usize,
+    on_hit: &mut (impl FnMut(Hit) + Send),
+    pool: Option<&rayon::ThreadPool>,
+) -> Result<PositionSearch> {
     if db.generation() == super::Generation::TwoCbh {
-        return for_each_position_key_range_v2(db, ranges, query, threads, on_hit);
+        return for_each_position_key_range_v2(db, ranges, query, threads, on_hit, pool);
     }
     let want = query.key;
     let is_cancelled = || query.cancelled.is_some_and(|cancel| cancel());
@@ -1072,15 +1150,7 @@ pub fn for_each_position_key_range(
         Ok(out)
     };
 
-    let replays: Vec<Replay> = if threads <= 1 || ranges.len() <= 1 {
-        ranges.iter().map(&replay_chunk).collect::<Result<_>>()?
-    } else {
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(threads)
-            .build()
-            .map_err(|e| Error::corrupt(db.base(), 0, format!("thread pool creation failed: {e}")))?;
-        pool.install(|| ranges.par_iter().map(replay_chunk).collect::<Result<Vec<_>>>())?
-    };
+    let replays: Vec<Replay> = collect_chunks(db, ranges, threads, pool, replay_chunk)?;
 
     let mut total = PositionSearch { complete: true, ..PositionSearch::default() };
     for replay in replays {
@@ -1107,6 +1177,7 @@ fn for_each_position_key_range_v2(
     query: &PositionQuery<'_>,
     threads: usize,
     on_hit: &mut (impl FnMut(Hit) + Send),
+    pool: Option<&rayon::ThreadPool>,
 ) -> Result<PositionSearch> {
     let want = query.key;
     let is_cancelled = || query.cancelled.is_some_and(|cancel| cancel());
@@ -1176,15 +1247,7 @@ fn for_each_position_key_range_v2(
         Ok(out)
     };
 
-    let replays: Vec<Replay> = if threads <= 1 || ranges.len() <= 1 {
-        ranges.iter().map(&replay_chunk).collect::<Result<_>>()?
-    } else {
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(threads)
-            .build()
-            .map_err(|e| Error::corrupt(db.base(), 0, format!("thread pool creation failed: {e}")))?;
-        pool.install(|| ranges.par_iter().map(replay_chunk).collect::<Result<Vec<_>>>())?
-    };
+    let replays: Vec<Replay> = collect_chunks(db, ranges, threads, pool, replay_chunk)?;
     let mut total = PositionSearch { complete: true, ..PositionSearch::default() };
     for replay in replays {
         total.games += replay.stats.games;
