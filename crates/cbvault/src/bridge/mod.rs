@@ -1195,6 +1195,47 @@ impl Database {
     }
 }
 
+// Shared v2 header window. Mapped data is borrowed; positioned reads use
+// the caller's reusable scratch buffer. Returned headers own their bytes so
+// they can outlive the window (e.g. in named search results).
+struct V2HeaderWindow<'a> {
+    first: u32,
+    bytes: &'a [[u8; cbvault_format::twocbh::RECORD_SIZE]],
+}
+
+impl V2HeaderWindow<'_> {
+    #[inline]
+    fn get(&self, id: u32) -> Option<cbvault_format::twocbh::GameHeader> {
+        let i = id.checked_sub(self.first)? as usize;
+        self.bytes.get(i).map(|b| cbvault_format::twocbh::GameHeader::from_bytes(id, b))
+    }
+}
+
+impl Database {
+    fn v2_header_window<'a>(&'a self, first: u32, last: u32, scratch: &'a mut Vec<u8>) -> Result<V2HeaderWindow<'a>> {
+        use cbvault_format::twocbh::RECORD_SIZE;
+        let headers = self.twocbh_headers().ok_or_else(|| Error::corrupt(self.base(), 0, "not a v2 header file"))?;
+        if first == 0 || first > last || last > headers.games() {
+            return Err(Error::NoSuchGame { id: if first == 0 || first > last { first } else { last } });
+        }
+        let count = last - first + 1;
+        let offset = u64::from(first) * RECORD_SIZE as u64;
+        let len = (count as usize)
+            .checked_mul(RECORD_SIZE)
+            .ok_or_else(|| Error::corrupt(headers.path(), offset, "v2 header batch too large"))?;
+        let data = if let Some(mapped) = headers.db_file().slice_at(offset, len) {
+            mapped
+        } else {
+            scratch.resize(len, 0);
+            if headers.read_records(first, count, scratch)? != count {
+                return Err(Error::corrupt(headers.path(), offset, "short v2 header batch"));
+            }
+            &scratch[..]
+        };
+        Ok(V2HeaderWindow { first, bytes: data.as_chunks::<RECORD_SIZE>().0 })
+    }
+}
+
 /// One batch of header records, in id order.
 ///
 /// Borrows the mapped `.cbh` where the file is mapped, and a caller's scratch

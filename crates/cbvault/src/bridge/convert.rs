@@ -292,6 +292,7 @@ struct V2Chunk {
     moves: Vec<u16>,
     keys: Vec<u64>,
     buf: GameBuf,
+    header_scratch: Vec<u8>,
 }
 
 struct V2Row {
@@ -340,11 +341,17 @@ impl V2Chunk {
         self.moves.clear();
         self.keys.clear();
         self.buf.set_wants(want_keys, false);
+        let window = db.v2_header_window(first, last, &mut self.header_scratch).ok();
         for id in first..=last {
             if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
                 break;
             }
-            let header = match db.header_ref(id) {
+            let header = match window
+                .as_ref()
+                .and_then(|w| w.get(id))
+                .map(GameHeaderRef::TwoCbh)
+                .map_or_else(|| db.header_ref(id), Ok)
+            {
                 Ok(header) => header,
                 Err(e) => {
                     self.entries.push(V2Entry::Failed(e));
