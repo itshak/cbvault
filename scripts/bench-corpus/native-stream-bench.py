@@ -55,9 +55,11 @@ for ext in ("cbh", "2cbh"):
         elif a.tier == "standard" and op == "stream-keys":
             configs.append((False, 4))
         for mapped, threads in configs:
+            active = {"head": bins["head"]} if ext == "cbh" and not mapped and op.startswith("stream-") else bins
             rows = []
             for rep in range(-1, 3):
                 for side in (("base", "head") if rep % 2 == 0 else ("head", "base")):
+                    if side not in active: continue
                     data = run(bins[side], db, op, threads, mapped)
                     if op == "stream-cancel":
                         assert data["count"] >= 1024, data
@@ -75,20 +77,24 @@ for ext in ("cbh", "2cbh"):
                     if rep >= 0:
                         rows.append(dict(side=side, repetition=rep, **data))
             allocs = {}
-            for side in bins:
+            for side in active:
                 data = run(bins[side], db, op, threads, mapped, True)
                 if op != "stream-cancel":
                     assert (data["count"], data["units"], data["fingerprint"]) == signatures[op]
                 allocs[side] = data["allocation_calls"]
             row = dict(format=ext, workload=op, mapped=mapped, threads=threads)
-            for side in bins:
+            for side in active:
                 samples = [r for r in rows if r["side"] == side]
                 row[side] = {k: statistics.median(r[k] for r in samples)
                              for k in ("seconds", "count", "cancel_tail_ns", "peak_rss_kib")}
                 row[side]["allocation_calls"] = allocs[side]
                 row[side]["seconds_range"] = [min(r["seconds"] for r in samples),
                                                 max(r["seconds"] for r in samples)]
-            row["speedup"] = row["base"]["seconds"] / max(row["head"]["seconds"], 1e-12)
+            if "base" in row:
+                row["speedup"] = row["base"]["seconds"] / max(row["head"]["seconds"], 1e-12)
+            else:
+                row["base"] = {"status":"unsupported: classic streaming requires mapped header/name"}
+                row["speedup"] = None
             report["summary"].append(row)
             report["samples"].append(dict(format=ext, workload=op, mapped=mapped, threads=threads, rows=rows))
             save()
