@@ -29,5 +29,11 @@
       "sha256": "78348035505c6a9d3ebe60fd05c5280c698a2e55696bc6a6ca4cf60a77acbe34",
       "url": "https://github.com/itshak/cbvault/releases/download/benchmark-corpus-20261125-v1/realistic-3410497-book-v1.tar.zst.part-01"
     }
-  ]
+  ],
+  "expected": {
+    "entries": 85834993,
+    "moves": 87463673,
+    "promotions": 9574,
+    "baseline_unknown": 12
+  }
 }

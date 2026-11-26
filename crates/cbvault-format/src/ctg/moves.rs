@@ -17,6 +17,10 @@
 //!    `0xbc` for second queen) were resolved by table symmetry and confirmed
 //!    via unique legal child existence on a 3.4M-game Mega Database CTG book.
 //!
+//! 5. nine third-piece codes were confirmed on the public 3,410,497-game
+//!    native book: all 12 occurrences had exactly one legal, previously
+//!    unassigned code with a child key found in the complete book.
+//!
 //! Bytes never seen are `None`.
 
 use super::position::Kind;
@@ -95,7 +99,7 @@ const MOVE_TABLE: [Option<MoveCode>; 256] = [
     Some(MoveCode { kind: Kind::Queen, ordinal: 1, dfile: 4, drank: 0 }), // 0x08 (child existence)
     Some(MoveCode { kind: Kind::Bishop, ordinal: 1, dfile: 6, drank: 6 }), // 0x09
     Some(MoveCode { kind: Kind::King, ordinal: 0, dfile: 0, drank: 7 }), // 0x0a
-    None,                                                                // 0x0b
+    Some(MoveCode { kind: Kind::Rook, ordinal: 2, dfile: 7, drank: 0 }), // 0x0b (scale unique child)
     Some(MoveCode { kind: Kind::Pawn, ordinal: 0, dfile: 7, drank: 1 }), // 0x0c
     Some(MoveCode { kind: Kind::Bishop, ordinal: 0, dfile: 3, drank: 3 }), // 0x0d
     Some(MoveCode { kind: Kind::Rook, ordinal: 1, dfile: 3, drank: 0 }), // 0x0e
@@ -114,7 +118,7 @@ const MOVE_TABLE: [Option<MoveCode>; 256] = [
     Some(MoveCode { kind: Kind::Bishop, ordinal: 0, dfile: 7, drank: 1 }), // 0x1b
     None,                                                                // 0x1c
     Some(MoveCode { kind: Kind::Bishop, ordinal: 1, dfile: 7, drank: 7 }), // 0x1d
-    None,                                                                // 0x1e
+    Some(MoveCode { kind: Kind::Queen, ordinal: 2, dfile: 1, drank: 7 }), // 0x1e (scale unique child)
     None,                                                                // 0x1f
     None,                                                                // 0x20
     Some(MoveCode { kind: Kind::Rook, ordinal: 1, dfile: 7, drank: 0 }), // 0x21
@@ -145,7 +149,7 @@ const MOVE_TABLE: [Option<MoveCode>; 256] = [
     Some(MoveCode { kind: Kind::Bishop, ordinal: 0, dfile: 6, drank: 6 }), // 0x3a
     Some(MoveCode { kind: Kind::Queen, ordinal: 1, dfile: 3, drank: 5 }), // 0x3b (child existence)
     Some(MoveCode { kind: Kind::Bishop, ordinal: 0, dfile: 3, drank: 5 }), // 0x3c
-    None,                                                                // 0x3d
+    Some(MoveCode { kind: Kind::Knight, ordinal: 2, dfile: 6, drank: 7 }), // 0x3d (scale unique child)
     None,                                                                // 0x3e
     None,                                                                // 0x3f
     None,                                                                // 0x40
@@ -154,7 +158,7 @@ const MOVE_TABLE: [Option<MoveCode>; 256] = [
     None,                                                                // 0x43
     Some(MoveCode { kind: Kind::King, ordinal: 0, dfile: 1, drank: 7 }), // 0x44
     Some(MoveCode { kind: Kind::Queen, ordinal: 0, dfile: 3, drank: 3 }), // 0x45
-    None,                                                                // 0x46
+    Some(MoveCode { kind: Kind::Queen, ordinal: 2, dfile: 5, drank: 5 }), // 0x46 (scale unique child)
     None,                                                                // 0x47
     None,                                                                // 0x48
     None,                                                                // 0x49
@@ -162,8 +166,8 @@ const MOVE_TABLE: [Option<MoveCode>; 256] = [
     Some(MoveCode { kind: Kind::Queen, ordinal: 0, dfile: 3, drank: 5 }), // 0x4b
     Some(MoveCode { kind: Kind::Knight, ordinal: 1, dfile: 1, drank: 2 }), // 0x4c
     Some(MoveCode { kind: Kind::Queen, ordinal: 1, dfile: 0, drank: 1 }), // 0x4d (child existence)
-    None,                                                                // 0x4e
-    None,                                                                // 0x4f
+    Some(MoveCode { kind: Kind::Queen, ordinal: 2, dfile: 6, drank: 6 }), // 0x4e (scale unique child)
+    Some(MoveCode { kind: Kind::Bishop, ordinal: 2, dfile: 7, drank: 7 }), // 0x4f (scale unique child)
     Some(MoveCode { kind: Kind::Rook, ordinal: 0, dfile: 0, drank: 6 }), // 0x50
     None,                                                                // 0x51
     Some(MoveCode { kind: Kind::Rook, ordinal: 0, dfile: 6, drank: 0 }), // 0x52
@@ -171,7 +175,7 @@ const MOVE_TABLE: [Option<MoveCode>; 256] = [
     Some(MoveCode { kind: Kind::Bishop, ordinal: 1, dfile: 7, drank: 1 }), // 0x54
     Some(MoveCode { kind: Kind::Pawn, ordinal: 2, dfile: 0, drank: 1 }), // 0x55
     None,                                                                // 0x56
-    None,                                                                // 0x57
+    Some(MoveCode { kind: Kind::Queen, ordinal: 2, dfile: 0, drank: 6 }), // 0x57 (scale unique child)
     None,                                                                // 0x58
     None,                                                                // 0x59
     None,                                                                // 0x5a
@@ -296,9 +300,9 @@ const MOVE_TABLE: [Option<MoveCode>; 256] = [
     Some(MoveCode { kind: Kind::Pawn, ordinal: 1, dfile: 7, drank: 1 }), // 0xd1
     Some(MoveCode { kind: Kind::Knight, ordinal: 1, dfile: 2, drank: 1 }), // 0xd2
     Some(MoveCode { kind: Kind::Knight, ordinal: 1, dfile: 6, drank: 1 }), // 0xd3
-    None,                                                                // 0xd4
+    Some(MoveCode { kind: Kind::Queen, ordinal: 2, dfile: 2, drank: 0 }), // 0xd4 (scale unique child)
     None,                                                                // 0xd5
-    None,                                                                // 0xd6
+    Some(MoveCode { kind: Kind::Rook, ordinal: 2, dfile: 0, drank: 7 }), // 0xd6 (scale unique child)
     Some(MoveCode { kind: Kind::Queen, ordinal: 0, dfile: 7, drank: 1 }), // 0xd7
     Some(MoveCode { kind: Kind::Rook, ordinal: 1, dfile: 6, drank: 0 }), // 0xd8
     Some(MoveCode { kind: Kind::Queen, ordinal: 0, dfile: 6, drank: 2 }), // 0xd9

@@ -278,6 +278,35 @@ mod tests {
     ];
 
     #[test]
+    fn scale_book_third_piece_moves() {
+        // All twelve previously unknown occurrences from the public corpus.
+        // Each expected move has the unique unassigned legal code whose
+        // resulting position is independently present in the complete book.
+        let cases = [
+            (0x57, "1nbQQ1nr/r2p1ppp/pppb2k1/8/8/8/PPP2PPP/RNBQKBNR w KQ - 0 1", "e8e6"),
+            (0xd4, "Q2Q1b1r/7p/5n1k/pp2p1p1/5p2/8/PPP2PPP/RNBQKBNR w KQ - 0 1", "d8f8"),
+            (0x46, "rnbq1bQQ/1p1p4/p1p1p2p/8/1k6/5Q2/PPP3PP/RNB1KBNR w KQ - 0 1", "h8e5"),
+            (0x4e, "5Q1Q/7p/4kn2/pp2p1p1/5p2/8/PPP2PPP/RNBQKBNR w KQ - 0 1", "h8f6"),
+            (0x0b, "8/ppp1QppR/8/3k4/8/8/PPPP1PPP/RNB1KBNR w KQ - 0 1", "h7g7"),
+            (0xd4, "Q4Q1r/7p/5nk1/pp2p1p1/5p2/8/PPP2PPP/RNBQKBNR w KQ - 0 1", "f8h8"),
+            (0x4f, "r1b1k1B1/ppp1bp1r/2np1n1p/8/8/2N2N2/PPP1PPPP/R1BQKB1R w KQq - 0 1", "g8f7"),
+            (0x3d, "r1b2b1N/pp5p/4p2k/3n4/1P1p4/3P1N2/P4PPP/RN2K2R w KQ - 0 1", "h8f7"),
+            (0x3d, "r3k2r/3bn3/3q3p/4Npp1/3B4/2PN4/PP2PPPP/RN1QKB1R w KQkq - 0 1", "e5c4"),
+            (0x3d, "rn1qk1Nr/pp1bb1pp/8/2p5/4Q3/8/PPP2PPP/RNB1K1NR w KQ - 0 1", "g8e7"),
+            (0x1e, "r2Q3r/3Qnkb1/1p3ppp/1N1pp3/4P3/5N2/P1P2PPP/R1BQKB1R w KQ - 0 1", "d8e7"),
+            (0xd6, "7R/ppp1Qppp/8/8/3k4/8/PPPP1PPP/RNB1KBNR w KQ - 0 1", "h8h7"),
+        ];
+        for (byte, fen, expected) in cases {
+            let board = parse_fen(fen).unwrap();
+            let stored = stored_form(&board);
+            let mv = decode_byte(&board, &stored, byte).unwrap();
+            assert_eq!(mv.to_string(), expected, "byte {byte:#04x}, {fen}");
+            let mut next = board;
+            assert!(next.play(mv).is_ok());
+        }
+    }
+
+    #[test]
     fn the_start_position_keys_to_the_probed_root() {
         let stored = stored_form(&Board::startpos());
         assert!(!stored.flipped && !stored.mirrored);

@@ -16,6 +16,7 @@ p.add_argument("--base-workload", type=pathlib.Path, required=True)
 p.add_argument("--head-workload", type=pathlib.Path, required=True)
 p.add_argument("--report", type=pathlib.Path, required=True)
 a = p.parse_args()
+expected_counts = json.loads(pathlib.Path(__file__).with_name("native-book-manifest.json").read_text())["expected"]
 a.report.parent.mkdir(parents=True, exist_ok=True)
 report = {"full_verification": {}, "probes": [], "status": "running"}
 
@@ -45,15 +46,16 @@ for side, exe in [("base", a.base), ("head", a.head)]:
 full = report["full_verification"]
 for side, r in full.items():
     data = r["data"]
-    if r["returncode"] != 0 or any(data.get(k, -1) != 0 for k in (
-        "damaged_pages", "bad_keys", "invalid_positions", "key_mismatches", "moves_unknown",
+    # v0.2.0 is intentionally pinned with its known 12 unknown moves.
+    # The candidate is strictly required to decode ALL moves.
+    unknown = expected_counts["baseline_unknown"] if side == "base" else 0
+    if r["returncode"] != (1 if unknown else 0) or any(data.get(k, -1) != 0 for k in (
+        "damaged_pages", "bad_keys", "invalid_positions", "key_mismatches",
         "moves_illegal", "children_missing",
-    )) or data.get("entries", 0) == 0 or data.get("key_round_trips") != data.get("entries") or data.get("children_found") != data.get("moves_decoded"):
+    )) or data.get("entries") != expected_counts["entries"] or data.get("key_round_trips") != data.get("entries") or data.get("children_found") != data.get("moves_decoded") or data.get("moves_unknown") != unknown or data.get("moves_decoded", 0) + unknown != expected_counts["moves"] or data.get("promotions") != expected_counts["promotions"]:
         report["status"] = "failed structural verification"
         save()
         raise SystemExit(f"strict CTG verification failed for {side}")
-keys = ("entries", "key_round_trips", "moves_decoded", "promotions", "children_found")
-assert all(full["base"]["data"][k] == full["head"]["data"][k] for k in keys)
 expected = None
 bins = {"base": a.base_workload, "head": a.head_workload}
 for repetition in range(-1, 3):

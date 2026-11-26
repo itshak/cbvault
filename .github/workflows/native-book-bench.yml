@@ -6,6 +6,8 @@ on:
       - '.github/workflows/native-book-bench.yml'
       - 'scripts/bench-corpus/native-book-*'
       - 'crates/cbvault/examples/native_book_workload.rs'
+      - 'crates/cbvault-format/src/ctg/**'
+      - 'crates/cbvault-chess/src/ctg.rs'
   workflow_dispatch:
   schedule:
     - cron: '15 3 1 * *'

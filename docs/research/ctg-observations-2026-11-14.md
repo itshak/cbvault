@@ -540,3 +540,21 @@ Second pass (child existence, whole book). In each row the piece is a second que
 | `0xfa` | 3 | 0 | 5 |
 | `0xfb` | 2 | 2 | 1 |
 | `0xfe` | 5 | 3 | 10 |
+
+## Public 3,410,497-game corpus: additional third-piece codes (2026-11-26)
+
+The first strict CI run verified 85,834,993 positions, 87,463,661 known moves and their children, and exposed 12 unknown occurrences. Two streamed passes through the checksum-pinned public book independently found exactly one legal, previously unmapped code and existing child key per occurrence. The nine new mappings are:
+
+| Byte | Kind | Zero-based ordinal | File delta mod 8 | Rank delta mod 8 | Occurrences |
+|---|---|---:|---:|---:|---:|
+| 0x0b | Rook | 2 | 7 | 0 | 1 |
+| 0x1e | Queen | 2 | 1 | 7 | 1 |
+| 0x3d | Knight | 2 | 6 | 7 | 3 |
+| 0x46 | Queen | 2 | 5 | 5 | 1 |
+| 0x4e | Queen | 2 | 6 | 6 | 1 |
+| 0x4f | Bishop | 2 | 7 | 7 | 1 |
+| 0x57 | Queen | 2 | 0 | 6 | 1 |
+| 0xd4 | Queen | 2 | 2 | 0 | 2 |
+| 0xd6 | Rook | 2 | 0 | 7 | 1 |
+
+All 12 positions are now regression tests. The candidate must pass complete verification with 87,463,673 decoded moves and zero unknowns. The v0.2.0 baseline is explicitly pinned to its observed 12 unknown occurrences; the candidate gate is not relaxed.
