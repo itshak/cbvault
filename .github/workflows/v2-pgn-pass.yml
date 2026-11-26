@@ -1,0 +1,54 @@
+name: Single-pass 2CBH PGN benchmarks
+on:
+  push:
+    branches: [experiment/v2-pgn-single-annotation-pass]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  paired:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        tier: [standard, rich, extreme]
+    env:
+      TIER: ${{ matrix.tier }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: d8daba5cfb23339d9ddd7d3bb728ba0a92187a92
+          path: baseline-src
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.97.1'
+          components: clippy
+      - name: Correctness and build
+        run: |
+          cargo +1.97.1 test --locked -p cbvault --lib
+          cargo +1.97.1 test --locked -p cbvault --test twocbh_bridge
+          cargo +1.97.1 clippy --locked -p cbvault --lib -- -D warnings
+          cargo +1.97.1 build --locked --release -p cbvault-cli --manifest-path baseline-src/Cargo.toml --target-dir "$RUNNER_TEMP/base-target"
+          cargo +1.97.1 build --locked --release -p cbvault-cli --target-dir "$RUNNER_TEMP/head-target"
+      - name: Fetch and verify public corpus
+        run: |
+          mkdir -p benchmark-report
+          read -r stem sha url < <(python3 -c 'import json,os; m=json.load(open("scripts/bench-corpus/native-manifest.json"))["tiers"][os.environ["TIER"]]; print(m["stem"],m["sha256"],m["url"])')
+          curl --fail --location --retry 3 "$url" -o "$RUNNER_TEMP/fixture.tar.zst"
+          python3 scripts/bench-corpus/native-fixtures.py "$RUNNER_TEMP/fixture.tar.zst" "$sha" "$stem" "$RUNNER_TEMP/native" > benchmark-report/member-hashes.json
+          python3 - <<'PY'
+          import json,os
+          m=json.load(open("scripts/bench-corpus/native-manifest.json"))["tiers"][os.environ["TIER"]]
+          assert json.load(open("benchmark-report/member-hashes.json"))==m["members"]
+          PY
+      - name: Compare complete PGN output against pinned golden SHA
+        run: |
+          python3 scripts/bench-corpus/v2-pgn-pass-bench.py "$TIER" "$RUNNER_TEMP/native" "$RUNNER_TEMP/base-target/release/cbvault" "$RUNNER_TEMP/head-target/release/cbvault" benchmark-report/v2-pgn-pass.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v2-pgn-pass-${{ matrix.tier }}
+          path: benchmark-report/
