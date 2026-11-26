@@ -169,8 +169,7 @@ only IDs, not a replacement for callers that require metadata.
 | Native CTO directory | [45851944861](https://github.com/itshak/cbvault/actions/runs/45851944861) | Every key routed to its real page, zero missing or ambiguous routes. Native directory open 0.10 ms (not full reader startup). Native-reader differential benchmark separately pending. |
 
 The integration branch combines the verified CTG hot path, child statistics,
-ID-only scan and reusable execution context. Continuous conversion awaits its
-scale result. Separate private golden PGNs, additional CTG variants and
+ID-only scan, reusable execution context, continuous conversion and bounded position replay. Both latter experiments passed their full scale gate. Separate private golden PGNs, additional CTG variants and
 maintainer-created promotion-overflow companions are not validated by these
 runs. No compatibility or release claim until the combined CI gates pass.
 
@@ -190,3 +189,10 @@ modes. Timing and allocation results are reported separately; no performance
 gain is claimed until CI completes. Cancellation measurements intentionally
 report different delivered counts on old and new implementations rather than
 requiring the old wave overshoot to be preserved.
+
+### Integrated streaming and position replay (2026-11-26)
+
+- Continuous conversion: [45850830515](https://github.com/itshak/cbvault/actions/runs/45850830515), all five tiers pass. Mapped 2CBH scale four-worker keyed conversion 8.162 -> 7.549 s, cancellation delivers 1,024 instead of 8,192 games, cancellation tail 6.11 -> 2.13 ms.
+- Bounded position replay: [45857489568](https://github.com/itshak/cbvault/actions/runs/45857489568), all three tiers pass in both mapping modes. Scale first-hit latency improves 403.4x CBH and 389.65x 2CBH, mapped four workers; callback cancellation at 1,024 hits reduces replay from 3,410,497 to 8,192 games. Full replay throughput stays within 2%; exact complete-search fingerprints agree.
+- Combined CI [45856202092](https://github.com/itshak/cbvault/actions/runs/45856202092) failed on the outdated fixed move-table cardinality assertion (170 vs 179); uniqueness itself passed. Updated the assertion to include the nine previously verified mappings, and retain the uniqueness gate.
+- Native/adaptive reader differential runs passed [45856298025](https://github.com/itshak/cbvault/actions/runs/45856298025) and [45857248389](https://github.com/itshak/cbvault/actions/runs/45857248389). Further real-book CTG validation is deferred to the maintainer's local PowerBook test; not included in this integration.
