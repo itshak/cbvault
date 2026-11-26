@@ -1192,12 +1192,14 @@ fn bounded_id_page_matches_full_classic_scan() {
 #[test]
 fn classic_early_stop_predicate_sees_current_hash_and_checkers() {
     let mut builder = Builder::new();
-    let toks = [Tok::Mv("e2e4"), Tok::End, Tok::Mv("f7f6"), Tok::End, Tok::Mv("d1h5"), Tok::End];
+    let toks = [Tok::Mv("e2e4"), Tok::Mv("f7f6"), Tok::Mv("d1h5"), Tok::End];
     let stream = classic::encode(&Board::startpos(), &toks, 0, false);
     let raw = classic::move_record(0, None, None, &stream);
     builder.game(&raw);
     let temp = builder.write("classic-predicate-caches");
     let db = Database::open(temp.base()).unwrap();
+    let target = gigachess::fen::parse_fen("rnbqkbnr/ppppp1pp/5p2/7Q/4P3/8/PPPP1PPP/RNB1KBNR b KQkq - 1 2").unwrap();
+    let target_key = target.zobrist();
     let predicate = |board: &Board| {
         let rebuilt = gigachess::fen::parse_fen(&board.to_fen()).unwrap();
         assert_eq!(board.zobrist(), rebuilt.zobrist());
@@ -1209,7 +1211,13 @@ fn classic_early_stop_predicate_sees_current_hash_and_checkers() {
     buf.set_wants(false, false);
     assert!(buf.walk_with(1, 0, &game, Some(&predicate)).unwrap());
     assert!(buf.keys().is_empty());
-    let result = for_each_position_key(&db, &PositionQuery::of(0).early_stop_with(&predicate), 4, |_| {}).unwrap();
+    assert_eq!(buf.moves().len(), 3);
+    let mut hits = Vec::new();
+    let result =
+        for_each_position_key(&db, &PositionQuery::of(target_key).early_stop_with(&predicate), 4, |h| hits.push(h))
+            .unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].ply, 3);
     assert_eq!(result.failures, 0);
     assert_eq!(result.plies, 3);
 }
