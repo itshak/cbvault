@@ -191,3 +191,66 @@ fn rare_promoted_move_bytes_decode_via_move_table() {
     let pos5 = book.probe(&b5).unwrap().expect("b5 in book");
     assert_eq!(pos5.moves[0].mv.as_ref().unwrap().to_string(), "g8f6");
 }
+
+// Synthetic one-slot native directory: every key routes to page one.
+fn native_single_slot(temp: &TempDb, raw: u32) {
+    let mut cto = vec![0u8; 20];
+    cto[..4].copy_from_slice(&0x0010_0001u32.to_be_bytes());
+    cto[4..8].copy_from_slice(&1u32.to_be_bytes());
+    cto[16..].copy_from_slice(&raw.to_be_bytes());
+    temp.write(".cto", &cto);
+    let mut ctb = vec![0u8; 12];
+    ctb[..4].copy_from_slice(&0x000c_0001u32.to_be_bytes());
+    temp.write(".ctb", &ctb);
+}
+
+#[test]
+fn native_reader_exact_hits_and_validated_absence() {
+    use cbvault::book::{NativeBook, NativeProbe};
+    let temp = TempDb::create("native_exact");
+    let path = temp.write(".ctg", &connected_parent_child_book());
+    native_single_slot(&temp, 0);
+    let fallback = Book::open(&path).unwrap();
+    let mut native = NativeBook::open(&path).unwrap();
+    assert_eq!(native.positions(), None);
+    let root = Board::startpos();
+    let mut child = root;
+    child.play(gigachess::san::san_to_move(&root, "e4").unwrap()).unwrap();
+    let mut missing = child;
+    missing.play(gigachess::san::san_to_move(&child, "c5").unwrap()).unwrap();
+    for board in [&root, &child] {
+        assert_eq!(native.probe(board).unwrap(), NativeProbe::Found(fallback.probe(board).unwrap().unwrap()));
+    }
+    assert!(fallback.probe(&missing).unwrap().is_none());
+    assert_eq!(native.probe(&missing).unwrap(), NativeProbe::UnverifiedMiss);
+    assert_eq!(native.validate().unwrap(), 2);
+    assert_eq!(native.positions(), Some(2));
+    assert_eq!(native.probe(&missing).unwrap(), NativeProbe::Absent);
+}
+
+#[test]
+fn native_reader_refuses_damaged_and_missing_companions() {
+    use cbvault::book::{NativeBook, NativeProbe};
+    let root = Board::startpos();
+    for (label, raw) in [("missing", u32::MAX), ("out_of_range", 999)] {
+        let temp = TempDb::create(label);
+        let path = temp.write(".ctg", &minimal_valid_book());
+        assert!(NativeBook::open(&path).is_err());
+        native_single_slot(&temp, raw);
+        let mut native = NativeBook::open(&path).unwrap();
+        assert!(native.validate().is_err());
+        assert_eq!(native.positions(), None);
+        if raw == u32::MAX {
+            assert_eq!(native.probe(&root).unwrap(), NativeProbe::UnverifiedMiss);
+        } else {
+            assert!(native.probe(&root).is_err());
+        }
+        assert!(Book::open(&path).unwrap().probe(&root).unwrap().is_some());
+    }
+    let temp = TempDb::create("native_unclosed");
+    let path = temp.write(".ctg", &malformed_unclosed_book());
+    native_single_slot(&temp, 0);
+    let mut native = NativeBook::open(&path).unwrap();
+    assert!(native.validate().is_err());
+    assert!(native.probe(&root).is_err());
+}

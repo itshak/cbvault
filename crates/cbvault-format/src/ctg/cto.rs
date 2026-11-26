@@ -57,7 +57,9 @@ impl NativeDirectory {
         let slots = word(&header[4..8]);
         let low = word(&b[4..8]);
         let high = word(&b[8..12]);
-        if slots == 0
+        if word(&header[..4]) != 0x0010_0001
+            || word(&b[..4]) != 0x000c_0001
+            || slots == 0
             || file.size()? != 16 + u64::from(slots) * 4
             || low > high
             || low >= slots
@@ -113,6 +115,28 @@ impl NativeDirectory {
             return Err(Error::corrupt(self.file.path(), at, "native page out of bounds"));
         }
         Ok(Some(raw + 1))
+    }
+
+    /// Check that every directory page is in range, uniquely referenced, and
+    /// every data page has a slot. Reject unsupported directory variants rather
+    /// than infer a negative result from them.
+    pub fn validate_pages(&self) -> Result<()> {
+        let mut seen = vec![false; self.pages as usize];
+        for slot in 0..self.slots {
+            if let Some(page) = self.page_at(slot)? {
+                if std::mem::replace(&mut seen[page as usize], true) {
+                    return Err(Error::corrupt(
+                        self.file.path(),
+                        16 + u64::from(slot) * 4,
+                        "duplicate native page slot",
+                    ));
+                }
+            }
+        }
+        if seen[1..].iter().any(|&x| !x) {
+            return Err(Error::corrupt(self.file.path(), 0, "unreferenced native data page"));
+        }
+        Ok(())
     }
 
     /// Whether the actual page of a stored key is among the native candidates.

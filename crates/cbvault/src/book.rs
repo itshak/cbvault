@@ -3,9 +3,7 @@
 //!
 //! # How lookups work
 //!
-//! A book's own index (`.cto`) is a hash table whose hash function is **not
-//! established** (see `docs/research/ctg-observations-2026-11-14.md`), so it is
-//! not used. [`Book::open`] scans the `.ctg` once and builds an index of its own
+//! The default [`Book::open`] scans the `.ctg` once and builds an index of its own
 //! in memory: one `u64` per position, packing high bits of a hash of the
 //! position's key with the number of the page that holds it. A lookup binary-
 //! searches that array and then compares the key byte for byte on the page, so
@@ -13,6 +11,9 @@
 //!
 //! The index costs 8 bytes per position (about 220 MB for a 27.6-million-
 //! position book) and one sequential pass over the `.ctg` to build.
+//!
+//! [`NativeBook`] uses the native CTO/CTB index. Unverified misses are
+//! explicitly uncertain; exhaustive validation enables authoritative absence.
 //!
 //! # Provenance
 //!
@@ -22,8 +23,8 @@
 use std::path::Path;
 
 use cbvault_chess::ctg::{self as chess_ctg, MoveError, Stored};
-use cbvault_format::ctg::position;
 use cbvault_format::ctg::{Ctg, Entry, PAGE_SIZE, Stats};
+use cbvault_format::ctg::{cto::NativeDirectory, position};
 use gigachess::{Board, Move};
 use rayon::prelude::*;
 
@@ -41,6 +42,147 @@ pub struct Book {
     index: Vec<u64>,
     page_mask: u64,
     damaged: Vec<Damage>,
+}
+
+/// Native directory reader with no synthesized index. The ordinary Book
+/// remains the recoverable scan-based reader.
+#[derive(Debug)]
+pub struct NativeBook {
+    ctg: Ctg,
+    directory: NativeDirectory,
+    count: Option<u64>,
+}
+
+/// Result of an untrusted lookup: only an exact hit is authoritative before
+/// all stored positions have been checked against the companion directory.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NativeProbe<T> {
+    /// Exact encoded key found on a candidate page.
+    Found(T),
+    /// Absence established by an exhaustive routing validation.
+    Absent,
+    /// No exact hit, but the directory has not been validated.
+    UnverifiedMiss,
+}
+
+impl NativeBook {
+    /// Open the native companions without scanning any data pages.
+    /// An unverified miss is deliberately not reported as absence.
+    /// As with Book, the source companions must remain immutable while open.
+    pub fn open(path: impl AsRef<Path>) -> Result<Self> {
+        let ctg = Ctg::open(path)?;
+        let directory = NativeDirectory::open(&ctg)?;
+        Ok(Self { ctg, directory, count: None })
+    }
+
+    /// Count of validated positions; unknown before an exhaustive audit.
+    pub fn positions(&self) -> Option<u64> {
+        self.count
+    }
+
+    /// Validate every stored key's physical route and page boundary. No
+    /// fallback index is allocated. Errors leave this reader unverified.
+    pub fn validate(&mut self) -> Result<u64> {
+        self.count = None;
+        let ctg = &self.ctg;
+        let directory = &self.directory;
+        directory.validate_pages()?;
+        let count = (1..ctg.pages())
+            .into_par_iter()
+            .map_init(
+                || [0u8; PAGE_SIZE],
+                |buf, page| {
+                    let bytes = match ctg.mapped_page(page) {
+                        Some(bytes) => bytes,
+                        None => {
+                            ctg.read_page(page, buf)?;
+                            &buf[..]
+                        }
+                    };
+                    let mut entries = ctg.entries(page, bytes)?;
+                    let mut count = 0;
+                    for entry in entries.by_ref() {
+                        let entry = entry.map_err(|e| e.into_error(ctg.path()))?;
+                        if !directory.reaches(entry.key, page)? {
+                            return Err(Error::corrupt(
+                                ctg.path(),
+                                entry.offset,
+                                "native directory cannot reach stored key",
+                            ));
+                        }
+                        count += 1;
+                    }
+                    if !entries.closed() {
+                        return Err(Error::corrupt(
+                            ctg.path(),
+                            u64::from(page) * PAGE_SIZE as u64,
+                            "unclosed native page",
+                        ));
+                    }
+                    Ok(count)
+                },
+            )
+            .try_reduce(|| 0u64, |a, b| Ok(a + b))?;
+        self.count = Some(count);
+        Ok(count)
+    }
+
+    /// Look up the exact encoded key, checking every candidate page rather than
+    /// returning a hash collision. Corruption is an error, never a negative.
+    fn find<T>(&self, key: &[u8], f: impl Fn(&Entry<'_>) -> T) -> Result<Option<T>> {
+        let mut buf = [0u8; PAGE_SIZE];
+        let mut best: Option<(u32, T)> = None;
+        for slot in self.directory.slots_for(key) {
+            let Some(page) = self.directory.page_at(slot)? else { continue };
+            let bytes = match self.ctg.mapped_page(page) {
+                Some(bytes) => bytes,
+                None => {
+                    self.ctg.read_page(page, &mut buf)?;
+                    &buf[..]
+                }
+            };
+            let mut entries = self.ctg.entries(page, bytes)?;
+            let mut found = None;
+            for entry in entries.by_ref() {
+                let entry = entry.map_err(|e| e.into_error(self.ctg.path()))?;
+                if entry.key == key && found.is_none() {
+                    found = Some(f(&entry));
+                }
+            }
+            if !entries.closed() {
+                return Err(Error::corrupt(
+                    self.ctg.path(),
+                    u64::from(page) * PAGE_SIZE as u64,
+                    "unclosed native page",
+                ));
+            }
+            if let Some(found) = found {
+                if best.as_ref().is_none_or(|(p, _)| page < *p) {
+                    best = Some((page, found));
+                }
+            }
+        }
+        Ok(best.map(|(_, v)| v))
+    }
+
+    /// Probe the same canonical key candidates as the fallback reader.
+    pub fn probe(&self, board: &Board) -> Result<NativeProbe<BookPosition>> {
+        let stored = chess_ctg::stored_form(board);
+        for (key, len) in chess_ctg::key_candidates(&stored) {
+            if let Some(found) = self.find(&key[..len], |entry| book_position(board, &stored, entry))? {
+                return Ok(NativeProbe::Found(found));
+            }
+        }
+        Ok(if self.count.is_some() { NativeProbe::Absent } else { NativeProbe::UnverifiedMiss })
+    }
+
+    /// Probe a raw stored key without decoding chess moves.
+    pub fn contains_key(&self, key: &[u8]) -> Result<NativeProbe<()>> {
+        if self.find(key, |_| ())?.is_some() {
+            return Ok(NativeProbe::Found(()));
+        }
+        Ok(if self.count.is_some() { NativeProbe::Absent } else { NativeProbe::UnverifiedMiss })
+    }
 }
 
 /// A page the index build could not read completely.
