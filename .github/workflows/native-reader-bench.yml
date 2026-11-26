@@ -1,0 +1,67 @@
+name: Native CTO reader differential benchmark
+on:
+  push:
+    branches: [experiment/ctg-native-reader]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      RAYON_NUM_THREADS: '4'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.97.1'
+          components: clippy
+      - name: Test native exact hits, misses and corruption
+        run: |
+          cargo +1.97.1 test --locked -p cbvault-format cto::
+          cargo +1.97.1 test --locked -p cbvault --test ctg_regressions
+          CBVAULT_NO_MMAP=1 cargo +1.97.1 test --locked -p cbvault --test ctg_regressions native_reader_
+          cargo +1.97.1 clippy --locked -p cbvault --lib --example native_reader_workload -- -D warnings
+          cargo +1.97.1 build --locked --release -p cbvault --example native_reader_workload
+      - name: Fetch checksum-verified public book
+        run: |
+          mkdir -p benchmark-report
+          python3 scripts/bench-corpus/native-book-fetch.py scripts/bench-corpus/native-book-manifest.json "$RUNNER_TEMP/book" > benchmark-report/fixture.json
+      - name: Compare native and fallback on real hits and legal misses
+        run: |
+          python3 - <<'PY'
+          import json,os,pathlib,subprocess,statistics
+          exe="target/release/examples/native_reader_workload"
+          book=os.environ["RUNNER_TEMP"]+"/book/realistic-3410497.ctg"
+          report={"open":[],"probes":[]}
+          def save():
+              pathlib.Path("benchmark-report/native-reader.json").write_text(json.dumps(report,indent=2)+"\n")
+          def run(mode,only):
+              args=["/usr/bin/time","-f","%M","-o","benchmark-report/rss.txt",exe,book,mode]
+              if only:args.append("open-only")
+              r=json.loads(subprocess.check_output(args,text=True))
+              r["mode"]=mode;r["peak_rss_kib"]=int(pathlib.Path("benchmark-report/rss.txt").read_text().strip())
+              return r
+          for i in range(3):
+              for mode in (["quick","scan","native"] if i%2==0 else ["native","scan","quick"]):
+                  report["open"].append(run(mode,True));save()
+          sig=None
+          for i in range(3):
+              for mode in (["scan","native"] if i%2==0 else ["native","scan"]):
+                  r=run(mode,False)
+                  report["probes"].append(r);save()
+                  current=tuple(r[k] for k in ("positions","positive_samples","hits","misses","fingerprint"))
+                  assert current[0]==85834993 and current[1]>400000 and current[3]>0
+                  if sig is None:sig=current
+                  assert current==sig,(current,sig)
+          report["status"]="passed";save()
+          for mode in ["scan","native"]:
+              rows=[r for r in report["probes"] if r["mode"]==mode]
+              print(mode,{k:statistics.median(r[k] for r in rows) for k in ["seconds","p95_ns","open_seconds","validate_seconds","index_bytes"]})
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-reader-report
+          path: benchmark-report/
