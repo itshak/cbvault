@@ -10,22 +10,25 @@ for ext in ["cbh","2cbh"]:
         env=dict(os.environ,CBVAULT_NO_MMAP="0" if mapped else "1")
         env.pop("CBVAULT_MMAP",None)
         for threads in [1,4]:
-            for limit in [0,1024]:
+            for target,limit in [("root",0),("root",1024),("e4",0),("absent",0)]:
                 samples={"base":[],"head":[]}
                 sig=None
                 for i in range(-1,3):
                     for side in (["base","head"] if i%2==0 else ["head","base"]):
-                        r=json.loads(subprocess.check_output([base if side=="base" else head,db,str(threads),str(limit)],env=env,text=True))
+                        r=json.loads(subprocess.check_output([base if side=="base" else head,db,str(threads),str(limit),target],env=env,text=True))
                         assert r["failures"]==0
                         if not limit:
                             assert r["complete"] and r["games"]==m["games"]
                             current=tuple(r[k] for k in ("games","plies","hits","fingerprint"))
                             if sig is None:sig=current
                             assert current==sig
-                        elif side=="head":
+                        else:
                             assert not r["complete"] and r["hits"]==limit and r["games"]<=2048*threads
+                            current=tuple(r[k] for k in ("hits","fingerprint"))
+                            if sig is None:sig=current
+                            assert current==sig
                         if i>=0:samples[side].append(r)
-                row={"format":ext,"mapped":mapped,"threads":threads,"limit":limit,"samples":samples}
+                row={"target":target,"format":ext,"mapped":mapped,"threads":threads,"limit":limit,"samples":samples}
                 for side,rs in samples.items():
                     row[side]={k:statistics.median(r[k] for r in rs) for k in ("games","hits","seconds","first_hit_ns")}
                 rows.append(row)

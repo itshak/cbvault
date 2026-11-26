@@ -632,3 +632,29 @@ fn v2_continuous_stream_is_ordered_and_cancelled_at_exact_prefix() {
         }
     }
 }
+
+#[test]
+fn direct_position_search_discards_hits_from_a_corrupt_game() {
+    use cbvault::bridge::{PositionQuery, for_each_position_key};
+    let temp = TempDb::create("direct_position_rollback");
+    let mut builder = Builder::new();
+    let mut board = Board::startpos();
+    let valid = words(&mut board, "e2e4");
+    let mut invalid = valid.clone();
+    invalid.push(valid[0]); // Repeat White's move on Black's turn.
+    let bad = builder.moves(1, &invalid);
+    let good = builder.moves(1, &valid);
+    builder.game(bad);
+    builder.game(good);
+    builder.write_to(&temp);
+    let db = Database::open(temp.base()).unwrap();
+    for key in [Board::startpos().zobrist(), board.zobrist()] {
+        let mut hits = Vec::new();
+        let result = for_each_position_key(&db, &PositionQuery::of(key), 2, |h| hits.push(h)).unwrap();
+        assert!(result.complete);
+        assert_eq!(result.failures, 1);
+        assert_eq!(result.games, 1);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].game, 2);
+    }
+}
