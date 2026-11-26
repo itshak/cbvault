@@ -1,0 +1,50 @@
+name: Bounded ID page benchmarks
+on:
+  push:
+    branches: [experiment/bounded-id-pages]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  paired:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        tier: [smoke, standard, scale]
+    env:
+      TIER: ${{ matrix.tier }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.97.1'
+          components: clippy
+      - name: Correctness and build
+        run: |
+          cargo +1.97.1 test --locked -p cbvault --lib bounded_id_page_matches_full_classic_scan
+          CBVAULT_NO_MMAP=1 cargo +1.97.1 test --locked -p cbvault --lib bounded_id_page_matches_full_classic_scan
+          cargo +1.97.1 test --locked -p cbvault --test twocbh_bridge v2_id_only_scan_matches_named_scan_across_batches
+          CBVAULT_NO_MMAP=1 cargo +1.97.1 test --locked -p cbvault --test twocbh_bridge v2_id_only_scan_matches_named_scan_across_batches
+          cargo +1.97.1 clippy --locked -p cbvault --lib --example id_page_workload -- -D warnings
+          cargo +1.97.1 build --locked --release -p cbvault --example id_page_workload
+      - name: Fetch and verify public corpus
+        run: |
+          mkdir -p benchmark-report
+          read -r stem sha url < <(python3 -c 'import json,os; m=json.load(open("scripts/bench-corpus/native-manifest.json"))["tiers"][os.environ["TIER"]]; print(m["stem"],m["sha256"],m["url"])')
+          curl --fail --location --retry 3 "$url" -o "$RUNNER_TEMP/fixture.tar.zst"
+          python3 scripts/bench-corpus/native-fixtures.py "$RUNNER_TEMP/fixture.tar.zst" "$sha" "$stem" "$RUNNER_TEMP/native" > benchmark-report/member-hashes.json
+          python3 - <<'PY'
+          import json,os
+          m=json.load(open("scripts/bench-corpus/native-manifest.json"))["tiers"][os.environ["TIER"]]
+          assert json.load(open("benchmark-report/member-hashes.json"))==m["members"]
+          PY
+      - name: Compare full materialization and bounded paging
+        run: |
+          python3 scripts/bench-corpus/id-page-bench.py "$TIER" "$RUNNER_TEMP/native" target/release/examples/id_page_workload benchmark-report/id-page.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: id-page-${{ matrix.tier }}
+          path: benchmark-report/
