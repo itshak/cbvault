@@ -124,8 +124,8 @@ fn multiworker_v2_cancel_is_an_ordered_prefix_not_an_entire_prefetched_wave() {
         let mut sink = StopAfterFirst::default();
         let stats = convert_parallel(&db, &mut sink, threads, 2).unwrap();
         assert!(!stats.complete, "cancelled 2CBH conversion cannot be reported complete");
-        assert_eq!(sink.seen, vec![1, 2], "only the first chunk may have been delivered");
-        assert_eq!(stats.games, 2);
-        assert_eq!(stats.records, 2);
+        assert_eq!(sink.seen, vec![1], "no additional game may be delivered after cancellation");
+        assert_eq!(stats.games, 1);
+        assert_eq!(stats.records, 1);
     }
 }
