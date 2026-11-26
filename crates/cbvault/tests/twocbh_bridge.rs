@@ -547,3 +547,36 @@ fn reusable_search_context_matches_standalone_queries() {
         assert_eq!(old, new);
     }
 }
+
+#[test]
+fn position_callback_cancel_is_bounded_and_exact_v2() {
+    use cbvault::bridge::{PositionQuery, SearchContext};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let temp = TempDb::create("v2_callback_cancel");
+    let mut builder = Builder::new();
+    let mut board = Board::startpos();
+    let at = builder.moves(1, &words(&mut board, "e2e4 e7e5"));
+    for _ in 0..20000 {
+        builder.game(at);
+    }
+    builder.write_to(&temp);
+    let db = Database::open(temp.base()).unwrap();
+    for threads in [1, 2, 4] {
+        let ctx = SearchContext::new(threads).unwrap();
+        let flag = AtomicBool::new(false);
+        let cancel = || flag.load(Ordering::Relaxed);
+        let mut hits = Vec::new();
+        let stats = ctx
+            .for_each_position_key(&db, &PositionQuery::of(Board::startpos().zobrist()).cancel_with(&cancel), |h| {
+                hits.push(h);
+                if hits.len() == 13 {
+                    flag.store(true, Ordering::Relaxed);
+                }
+            })
+            .unwrap();
+        assert!(!stats.complete);
+        assert_eq!(stats.hits, 13);
+        assert!(stats.games <= 2048 * threads as u64);
+        assert_eq!(hits.iter().map(|h| h.game).collect::<Vec<_>>(), (1..=13).collect::<Vec<_>>());
+    }
+}

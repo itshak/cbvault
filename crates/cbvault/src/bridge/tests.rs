@@ -1139,3 +1139,31 @@ fn early_stop_walk_with_reach_signature_matches_full_walk() {
     assert_eq!(hits_reach, hits_full, "walks with ReachSignature must match full walks");
     assert_eq!(hits_full.len(), 200, "all 200 fixture games start from startpos");
 }
+
+#[test]
+fn position_callback_cancel_is_bounded_and_exact() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let db = fixture("bridge-callback-cancel", 20000);
+    let database = Database::open(db.base()).unwrap();
+    let key = Board::startpos().zobrist();
+    for threads in [1, 2, 4] {
+        let flag = AtomicBool::new(false);
+        let cancel = || flag.load(Ordering::Relaxed);
+        let mut hits = Vec::new();
+        let stats = for_each_position_key(&database, &PositionQuery::of(key).cancel_with(&cancel), threads, |h| {
+            hits.push(h);
+            if hits.len() == 13 {
+                flag.store(true, Ordering::Relaxed);
+            }
+        })
+        .unwrap();
+        assert!(!stats.complete);
+        assert_eq!(stats.hits, 13);
+        assert!(stats.games <= 2048 * threads as u64);
+        assert_eq!(hits.iter().map(|h| h.game).collect::<Vec<_>>(), (1..=13).collect::<Vec<_>>());
+    }
+    let stats =
+        for_each_position_key(&database, &PositionQuery::of(key).early_stop_with(&|_| Flow::Stop), 4, |_| {}).unwrap();
+    assert!(!stats.complete);
+    assert!(stats.games < 20000);
+}
