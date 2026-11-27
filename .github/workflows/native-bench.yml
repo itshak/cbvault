@@ -3,7 +3,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, roadmap/reader-performance-and-benchmarks, roadmap/promotion-overflow-and-readers, integration/verified-reader-optimizations]
+    branches: [main, roadmap/reader-performance-and-benchmarks, roadmap/promotion-overflow-and-readers, integration/verified-reader-optimizations, integration/native-readers-and-ctg]
   schedule:
     - cron: '23 2 * * 1'
   workflow_dispatch:
@@ -24,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        tier: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', inputs.tier) || github.event_name == 'schedule' && '["standard","rich","extreme"]' || github.event_name == 'push' && github.ref_name == 'integration/verified-reader-optimizations' && '["smoke","standard"]' || github.event_name == 'push' && (github.ref_name == 'roadmap/reader-performance-and-benchmarks' || github.ref_name == 'roadmap/promotion-overflow-and-readers') && '["smoke","rich","extreme","standard","scale"]' || '["smoke","extreme"]') }}
+        tier: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', inputs.tier) || github.event_name == 'schedule' && '["standard","rich","extreme"]' || github.event_name == 'push' && (github.ref_name == 'integration/verified-reader-optimizations' || github.ref_name == 'integration/native-readers-and-ctg') && '["smoke","standard"]' || github.event_name == 'push' && (github.ref_name == 'roadmap/reader-performance-and-benchmarks' || github.ref_name == 'roadmap/promotion-overflow-and-readers') && '["smoke","rich","extreme","standard","scale"]' || '["smoke","extreme"]') }}
     env:
       TIER: ${{ matrix.tier }}
     steps:
@@ -36,7 +36,7 @@ jobs:
           import json, os, shutil
           m = json.load(open("scripts/bench-corpus/native-manifest.json"))["tiers"][os.environ["TIER"]]
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-              print("baseline=" + ({"roadmap/promotion-overflow-and-readers":"7feac6315cdd7040fc194d1b4b89f4f448372aaa","integration/verified-reader-optimizations":"4bdcb5bd6bad314647fc26203f78c7bae7254d77"}.get(os.environ["GITHUB_REF_NAME"],m["baseline"])), file=f)
+              print("baseline=" + ({"roadmap/promotion-overflow-and-readers":"7feac6315cdd7040fc194d1b4b89f4f448372aaa","integration/verified-reader-optimizations":"4bdcb5bd6bad314647fc26203f78c7bae7254d77","integration/native-readers-and-ctg":"4bdcb5bd6bad314647fc26203f78c7bae7254d77"}.get(os.environ["GITHUB_REF_NAME"],m["baseline"])), file=f)
           # Extracted DB, archive, export scratch, and two release builds.
           needed = sum(x["bytes"] for x in m["members"].values()) + (3 * 1024**3)
           if os.environ["TIER"] == "scale":

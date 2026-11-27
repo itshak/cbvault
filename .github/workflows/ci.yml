@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ "main", "integration/verified-reader-optimizations" ]
+    branches: [ "main", "integration/verified-reader-optimizations", "integration/native-readers-and-ctg" ]
   pull_request:
     branches: [ "main" ]
 
@@ -186,6 +186,13 @@ jobs:
       - name: Fuzz cbg_framing (60 s)
         working-directory: crates/cbvault-format/fuzz
         run: cargo +nightly fuzz run cbg_framing -- -max_total_time=60
+
+      - name: Fuzz CTG key, page and CTO (60 s each)
+        working-directory: crates/cbvault-format/fuzz
+        run: |
+          for target in ctg_key ctg_page ctg_cto; do
+            cargo +nightly fuzz run "$target" -- -max_total_time=60
+          done
 
   one-chess-core:
     name: no chesscore / shakmaty
