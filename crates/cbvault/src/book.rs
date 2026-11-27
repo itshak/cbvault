@@ -22,6 +22,9 @@
 //! Original cbvault code, clean-room. It consumes `cbvault-format` for bytes and
 //! `cbvault-chess` for chess.
 
+mod stream;
+pub use stream::{BookStream, StreamEnd, StreamEvent, StreamOptions, StreamPolicy, StreamStats};
+
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
