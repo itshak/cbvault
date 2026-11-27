@@ -106,3 +106,26 @@ Exhaustive structural, chess-semantic, CTO/CTB routing, differential, fuzz, conc
   - `Book`, `NativeBook`, and `AdaptiveBook` produced identical `offset`, `stats`, `evaluation`, `moves`, and `children` (`0` mismatches) on 100% of positions in `special-*-v3` (212 each), `CorrBook2024` (1,399,432), and `StrongBook2025` (2,231,384), plus >2M stratified positions each in `PowerBook2025`, `Hiarcs14zmBook`, `3_4M_Golden`, and `realistic-3410497` and >480k negative/collision probes per book across mapped and `CBVAULT_NO_MMAP=1` modes.
   - 19 structural/companion corruption cases, duplicate-key detection and lowest-page tie-breaking, 16-thread concurrent `AdaptiveBook` validation/fallback tests, and >4.2M libFuzzer runs (`ctg_key`, `ctg_page`, `ctg_cto`) passed with 0 panics.
   - Paired benchmarks vs `adaptive` baseline: `NO_MMAP=1` validation improved from `55.74s` to `0.64s` on `PowerBook2025` (`87x`); mapped `86.77M`-entry validation improved from `7.09s` to `0.75s` (`9.45x`), CLI `book probe` on 8 GB books executes in `0.11–0.12s` at `<3 MB` peak footprint, and bounded scan reduces `PowerBook2025` peak footprint from `383 MB` to `213 MB`.
+
+### Follow-up integration
+
+The local real-book validation branch is the base of the combined reader
+integration. Explicit per-reader I/O policies apply to CTG/CTO/CTB and the
+scan fallback. `AdaptiveBook::open_verified` validates complete routing (or
+scans on failure) before returning any lookup result; it rejects structurally
+damaged fallback sources. Ordinary adaptive opening retains its fast exact
+hit behavior: before validation, a stale directory may conceal an earlier
+canonical-key candidate or lower-page duplicate. Routing completeness is
+not proof of numerical statistics or move legality.
+
+`BookStream` opens only CTG, exposing physical-order raw and optionally
+decoded records with a page/entry budget, cooperative cancellation,
+progress, and strict/recoverable diagnostics. Decoded positions use their
+canonical stored orientation, not a guessed original game orientation.
+No native directory or scan index is required; raw scratch space is one
+4 KiB page. In recoverable decoded traversal, malformed keys or illegal
+moves produce diagnostics and are not delivered as valid decoded records.
+A budget stop or recovery with errors is not a complete traversal.
+
+New integration and public scale stream gates are pending; previous local
+commercial-book results are evidence for the preceding CTG revision only.
