@@ -94,7 +94,9 @@ impl SlotTable<'_> {
                     .ok_or_else(|| Error::corrupt(dir.file.path(), 0, "native slot out of range"))?;
                 u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
             }
-            Self::Buffered(vec) => vec[slot as usize],
+            Self::Buffered(vec) => *vec
+                .get(slot as usize)
+                .ok_or_else(|| Error::corrupt(dir.file.path(), 0, "short buffered native directory"))?,
         };
         if raw == u32::MAX {
             return Ok(None);
@@ -186,8 +188,8 @@ pub fn validate_directory_bytes(
 impl NativeDirectory {
     /// Opens `.cto` and `.ctb` companions; no CTG data page scan is performed.
     pub fn open(ctg: &Ctg) -> Result<Self> {
-        let file = DbFile::open(companion_path(ctg.path(), "cto"))?;
-        let bounds = DbFile::open(companion_path(ctg.path(), "ctb"))?;
+        let file = DbFile::open_with_mode(companion_path(ctg.path(), "cto"), ctg.read_mode())?;
+        let bounds = DbFile::open_with_mode(companion_path(ctg.path(), "ctb"), ctg.read_mode())?;
         let mut header = [0u8; 16];
         file.read_into(0, &mut header)?;
         let mut b = [0u8; 12];
@@ -285,7 +287,10 @@ impl NativeDirectory {
                 .ok_or_else(|| Error::corrupt(self.file.path(), 0, "short native directory"))?;
             return Ok(SlotTable::Mapped(slots_bytes));
         }
-        let mut table = Vec::with_capacity(self.slots as usize);
+        let mut table = Vec::new();
+        table
+            .try_reserve_exact(self.slots as usize)
+            .map_err(|_| Error::corrupt(self.file.path(), 0, "native slot table allocation failed"))?;
         self.for_each_raw_slot(|_, raw| {
             table.push(raw);
             Ok(())

@@ -34,6 +34,7 @@ use rayon::prelude::*;
 
 pub use cbvault_format::ctg::{Annotation, Colour, Evaluation, Stats as BookStats, colour};
 pub use cbvault_format::error::{Error, Result};
+pub use cbvault_format::file::ReadMode;
 
 /// Pages handed to one worker at a time while the index is built.
 const PAGES_PER_TASK: u32 = 2048;
@@ -133,7 +134,12 @@ impl Book {
     /// A malformed page does not fail the open: its readable entries are
     /// indexed and the page is listed in [`Book::damaged`].
     pub fn open(path: impl AsRef<Path>) -> Result<Book> {
-        let ctg = Ctg::open(path)?;
+        Self::open_with_mode(path, ReadMode::from_environment())
+    }
+
+    /// Build a scan index with explicit I/O policy.
+    pub fn open_with_mode(path: impl AsRef<Path>, mode: ReadMode) -> Result<Self> {
+        let ctg = Ctg::open_with_mode(path, mode)?;
         let pages = ctg.pages();
         let page_bits = 32 - pages.leading_zeros();
         let page_mask = (1u64 << page_bits) - 1;
@@ -524,7 +530,12 @@ pub enum NativeProbe<T> {
 impl NativeBook {
     /// Opens `.ctg`, `.cto`, and `.ctb` companions without scanning CTG data pages.
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        let ctg = Ctg::open(path)?;
+        Self::open_with_mode(path, ReadMode::from_environment())
+    }
+
+    /// Open native companions using explicit I/O policy.
+    pub fn open_with_mode(path: impl AsRef<Path>, mode: ReadMode) -> Result<Self> {
+        let ctg = Ctg::open_with_mode(path, mode)?;
         let directory = NativeDirectory::open(&ctg)?;
         Ok(Self { ctg, directory, count: OnceLock::new() })
     }
@@ -595,6 +606,9 @@ impl NativeBook {
     /// Validates every stored key's native route and page closure without
     /// allocating a fallback index. Errors leave the reader unverified.
     pub fn validate(&self) -> Result<u64> {
+        if let Some(&count) = self.count.get() {
+            return Ok(count);
+        }
         let count = self.verify_and_count()?;
         let _ = self.count.set(count);
         Ok(count)
@@ -707,6 +721,9 @@ pub enum LookupMode {
 /// Queries take `&self` and can execute concurrently across threads. Native
 /// hits are returned immediately with zero index RAM; the first uncertain miss
 /// triggers a one-time exhaustive validation or automatic fallback to [`Book`].
+/// Before validation, a hit proves the exact key exists but cannot establish
+/// precedence over an unreachable duplicate or earlier canonical candidate.
+/// Use [`Self::open_verified`] when that guarantee is required.
 #[derive(Debug)]
 pub struct AdaptiveBook {
     path: PathBuf,
@@ -715,23 +732,52 @@ pub struct AdaptiveBook {
     scan: OnceLock<Book>,
     fallback_reason: OnceLock<String>,
     transition: Mutex<()>,
+    read_mode: ReadMode,
 }
 
 impl AdaptiveBook {
     /// Opens native companions first; if missing or invalid, scans the `.ctg`.
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
+        Self::open_with_mode(path, ReadMode::from_environment())
+    }
+
+    /// Preserve explicit I/O policy through every native-to-scan transition.
+    pub fn open_with_mode(path: impl AsRef<Path>, read_mode: ReadMode) -> Result<Self> {
         let path = cbvault_format::ctg::ctg_path(path.as_ref());
         let scan = OnceLock::new();
         let fallback_reason = OnceLock::new();
-        let native = match NativeBook::open(&path) {
+        let native = match NativeBook::open_with_mode(&path, read_mode) {
             Ok(book) => Some(book),
             Err(error) => {
                 let _ = fallback_reason.set(error.to_string());
-                let _ = scan.set(Book::open(&path)?);
+                let _ = scan.set(Book::open_with_mode(&path, read_mode)?);
                 None
             }
         };
-        Ok(Self { path, native, native_validated: OnceLock::new(), scan, fallback_reason, transition: Mutex::new(()) })
+        Ok(Self {
+            path,
+            native,
+            native_validated: OnceLock::new(),
+            scan,
+            fallback_reason,
+            transition: Mutex::new(()),
+            read_mode,
+        })
+    }
+
+    /// Open and establish complete routing (or fallback) before any lookup.
+    /// Use this for authoritative duplicate and canonical-key precedence.
+    /// A damaged scan remains recoverable; inspect `damaged()` before treating
+    /// results as a complete view of the source.
+    pub fn open_verified(path: impl AsRef<Path>, mode: ReadMode) -> Result<Self> {
+        let book = Self::open_with_mode(path, mode)?;
+        book.validate()?;
+        Ok(book)
+    }
+
+    /// Requested I/O policy, also used by the fallback.
+    pub fn read_mode(&self) -> ReadMode {
+        self.read_mode
     }
 
     /// The `.ctg` path.
@@ -791,7 +837,7 @@ impl AdaptiveBook {
         if self.scan.get().is_some() {
             return Ok(());
         }
-        let book = Book::open(&self.path)?;
+        let book = Book::open_with_mode(&self.path, self.read_mode)?;
         let _ = self.fallback_reason.set(reason.to_string());
         let _ = self.scan.set(book);
         Ok(())

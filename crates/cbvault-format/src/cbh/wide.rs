@@ -75,7 +75,7 @@ impl Wide {
                 return None;
             }
         }
-        Wide::open(stem).ok()
+        Wide::open_with_mode(stem, mode).ok()
     }
 
     /// Opens the `.cbj` beside `stem` (resolved case-insensitively).

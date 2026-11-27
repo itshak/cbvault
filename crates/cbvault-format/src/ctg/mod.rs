@@ -4,14 +4,14 @@
 //! real book, not taken from any implementation (see
 //! `docs/research/ctg-observations-2026-11-14.md` and `docs/provenance.md`).
 //!
-//! A book is a set of files sharing a base name. Only the `.ctg` is read:
+//! A book is a set of files sharing a base name:
 //!
 //! - **`.ctg`**: 4096-byte pages. Page 0 is a header (not decoded). Every other
 //!   page starts with a big-endian `u16` entry count and a `u16` count of bytes
 //!   used, followed by entries back to back.
 //! - **`.cto`** and **`.ctb`**: native nibble-hash directory and split-trie
 //!   bounds (see [`cto::NativeDirectory`]), enabling millisecond opens and
-//!   exhaustive validation without a full `.ctg` scan when companions are intact.
+//!   lookup without an eager index; exhaustive validation scans the data pages.
 //!
 //! An entry is an encoded position ([`position`]), a move section (a length
 //! byte, then two bytes per move: [`moves::move_code`] and an annotation byte)
@@ -27,7 +27,7 @@ pub mod stats;
 use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
-use crate::file::DbFile;
+use crate::file::{DbFile, ReadMode};
 
 pub use colour::{Colour, colour};
 pub use evaluation::Evaluation;
@@ -45,6 +45,7 @@ const PAGE_HEADER: usize = 4;
 pub struct Ctg {
     file: DbFile,
     pages: u32,
+    mode: ReadMode,
 }
 
 /// The `.ctg` path for `path`: the path itself when it already ends in `.ctg`
@@ -62,8 +63,13 @@ pub fn ctg_path(path: &Path) -> PathBuf {
 impl Ctg {
     /// Opens the `.ctg` of a book (pass the `.ctg` itself or the base name).
     pub fn open(path: impl AsRef<Path>) -> Result<Ctg> {
+        Self::open_with_mode(path, ReadMode::from_environment())
+    }
+
+    /// Opens the CTG with an explicit read policy inherited by native companions.
+    pub fn open_with_mode(path: impl AsRef<Path>, mode: ReadMode) -> Result<Self> {
         let path = ctg_path(path.as_ref());
-        let file = DbFile::open(path)?;
+        let file = DbFile::open_with_mode(path, mode)?;
         let size = file.size()?;
         if size == 0 || size % PAGE_SIZE as u64 != 0 {
             return Err(Error::corrupt(
@@ -74,7 +80,12 @@ impl Ctg {
         }
         let pages = u32::try_from(size / PAGE_SIZE as u64)
             .map_err(|_| Error::corrupt(file.path(), 0, "more pages than a u32 counts"))?;
-        Ok(Ctg { file, pages })
+        Ok(Ctg { file, pages, mode })
+    }
+
+    /// Requested file I/O policy.
+    pub fn read_mode(&self) -> ReadMode {
+        self.mode
     }
 
     /// The file's path.
