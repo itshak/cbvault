@@ -48,7 +48,12 @@ impl Flags {
 
     /// Opens one `.flags` file by path.
     pub fn open_path(path: PathBuf) -> Result<Flags> {
-        let file = DbFile::open(path.clone())?;
+        Self::open_path_with_mode(path, crate::file::ReadMode::from_environment())
+    }
+
+    /// Open this file using an explicit I/O policy.
+    pub fn open_path_with_mode(path: PathBuf, mode: crate::file::ReadMode) -> Result<Flags> {
+        let file = DbFile::open_with_mode(path.clone(), mode)?;
         let len = file.len()?;
         if len < HEADER {
             return Err(Error::corrupt(&path, 0, format!("{len}-byte file is shorter than its header")));

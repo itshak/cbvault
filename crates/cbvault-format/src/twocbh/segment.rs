@@ -29,7 +29,12 @@ impl Segment {
     /// Opens the segment at `path`, checking that its header states the
     /// file's real size and that the first record starts inside it.
     pub fn open(path: PathBuf) -> Result<Self> {
-        let file = DbFile::open(path.clone())?;
+        Self::open_with_mode(path, crate::file::ReadMode::from_environment())
+    }
+
+    /// Open this segment with explicit I/O policy.
+    pub fn open_with_mode(path: PathBuf, mode: crate::file::ReadMode) -> Result<Self> {
+        let file = DbFile::open_with_mode(path.clone(), mode)?;
         let len = file.len()?;
         let bad = |what: String| Error::corrupt(&path, 0, format!("2CBH segment: {what}"));
         if len < FILE_HEADER_SIZE as u64 {

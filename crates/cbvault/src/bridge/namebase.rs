@@ -198,8 +198,8 @@ struct Namebase {
 
 impl Namebase {
     /// Opens `path`, whose records must carry at least the fields `kind` needs.
-    fn open(path: PathBuf, kind: Kind) -> Result<Self> {
-        let file = DbFile::open(path.clone())?;
+    fn open(path: PathBuf, kind: Kind, mode: cbvault_format::file::ReadMode) -> Result<Self> {
+        let file = DbFile::open_with_mode(path.clone(), mode)?;
         let len = file.size()?;
         if len < HEADER {
             return Err(Error::corrupt(&path, 0, format!("{len}-byte file is shorter than its header")));
@@ -604,7 +604,12 @@ impl Entities {
     /// resolved case-insensitively. The four the format requires must be
     /// there; `.cbe` is optional.
     pub fn open(stem: &Path) -> Result<Self> {
-        let file = |kind: Kind| Namebase::open(super::sibling(stem, kind.ext()), kind);
+        Self::open_with_mode(stem, cbvault_format::file::ReadMode::from_environment())
+    }
+
+    /// Open all namebases with explicit I/O policy.
+    pub fn open_with_mode(stem: &Path, mode: cbvault_format::file::ReadMode) -> Result<Self> {
+        let file = |kind: Kind| Namebase::open(super::sibling(stem, kind.ext()), kind, mode);
         let teams = match file(Kind::Team) {
             Ok(teams) => Some(teams),
             Err(Error::Io { .. }) => None,

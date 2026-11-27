@@ -65,9 +65,9 @@ struct EntityFile {
 
 impl EntityFile {
     /// Opens `path`, whose records must carry at least `min_data` bytes of data.
-    fn open(path: PathBuf, min_data: usize) -> Result<Self> {
+    fn open(path: PathBuf, min_data: usize, mode: crate::file::ReadMode) -> Result<Self> {
         let bad = |what: String| Error::corrupt(&path, 0, what);
-        let file = DbFile::open(path.clone())?;
+        let file = DbFile::open_with_mode(path.clone(), mode)?;
         let len = file.len()?;
         if len < 28 {
             return Err(bad(format!("{len}-byte file is shorter than its header")));
@@ -145,17 +145,22 @@ impl Entities {
     /// resolved case-insensitively). The four namebases must be present;
     /// `.cbe` is optional.
     pub fn open(stem: &Path) -> Result<Self> {
+        Self::open_with_mode(stem, crate::file::ReadMode::from_environment())
+    }
+
+    /// Open all entity files using explicit I/O policy.
+    pub fn open_with_mode(stem: &Path, mode: crate::file::ReadMode) -> Result<Self> {
         let file = |ext: &str| super::sibling(stem, ext);
-        let optional = match EntityFile::open(file(".cbe"), 50) {
+        let optional = match EntityFile::open(file(".cbe"), 50, mode) {
             Ok(f) => Some(f),
             Err(Error::Io { .. }) => None,
             Err(e) => return Err(e),
         };
         Ok(Entities {
-            players: EntityFile::open(file(".cbp"), 50)?,
-            tournaments: EntityFile::open(file(".cbt"), 0x4a)?,
-            annotators: EntityFile::open(file(".cbc"), 45)?,
-            sources: EntityFile::open(file(".cbs"), 25)?,
+            players: EntityFile::open(file(".cbp"), 50, mode)?,
+            tournaments: EntityFile::open(file(".cbt"), 0x4a, mode)?,
+            annotators: EntityFile::open(file(".cbc"), 45, mode)?,
+            sources: EntityFile::open(file(".cbs"), 25, mode)?,
             teams: optional,
         })
     }

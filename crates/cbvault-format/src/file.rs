@@ -21,6 +21,11 @@ use crate::error::{Error, Result};
 const SPARE_HANDLES: usize = 64;
 
 /// One file of a database, read at positions.
+///
+/// Mapped input must remain immutable for the lifetime of the reader and
+/// its borrowed views. Read-only mappings do not prevent external writes
+/// or truncation; use positioned I/O for non-immutable inputs, and a stable
+/// snapshot for consistent reads across companion files.
 #[derive(Debug)]
 pub struct DbFile {
     file: File,
@@ -50,6 +55,22 @@ pub fn mmap_disabled() -> bool {
     }
 }
 
+/// Per-reader I/O policy. Mapping is a preference, with positioned fallback.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReadMode {
+    /// Prefer a read-only mapping when supported.
+    MappedPreferred,
+    /// Never create a file-backed mapping.
+    Positioned,
+}
+
+impl ReadMode {
+    /// Capture the legacy environment setting once, for a new reader.
+    pub fn from_environment() -> Self {
+        if mmap_disabled() { Self::Positioned } else { Self::MappedPreferred }
+    }
+}
+
 impl DbFile {
     /// Opens `path` for reading.
     ///
@@ -57,14 +78,18 @@ impl DbFile {
     /// no mapping is created and reads go through `pread`, so resident memory
     /// stays at buffer size instead of growing with the files touched.
     pub fn open(path: PathBuf) -> Result<DbFile> {
-        if mmap_disabled() {
+        Self::open_with_mode(path, ReadMode::from_environment())
+    }
+
+    /// Open with explicit policy, independent of the process environment.
+    pub fn open_with_mode(path: PathBuf, mode: ReadMode) -> Result<Self> {
+        if mode == ReadMode::Positioned {
             return Self::open_unmapped(path);
         }
         let file = File::open(&path).map_err(|source| Error::Io { path: path.clone(), source })?;
         #[cfg(feature = "mmap")]
-        // SAFETY: the file is opened read-only and the mapping is read-only;
-        // `memmap2` upholds the slice's invariants for the file's lifetime,
-        // which `DbFile` owns. Databases are never written (BYOD contract).
+        // SAFETY: relies on the documented immutable-source contract.
+        // Read-only mapping does not prevent external changes.
         #[allow(unsafe_code)]
         let mmap = unsafe {
             let m = memmap2::MmapOptions::new().map(&file).ok();

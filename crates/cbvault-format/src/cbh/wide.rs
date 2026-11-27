@@ -55,11 +55,16 @@ impl Wide {
     /// Opens the `.cbj` beside `stem` when it can add information, else `None`.
     ///
     /// This is the call conversion paths should use instead of
-    /// `Wide::open(stem).ok()`: a `.cbg`/`.cba` pair below 4 GiB keeps its full
+    /// `Wide::open_with_mode(stem, mode).ok()`: a `.cbg`/`.cba` pair below 4 GiB keeps its full
     /// offsets in 32 bits, so mapping the 1.3 GB `.cbj` of the reference
     /// database only re-validates what `.cbh` already says, 11 million times.
     /// The check costs two `stat`s, no mapping and no reads.
     pub fn open_auto(stem: &Path) -> Option<Self> {
+        Self::open_auto_with_mode(stem, crate::file::ReadMode::from_environment())
+    }
+
+    /// Automatically open the wide-offset file with explicit I/O policy.
+    pub fn open_auto_with_mode(stem: &Path, mode: crate::file::ReadMode) -> Option<Self> {
         if wide_disabled() {
             return None;
         }
@@ -75,8 +80,13 @@ impl Wide {
 
     /// Opens the `.cbj` beside `stem` (resolved case-insensitively).
     pub fn open(stem: &Path) -> Result<Self> {
+        Self::open_with_mode(stem, crate::file::ReadMode::from_environment())
+    }
+
+    /// Open the wide-offset file with explicit I/O policy.
+    pub fn open_with_mode(stem: &Path, mode: crate::file::ReadMode) -> Result<Self> {
         let path = super::sibling(stem, ".cbj");
-        let file = match DbFile::open(path.clone()) {
+        let file = match DbFile::open_with_mode(path.clone(), mode) {
             Ok(f) => f,
             Err(Error::Io { source, .. }) if source.kind() == std::io::ErrorKind::NotFound => {
                 return Err(Error::MissingFile { path, role: Role::Optional });

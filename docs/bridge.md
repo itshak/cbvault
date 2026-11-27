@@ -269,6 +269,21 @@ therefore a predicate over a *narrower* range, or a warm cache, or both.
 
 ## Read-only serving
 
+For interactive browsing use an explicit per-database policy:
+
+```rust
+use cbvault::bridge::{Database, ReadMode};
+let browse = Database::open_with_mode("Mega.2cbh", ReadMode::Positioned)?;
+let bulk = Database::open_with_mode("Mega.2cbh", ReadMode::MappedPreferred)?;
+```
+
+The two handles can coexist without changing environment variables. All lazy
+opens through each handle inherit its policy. Classic borrowed-name listings
+still require mapping; ID pages and individual PGN retrieval do not.
+`MappedPreferred` can fall back to positioned I/O if mapping is unavailable.
+Keep the source companions immutable while either handle exists; mapping is
+not a snapshot and positioned reads cannot ensure cross-file consistency.
+
 ### List the games
 
 ```rust
