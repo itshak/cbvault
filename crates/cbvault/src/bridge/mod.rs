@@ -70,6 +70,7 @@ use cbvault_format::cbh::moves::GameMoves;
 use cbvault_format::cbh::{Annotations, Entity, Flags, GameHeader, Wide};
 use cbvault_format::error::Role;
 use cbvault_format::file::DbFile;
+pub use cbvault_format::file::ReadMode;
 use cbvault_format::game::RecordKind;
 
 /// Which generation of the format a file set is written in.
@@ -277,6 +278,10 @@ pub enum EntitySource<'a> {
 
 /// A read-only view of one ChessBase database.
 ///
+/// Keep companion files immutable while the database and borrowed views
+/// exist. Positioned I/O avoids mapped-file faults but not inconsistent
+/// cross-file results during external editing.
+///
 /// A `Database` holds no writable handle on anything and creates, modifies and
 /// deletes nothing in the set's directory: every file is opened for reading
 /// only, and the moves and annotation files are not opened at all until
@@ -335,17 +340,24 @@ pub struct Database {
     /// The files that were found.
     members: Members,
     backend: Backend,
+    read_mode: ReadMode,
 }
 
 impl Database {
     /// Opens the set `path` names — its base name with no extension, or any one
     /// of its member files, in any case.
     pub fn open(path: impl AsRef<Path>) -> Result<Database> {
+        Self::open_with_mode(path, ReadMode::from_environment())
+    }
+
+    /// Open with a per-database policy, including lazy companion opens on
+    /// worker threads. Does not mutate environment variables.
+    pub fn open_with_mode(path: impl AsRef<Path>, read_mode: ReadMode) -> Result<Database> {
         let path = path.as_ref();
         let stem = stem_of(path);
         match generation_of(path) {
-            Generation::Classic => Self::open_classic(stem),
-            Generation::TwoCbh => Self::open_twocbh(stem),
+            Generation::Classic => Self::open_classic(stem, read_mode),
+            Generation::TwoCbh => Self::open_twocbh(stem, read_mode),
             Generation::Unknown => {
                 if sibling(&stem, ".cbh").exists() && sibling(&stem, ".2cbh").exists() {
                     Err(Error::corrupt(&stem, 0, "both classic and 2CBH exist: pass an explicit .cbh or .2cbh path"))
@@ -356,7 +368,7 @@ impl Database {
         }
     }
 
-    fn open_classic(stem: PathBuf) -> Result<Database> {
+    fn open_classic(stem: PathBuf, read_mode: ReadMode) -> Result<Database> {
         for (ext, role) in MANDATORY {
             let path = sibling(&stem, ext);
             if path.symlink_metadata().is_err() {
@@ -364,10 +376,10 @@ impl Database {
             }
         }
 
-        let headers = CbhHeaders::open(&stem)?;
-        let entities = Entities::open(&stem)?;
-        let wide = Wide::open_auto(&stem);
-        let flags = match Flags::open(&stem) {
+        let headers = CbhHeaders::open_path_with_mode(sibling(&stem, ".cbh"), read_mode)?;
+        let entities = Entities::open_with_mode(&stem, read_mode)?;
+        let wide = Wide::open_auto_with_mode(&stem, read_mode);
+        let flags = match Flags::open_path_with_mode(sibling(&stem, ".flags"), read_mode) {
             Ok(flags) => Some(flags),
             Err(Error::MissingFile { .. }) => None,
             Err(Error::Io { source, .. }) if source.kind() == std::io::ErrorKind::NotFound => None,
@@ -389,6 +401,7 @@ impl Database {
         };
         Ok(Database {
             base: stem,
+            read_mode,
             generation: Generation::Classic,
             members,
             backend: Backend::Classic(ClassicBackend {
@@ -403,7 +416,7 @@ impl Database {
         })
     }
 
-    fn open_twocbh(stem: PathBuf) -> Result<Database> {
+    fn open_twocbh(stem: PathBuf, read_mode: ReadMode) -> Result<Database> {
         for (ext, role) in MANDATORY_2CBH {
             let path = sibling(&stem, ext);
             if path.symlink_metadata().is_err() {
@@ -411,8 +424,9 @@ impl Database {
             }
         }
 
-        let headers = cbvault_format::twocbh::Headers::open(&stem)?;
-        let entities = cbvault_format::twocbh::Entities::open(sibling(&stem, ".2lid"))?;
+        let headers = cbvault_format::twocbh::Headers::open_path_with_mode(sibling(&stem, ".2cbh"), read_mode)?;
+        let entities =
+            cbvault_format::twocbh::Entities::new(DbFile::open_with_mode(sibling(&stem, ".2lid"), read_mode)?)?;
         let members = Members {
             headers: sibling(&stem, ".2cbh"),
             moves: sibling(&stem, ".2cbg"),
@@ -429,6 +443,7 @@ impl Database {
         };
         Ok(Database {
             base: stem,
+            read_mode,
             generation: Generation::TwoCbh,
             members,
             backend: Backend::TwoCbh(TwoCbhBackend {
@@ -438,6 +453,11 @@ impl Database {
                 annotations: std::sync::OnceLock::new(),
             }),
         })
+    }
+
+    /// Requested I/O policy, not a guarantee that the platform maps files.
+    pub fn read_mode(&self) -> ReadMode {
+        self.read_mode
     }
 
     /// The base path the set's members share, without an extension.
@@ -563,7 +583,7 @@ impl Database {
                 if let Some(file) = c.moves.get() {
                     return Ok(file);
                 }
-                let file = DbFile::open(self.members.moves.clone())?;
+                let file = DbFile::open_with_mode(self.members.moves.clone(), self.read_mode)?;
                 Ok(c.moves.get_or_init(|| file))
             }
             Backend::TwoCbh(_) => {
@@ -581,7 +601,7 @@ impl Database {
                 if let Some(s) = t.moves.get() {
                     return Ok(s);
                 }
-                let s = cbvault_format::twocbh::Segment::open(self.members.moves.clone())?;
+                let s = cbvault_format::twocbh::Segment::open_with_mode(self.members.moves.clone(), self.read_mode)?;
                 Ok(t.moves.get_or_init(|| s))
             }
         }
@@ -594,7 +614,7 @@ impl Database {
                 if let Some(file) = c.annotations.get() {
                     return Ok(file);
                 }
-                let file = Annotations::open(&self.base)?;
+                let file = Annotations::open_with_mode(&self.base, self.read_mode)?;
                 Ok(c.annotations.get_or_init(|| file))
             }
             Backend::TwoCbh(_) => Err(Error::corrupt(&self.base, 0, "classic annotations not supported on 2CBH")),
@@ -611,7 +631,11 @@ impl Database {
                     return Ok(opt.as_ref());
                 }
                 let path = self.members.annotations.clone();
-                let seg = if path.exists() { Some(cbvault_format::twocbh::Segment::open(path)?) } else { None };
+                let seg = if path.exists() {
+                    Some(cbvault_format::twocbh::Segment::open_with_mode(path, self.read_mode)?)
+                } else {
+                    None
+                };
                 let _ = t.annotations.set(seg);
                 Ok(t.annotations.get().and_then(|o| o.as_ref()))
             }
@@ -625,7 +649,7 @@ impl Database {
                 if let Some(entities) = c.format_entities.get() {
                     return Ok(entities);
                 }
-                let entities = cbvault_format::cbh::Entities::open(&self.base)?;
+                let entities = cbvault_format::cbh::Entities::open_with_mode(&self.base, self.read_mode)?;
                 Ok(c.format_entities.get_or_init(|| entities))
             }
             Backend::TwoCbh(_) => Err(Error::corrupt(&self.base, 0, "classic format_entities not supported on 2CBH")),

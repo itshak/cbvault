@@ -1250,3 +1250,47 @@ fn exports_propagate_write_and_flush_errors_for_both_generations() {
         }
     }
 }
+
+#[test]
+fn per_database_read_modes_coexist_and_propagate_to_lazy_workers() {
+    let classic = fixture("mode-classic", 20);
+    let v2 = TempDb::create("mode-v2");
+    let mut builder = cbvault_fixtures::twocbh::Builder::new();
+    let at = builder.moves(1, &cbvault_fixtures::twocbh::words(&mut Board::startpos(), "e2e4 e7e5"));
+    let data = cbvault_fixtures::twocbh::annotations(&[(
+        0,
+        vec![cbvault_fixtures::twocbh::text_annotation(false, 1, "note")],
+    )]);
+    let ann = builder.annotations(&data);
+    for _ in 0..20 {
+        builder.annotated_game(at, ann);
+    }
+    builder.write_to(&v2);
+    for path in [classic.base().with_extension("cbh"), v2.base().with_extension("2cbh")] {
+        let low = Database::open_with_mode(&path, ReadMode::Positioned).unwrap();
+        let fast = Database::open_with_mode(&path, ReadMode::MappedPreferred).unwrap();
+        assert_eq!(low.read_mode(), ReadMode::Positioned);
+        assert_eq!(fast.read_mode(), ReadMode::MappedPreferred);
+        match low.header_source() {
+            HeaderSource::Classic(h) => assert!(h.db_file().as_slice().is_none()),
+            HeaderSource::TwoCbh(h) => assert!(h.db_file().as_slice().is_none()),
+        }
+        let (a, b) = std::thread::scope(|scope| {
+            let run = |db: &Database| {
+                let mut buf = GameBuf::new();
+                let pgn = db.game_pgn_with(1, &mut buf, true).unwrap();
+                let plan = IdPagePlan::new(db, &Filter::All, 4).unwrap();
+                let page = plan.page(4, 10).unwrap();
+                (pgn, page)
+            };
+            let a = scope.spawn(|| run(&low));
+            let b = scope.spawn(|| run(&fast));
+            (a.join().unwrap(), b.join().unwrap())
+        });
+        assert_eq!(a, b);
+        assert!(low.moves().unwrap().as_slice().is_none());
+        if low.generation() == Generation::TwoCbh {
+            assert!(low.annotations_segment().unwrap().unwrap().db_file().as_slice().is_none());
+        }
+    }
+}

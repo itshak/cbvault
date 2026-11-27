@@ -315,6 +315,11 @@ impl Annotations {
     /// A database without `.cba` is [`Error::MissingFile`]: annotations are
     /// part of the required set.
     pub fn open(stem: &Path) -> Result<Annotations> {
+        Self::open_with_mode(stem, crate::file::ReadMode::from_environment())
+    }
+
+    /// Open annotations using explicit I/O policy.
+    pub fn open_with_mode(stem: &Path, mode: crate::file::ReadMode) -> Result<Annotations> {
         let stem = match stem.extension() {
             Some(e) if e.eq_ignore_ascii_case("cbh") || e.eq_ignore_ascii_case("cba") => stem.with_extension(""),
             _ => stem.to_owned(),
@@ -323,7 +328,7 @@ impl Annotations {
         if path.symlink_metadata().is_err() {
             return Err(Error::MissingFile { path, role: Role::Annotations });
         }
-        Ok(Annotations { file: DbFile::open(path)? })
+        Ok(Annotations { file: DbFile::open_with_mode(path, mode)? })
     }
 
     /// The `.cba` file being read.

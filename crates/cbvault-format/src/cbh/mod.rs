@@ -105,7 +105,12 @@ impl Headers {
 
     /// Opens one `.cbh` file by path.
     pub fn open_path(path: PathBuf) -> Result<Self> {
-        let file = DbFile::open(path.clone())?;
+        Self::open_path_with_mode(path, crate::file::ReadMode::from_environment())
+    }
+
+    /// Open this file using an explicit I/O policy.
+    pub fn open_path_with_mode(path: PathBuf, mode: crate::file::ReadMode) -> Result<Self> {
+        let file = DbFile::open_with_mode(path.clone(), mode)?;
         let len = file.len()?;
         if len < RECORD_SIZE as u64 || !len.is_multiple_of(RECORD_SIZE as u64) {
             return Err(Error::corrupt(&path, len, format!(".cbh size {len} is not 46 plus whole records")));
