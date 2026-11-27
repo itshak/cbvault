@@ -18,6 +18,7 @@ pub enum StreamPolicy {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum StreamEnd {
     #[default]
+    Running,
     Exhausted,
     Cancelled,
     PageBudget,
@@ -200,6 +201,9 @@ impl BookStream {
                 stats.end = StreamEnd::SinkStopped;
                 break;
             }
+        }
+        if stats.end == StreamEnd::Running {
+            stats.end = StreamEnd::Exhausted;
         }
         Ok(stats)
     }

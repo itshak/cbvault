@@ -598,3 +598,132 @@ fn concurrent_adaptive_book_validation_and_fallback_are_race_free() {
         h.join().unwrap();
     }
 }
+
+#[test]
+fn explicit_book_modes_and_verified_fallback_match_scan() {
+    use cbvault::book::ReadMode;
+    let dir = TempDir::new("explicit-book-mode");
+    let (ctg, cto, ctb) = book_with_root_and_e4();
+    let path = dir.write("mode.ctg", &ctg);
+    dir.write("mode.cto", &cto);
+    dir.write("mode.ctb", &ctb);
+    let low = AdaptiveBook::open_verified(&path, ReadMode::Positioned).unwrap();
+    let fast = AdaptiveBook::open_verified(&path, ReadMode::MappedPreferred).unwrap();
+    assert_eq!(low.read_mode(), ReadMode::Positioned);
+    assert_eq!(fast.read_mode(), ReadMode::MappedPreferred);
+    assert_eq!(low.mode(), LookupMode::NativeValidated);
+    assert_eq!(low.probe_tree(&Board::startpos()).unwrap(), fast.probe_tree(&Board::startpos()).unwrap());
+    drop((low, fast));
+    fs::remove_file(path.with_extension("cto")).unwrap();
+    let fallback = AdaptiveBook::open_verified(&path, ReadMode::Positioned).unwrap();
+    assert_eq!(fallback.mode(), LookupMode::Scan);
+    assert_eq!(fallback.read_mode(), ReadMode::Positioned);
+    assert!(matches!(fallback.probe(&Board::startpos()).unwrap(), NativeProbe::Found(_)));
+}
+
+#[test]
+fn verified_open_does_not_accept_unreachable_preferred_duplicate() {
+    use cbvault::book::ReadMode;
+    use cbvault_format::ctg::cto::native_hash;
+    let dir = TempDir::new("stale-positive");
+    let root = Board::startpos();
+    let key = key_for(&root.to_fen());
+    let ctg =
+        build_ctg(&[ctg_page(&[ctg_entry(&key, &[], 11, 5, 3, 3)]), ctg_page(&[ctg_entry(&key, &[], 99, 90, 5, 4)])]);
+    let (mut cto, ctb) = build_small_trie_cto_ctb(2);
+    // Both pages have directory slots, but the preferred copy is on
+    // the wrong branch. The native exact hit is not authoritative.
+    let slot = (native_hash(&key) & 1) as usize + 1;
+    let other = 3 - slot;
+    cto[16 + slot * 4..20 + slot * 4].copy_from_slice(&1u32.to_be_bytes());
+    cto[16 + other * 4..20 + other * 4].copy_from_slice(&0u32.to_be_bytes());
+    let path = dir.write("stale.ctg", &ctg);
+    dir.write("stale.cto", &cto);
+    dir.write("stale.ctb", &ctb);
+    let fast = AdaptiveBook::open_with_mode(&path, ReadMode::Positioned).unwrap();
+    let NativeProbe::Found(hit) = fast.probe_stats(&root).unwrap() else { panic!("expected native hit") };
+    assert_eq!(hit.stats.games, 99);
+    let verified = AdaptiveBook::open_verified(&path, ReadMode::Positioned).unwrap();
+    assert_eq!(verified.mode(), LookupMode::Scan);
+    let NativeProbe::Found(hit) = verified.probe_stats(&root).unwrap() else { panic!("expected recovered hit") };
+    assert_eq!(hit.stats.games, 11);
+}
+
+#[test]
+fn index_free_stream_is_ordered_bounded_and_recovers_damage() {
+    use cbvault::book::{BookStream, ReadMode, StreamEnd, StreamEvent, StreamOptions, StreamPolicy};
+    use std::cell::Cell;
+    let dir = TempDir::new("stream");
+    let root = Board::startpos();
+    let key = key_for(&root.to_fen());
+    let entry = ctg_entry(&key, &[(0x5f, 0)], 10, 5, 2, 3);
+    let valid = ctg_page(&[entry.clone(), entry.clone()]);
+    let path = dir.write("stream.ctg", &build_ctg(&[valid.clone(), valid.clone()]));
+    for mode in [ReadMode::MappedPreferred, ReadMode::Positioned] {
+        let stream = BookStream::open_with_mode(&path, mode).unwrap();
+        let mut offsets = Vec::new();
+        let mut progress = 0;
+        let stats = stream
+            .visit(&StreamOptions { progress_every_pages: 1, ..Default::default() }, |event| {
+                match event {
+                    StreamEvent::Raw(e) => {
+                        assert_eq!(e.key, key);
+                        offsets.push(e.offset);
+                    }
+                    StreamEvent::Progress(s) => {
+                        assert!(!s.complete());
+                        progress += 1;
+                    }
+                    _ => panic!("unexpected event"),
+                }
+                true
+            })
+            .unwrap();
+        assert!(stats.complete());
+        assert_eq!((stats.pages, stats.entries, stats.delivered, progress), (2, 4, 4, 2));
+        assert!(offsets.windows(2).all(|w| w[0] < w[1]));
+        let decoded = stream
+            .visit(&StreamOptions { decode: true, ..Default::default() }, |event| {
+                let StreamEvent::Decoded { raw, board, position } = event else { panic!("expected decoded entry") };
+                assert_eq!(raw.offset, position.offset);
+                assert_eq!(board.zobrist(), root.zobrist());
+                assert_eq!(position.moves[0].mv, Ok(san_to_move(&root, "e4").unwrap()));
+                true
+            })
+            .unwrap();
+        assert!(decoded.complete());
+        let limited = stream.visit(&StreamOptions { max_entries: Some(1), ..Default::default() }, |_| true).unwrap();
+        assert_eq!((limited.end, limited.delivered), (StreamEnd::EntryBudget, 1));
+        let page = stream.visit(&StreamOptions { max_pages: Some(1), ..Default::default() }, |_| true).unwrap();
+        assert_eq!((page.end, page.delivered), (StreamEnd::PageBudget, 2));
+        let stop = Cell::new(false);
+        let cancel = || stop.get();
+        let cancelled = stream
+            .visit(&StreamOptions { cancelled: Some(&cancel), ..Default::default() }, |_| {
+                stop.set(true);
+                true
+            })
+            .unwrap();
+        assert_eq!((cancelled.end, cancelled.delivered), (StreamEnd::Cancelled, 1));
+        let stopped = stream.visit(&StreamOptions::default(), |_| false).unwrap();
+        assert_eq!((stopped.end, stopped.delivered), (StreamEnd::SinkStopped, 1));
+    }
+    let mut broken = valid.clone();
+    broken[0..2].copy_from_slice(&3u16.to_be_bytes()); // claims a third entry
+    let path = dir.write("broken.ctg", &build_ctg(&[broken, valid]));
+    let stream = BookStream::open_with_mode(&path, ReadMode::Positioned).unwrap();
+    assert!(stream.visit(&StreamOptions::default(), |_| true).is_err());
+    let mut damage = 0;
+    let stats = stream
+        .visit(&StreamOptions { policy: StreamPolicy::Recover, ..Default::default() }, |event| {
+            if let StreamEvent::Damage { page, .. } = event {
+                assert_eq!(page, 1);
+                damage += 1;
+            }
+            true
+        })
+        .unwrap();
+    assert_eq!((stats.end, stats.errors, stats.delivered, damage), (StreamEnd::Exhausted, 1, 4, 1));
+    assert!(!stats.complete());
+    assert!(AdaptiveBook::open_verified(&path, ReadMode::Positioned).is_err());
+}

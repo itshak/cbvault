@@ -770,11 +770,14 @@ impl AdaptiveBook {
 
     /// Open and establish complete routing (or fallback) before any lookup.
     /// Use this for authoritative duplicate and canonical-key precedence.
-    /// A damaged scan remains recoverable; inspect `damaged()` before treating
-    /// results as a complete view of the source.
+    /// Fails if even the scan fallback reports damaged pages. This proves
+    /// structural lookup completeness, not legal-move or statistical parity.
     pub fn open_verified(path: impl AsRef<Path>, mode: ReadMode) -> Result<Self> {
         let book = Self::open_with_mode(path, mode)?;
         book.validate()?;
+        if book.damaged().is_none_or(|d| !d.is_empty()) {
+            return Err(Error::corrupt(book.path(), 0, "book routing or scan could not be verified"));
+        }
         Ok(book)
     }
 
