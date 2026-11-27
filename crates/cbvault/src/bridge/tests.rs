@@ -1283,8 +1283,10 @@ fn per_database_read_modes_coexist_and_propagate_to_lazy_workers() {
                 let page = plan.page(4, 10).unwrap();
                 (pgn, page)
             };
-            let a = scope.spawn(|| run(&low));
-            let b = scope.spawn(|| run(&fast));
+            let low_ref = &low;
+            let fast_ref = &fast;
+            let a = scope.spawn(move || run(low_ref));
+            let b = scope.spawn(move || run(fast_ref));
             (a.join().unwrap(), b.join().unwrap())
         });
         assert_eq!(a, b);
