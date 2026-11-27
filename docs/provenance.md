@@ -172,3 +172,6 @@ State: `planned` until the porting task lands; then `ported`/`ported (chess swap
 | CI workflow, including the one-chess-core guard | Task 1.3 |
 | `docs/**`, `SPEC.md`, fixtures builder glue | Tasks 0.5, 0.6 |
 
+
+- `cbvault-format/src/ctg/cto.rs` (`NativeDirectory`, `native_hash`, `SlotTable`, `validate_headers`, `validate_directory_bytes`): Original clean-room Rust implementation written in `cbvault` from documented Sesse v0.2 CTG public-domain specification notes and independently verified empirically against 9 local `.ctg`/`.cto`/`.ctb` books (`0` missed or ambiguous routes across `228,697,037` positions).
+- `cbvault/src/book.rs` (`NativeBook`, `NativeProbe`, `AdaptiveBook`, `LookupMode`, bounded `build_index`, duplicate-key checks): Original clean-room `cbvault` code, verified via differential comparison against scan-based `Book` and physical enumeration.

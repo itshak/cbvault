@@ -28,3 +28,21 @@ path = "fuzz_targets/cbg_framing.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "ctg_key"
+path = "fuzz_targets/ctg_key.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "ctg_page"
+path = "fuzz_targets/ctg_page.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "ctg_cto"
+path = "fuzz_targets/ctg_cto.rs"
+test = false
+doc = false

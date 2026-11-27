@@ -9,16 +9,16 @@
 //! - **`.ctg`**: 4096-byte pages. Page 0 is a header (not decoded). Every other
 //!   page starts with a big-endian `u16` entry count and a `u16` count of bytes
 //!   used, followed by entries back to back.
-//! - **`.cto`**: a hash-indexed table of page numbers. Its hash function is
-//!   **not established**, so it is not used: lookups go through an index the
-//!   caller builds by scanning the `.ctg` (see `cbvault::book`).
-//! - **`.ctb`**: probably a page-allocation bitmap; a reader does not need it.
+//! - **`.cto`** and **`.ctb`**: native nibble-hash directory and split-trie
+//!   bounds (see [`cto::NativeDirectory`]), enabling millisecond opens and
+//!   exhaustive validation without a full `.ctg` scan when companions are intact.
 //!
 //! An entry is an encoded position ([`position`]), a move section (a length
 //! byte, then two bytes per move: [`moves::move_code`] and an annotation byte)
 //! and a 33-byte [`stats::Stats`] block.
 
 pub mod colour;
+pub mod cto;
 pub mod evaluation;
 pub mod moves;
 pub mod position;
@@ -150,6 +150,12 @@ pub struct Entries<'a> {
 }
 
 impl<'a> Entries<'a> {
+    /// Parses entries from a raw `.ctg` data page slice (`page_number` only
+    /// sets reported entry byte offsets).
+    pub fn parse(page: &'a [u8], page_number: u32) -> std::result::Result<Entries<'a>, (usize, String)> {
+        Self::new(page, u64::from(page_number) * PAGE_SIZE as u64)
+    }
+
     /// Checks the page header: the bytes-used field must fit the page. A
     /// malformed entry later on ends the walk with an error item.
     fn new(page: &'a [u8], base: u64) -> std::result::Result<Entries<'a>, (usize, String)> {

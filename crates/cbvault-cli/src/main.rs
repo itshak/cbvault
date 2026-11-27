@@ -37,7 +37,7 @@ const USAGE: &str = "usage:
   cbvault archive extract <archive> <dir> [--only NAME] [--threads N] [--json] [--password P]
   cbvault book info   <book> [--json]
   cbvault book probe  <book> [--fen FEN] [--moves M...] [--json]
-  cbvault book verify <book> [--children] [--json]
+  cbvault book verify <book> [--children] [--native] [--json]
 
 The PGN goes to `out`, or to stdout when no path is given, so it can be piped.
 The export report always goes to stderr, so stdout stays pure PGN.

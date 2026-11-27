@@ -9,7 +9,7 @@
 
 use std::time::Instant;
 
-use cbvault::book::{Book, BookPosition, BookPositionStats};
+use cbvault::book::{AdaptiveBook, Book, BookPosition, BookPositionStats, NativeBook, NativeProbe};
 use gigachess::Board;
 
 use super::{USAGE, json_str};
@@ -146,8 +146,14 @@ fn run_probe(mut args: impl Iterator<Item = String>) -> CliResult {
         None => Board::startpos(),
     };
     play_moves(&mut board, &moves)?;
-    let (book, secs) = open(&path)?;
-    let Some(tree) = book.probe_tree(&board)? else {
+    let t0 = Instant::now();
+    let book = AdaptiveBook::open(&path)?;
+    let secs = t0.elapsed().as_secs_f64();
+    let tree = match book.probe_tree(&board)? {
+        NativeProbe::Found(tree) => Some(tree),
+        NativeProbe::Absent | NativeProbe::UnverifiedMiss => None,
+    };
+    let Some(tree) = tree else {
         if json {
             println!("{{\"fen\":{},\"found\":false}}", json_str(&board.to_fen()));
         } else {
@@ -298,27 +304,36 @@ fn run_verify(args: impl Iterator<Item = String>) -> CliResult {
     let mut path = None;
     let mut json = false;
     let mut children = false;
+    let mut native = false;
     for arg in args {
         match arg.as_str() {
             "--json" => json = true,
             "--children" => children = true,
+            "--native" => native = true,
             other if !other.starts_with('-') && path.is_none() => path = Some(other.to_string()),
             _ => return Err(USAGE.into()),
         }
     }
     let path = path.ok_or(USAGE)?;
+    let native_count = if native {
+        let nb = NativeBook::open(&path)?;
+        Some(nb.validate()?)
+    } else {
+        None
+    };
     let (book, index_secs) = open(&path)?;
     let t0 = Instant::now();
     let r = book.verify(children)?;
     let secs = t0.elapsed().as_secs_f64();
     let damaged_pages = r.damaged_pages.max(book.damaged().len() as u64);
+    let native_parity = native_count.is_none_or(|n| n == r.entries);
     if json {
         println!(
             concat!(
                 "{{\"entries\":{},\"damaged_pages\":{},\"bad_keys\":{},\"invalid_positions\":{},",
                 "\"key_round_trips\":{},\"key_mismatches\":{},\"moves_decoded\":{},\"moves_unknown\":{},",
                 "\"promotions\":{},\"moves_illegal\":{},\"children_checked\":{},\"children_found\":{},",
-                "\"children_missing\":{},\"index_seconds\":{:.2},\"verify_seconds\":{:.2}}}"
+                "\"children_missing\":{},\"duplicate_keys\":{},\"native_checked\":{},\"index_seconds\":{:.2},\"verify_seconds\":{:.2}}}"
             ),
             r.entries,
             damaged_pages,
@@ -333,6 +348,8 @@ fn run_verify(args: impl Iterator<Item = String>) -> CliResult {
             children,
             r.children_found,
             r.children_missing,
+            r.duplicate_keys,
+            native,
             index_secs,
             secs
         );
@@ -346,20 +363,17 @@ fn run_verify(args: impl Iterator<Item = String>) -> CliResult {
         println!("moves unknown byte {}", r.moves_unknown);
         println!("  of which promote {} (always to a queen)", r.promotions);
         println!("moves illegal      {}", r.moves_illegal);
+        println!("duplicate keys     {}", r.duplicate_keys);
+        if native {
+            println!("native cto/ctb     {} entries validated", native_count.unwrap_or(0));
+        }
         if children {
             println!("children in book   {} (missing {})", r.children_found, r.children_missing);
         } else {
             println!("children           not checked (pass --children)");
         }
     }
-    Ok(book.damaged().is_empty()
-        && r.damaged_pages == 0
-        && r.bad_keys == 0
-        && r.invalid_positions == 0
-        && r.key_mismatches == 0
-        && r.moves_illegal == 0
-        && r.moves_unknown == 0
-        && (!children || r.children_missing == 0))
+    Ok(damaged_pages == 0 && r.ok(children) && native_parity)
 }
 
 #[cfg(test)]
