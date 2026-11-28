@@ -61,6 +61,7 @@ fn companion_path(ctg_path: &Path, lower_ext: &str) -> PathBuf {
 #[derive(Debug)]
 pub struct NativeDirectory {
     file: DbFile,
+    bounds_file: DbFile,
     slots: u32,
     low: u32,
     high: u32,
@@ -196,7 +197,7 @@ impl NativeDirectory {
         bounds.read_into(0, &mut b)?;
         let (slots, low, high) = validate_headers(&header, file.size()?, &b, bounds.size()?)
             .map_err(|msg| Error::corrupt(file.path(), 0, msg))?;
-        Ok(Self { file, slots, low, high, pages: ctg.pages() })
+        Ok(Self { file, bounds_file: bounds, slots, low, high, pages: ctg.pages() })
     }
 
     /// Returns `(slots, low, high)` directory geometry.
@@ -326,6 +327,64 @@ impl NativeDirectory {
         }
         let _ = PAGE_SIZE;
         Ok(())
+    }
+
+    /// Audit the CTB split bitmap against occupied CTO leaves.
+    ///
+    /// This additional strict check is opt-in: native routing itself uses the
+    /// validated bounds and exact CTG keys, not the bitmap. Walk only reachable
+    /// trie nodes; a leaf beyond the bitmap range is implicit. Require every
+    /// leaf to reference a page and every occupied CTO slot to be a leaf.
+    pub fn validate_bitmap(&self) -> Result<u64> {
+        self.validate_pages()?;
+        let table = self.slot_table()?;
+        let len = self.high.div_ceil(8) as usize;
+        let mut scratch = Vec::new();
+        let bitmap = if let Some(bytes) = self.bounds_file.slice_at(CTB_HEADER_BYTES, len) {
+            bytes
+        } else {
+            scratch
+                .try_reserve_exact(len)
+                .map_err(|_| Error::corrupt(self.bounds_file.path(), 0, "CTB bitmap allocation failed"))?;
+            scratch.resize(len, 0);
+            self.bounds_file.read_into(CTB_HEADER_BYTES, &mut scratch)?;
+            &scratch
+        };
+        let bad = |slot: u32, detail: &str| {
+            Error::corrupt(self.bounds_file.path(), CTB_HEADER_BYTES + u64::from(slot / 8), detail)
+        };
+        // Depth-first traversal requires at most 32 pending nodes, regardless
+        // of directory size. Each child occupies a strictly deeper level.
+        let mut stack = [(0u32, 0u32); 32];
+        let mut pending = 1;
+        let mut leaves = 0u64;
+        while pending != 0 {
+            pending -= 1;
+            let (slot, depth) = stack[pending];
+            if slot >= self.slots {
+                return Err(bad(slot, "CTB trie node outside CTO slots"));
+            }
+            let split = slot < self.high && bitmap.get((slot / 8) as usize).is_some_and(|b| b & (1 << (slot % 8)) != 0);
+            let page = table.page_at(self, slot)?;
+            if split {
+                if page.is_some() || depth >= 30 || pending + 2 > stack.len() {
+                    return Err(bad(slot, "invalid occupied or overflowing CTB split"));
+                }
+                let step = 1u32 << depth;
+                stack[pending] = (slot + step, depth + 1);
+                stack[pending + 1] = (slot + 2 * step, depth + 1);
+                pending += 2;
+            } else {
+                if page.is_none() {
+                    return Err(bad(slot, "CTB leaf has no CTO page"));
+                }
+                leaves += 1;
+            }
+        }
+        if leaves != u64::from(self.pages.saturating_sub(1)) {
+            return Err(bad(0, "CTB leaves do not cover all CTO pages"));
+        }
+        Ok(leaves)
     }
 
     /// Whether the actual page of a stored key is among the native candidates.

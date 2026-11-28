@@ -842,3 +842,27 @@ fn promotion_and_underpromotion_discovery_distinguishes_parent_continuations() {
     assert!(scan.probe_promotion_children(&missing_parent).unwrap().is_none());
     assert!(matches!(adaptive.probe_promotion_children(&missing_parent).unwrap(), NativeProbe::Absent));
 }
+
+#[test]
+fn strict_ctb_bitmap_audit_rejects_changed_split_bits() {
+    use cbvault::book::ReadMode;
+    use cbvault_format::ctg::{Ctg, cto::NativeDirectory};
+    let dir = TempDir::new("ctb-bitmap");
+    let (ctg, cto, ctb) = book_with_root_and_e4();
+    let path = dir.write("bitmap.ctg", &ctg);
+    dir.write("bitmap.cto", &cto);
+    dir.write("bitmap.ctb", &ctb);
+    for mode in [ReadMode::MappedPreferred, ReadMode::Positioned] {
+        let reader = Ctg::open_with_mode(&path, mode).unwrap();
+        let directory = NativeDirectory::open(&reader).unwrap();
+        assert_eq!(directory.validate_bitmap().unwrap(), 1);
+    }
+    let mut corrupt = ctb.clone();
+    corrupt[12] ^= 1;
+    dir.write("bitmap.ctb", &corrupt);
+    let reader = Ctg::open_with_mode(&path, ReadMode::Positioned).unwrap();
+    let directory = NativeDirectory::open(&reader).unwrap();
+    assert!(directory.validate_bitmap().is_err());
+    // Header/size checks alone cannot detect the changed bit.
+    assert!(directory.validate_pages().is_ok());
+}

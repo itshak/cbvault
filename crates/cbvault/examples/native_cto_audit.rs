@@ -12,6 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let directory = NativeDirectory::open(&ctg)?;
     let opened = t.elapsed().as_secs_f64();
     let (slots, low, high) = directory.bounds();
+    let leaves = directory.validate_bitmap()?;
     let table = directory.slot_table()?;
     let mut occupied = 0u64;
     let mut seen = vec![false; ctg.pages() as usize];
@@ -79,10 +80,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ambiguous += a;
     }
     println!(
-        "{{\"positions\":{total},\"missed\":{missed},\"ambiguous_routes\":{ambiguous},\"slots\":{slots},\"lower\":{low},\"upper\":{high},\"occupied\":{occupied},\"duplicate_page_slots\":{duplicate_pages},\"unreferenced_pages\":{unreferenced},\"open_seconds\":{opened:.9},\"audit_seconds\":{:.9}}}",
+        "{{\"ctb_leaves\":{leaves},\"positions\":{total},\"missed\":{missed},\"ambiguous_routes\":{ambiguous},\"slots\":{slots},\"lower\":{low},\"upper\":{high},\"occupied\":{occupied},\"duplicate_page_slots\":{duplicate_pages},\"unreferenced_pages\":{unreferenced},\"open_seconds\":{opened:.9},\"audit_seconds\":{:.9}}}",
         t.elapsed().as_secs_f64()
     );
-    if missed != 0 || duplicate_pages != 0 || unreferenced != 0 {
+    if missed != 0 || ambiguous != 0 || duplicate_pages != 0 || unreferenced != 0 {
         return Err("native lookup directory anomaly".into());
     }
     Ok(())
