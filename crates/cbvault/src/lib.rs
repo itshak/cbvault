@@ -51,7 +51,8 @@
 //! The example compiles without a commercial book, but needs a locally owned
 //! `.ctg` at runtime. See [`book::NativeBook`], [`book::AdaptiveBook`],
 //! [`book::BookPosition`], [`book::BookPositionStats`], [`book::BookTree`],
-//! [`book::BookMove`], [`book::BookStats`], and [`book::VerifyReport`] for typed results.
+//! [`book::DiscoveredPromotion`], [`book::BookMove`], [`book::BookStats`],
+//! and [`book::VerifyReport`] for typed results.
 //!
 //! **Scope:** The reader is read-only. [`book::NativeBook`] and
 //! [`book::AdaptiveBook`] use `.cto`/`.ctb` native directory lookup with

@@ -127,5 +127,80 @@ No native directory or scan index is required; raw scratch space is one
 moves produce diagnostics and are not delivered as valid decoded records.
 A budget stop or recovery with errors is not a complete traversal.
 
-New integration and public scale stream gates are pending; previous local
-commercial-book results are evidence for the preceding CTG revision only.
+### Final acceptance validation (`validation/ctg-final-acceptance`)
+
+#### 1. Integration baseline and `BookStream` validation
+
+The integration baseline (`85ed978`) passed its public CI, native benchmark,
+and combined routing/stream acceptance workflows. On the public `85.8M`-entry
+(`87.5M`-move) scale gate, `BookStream` completed cleanly with bounded resident
+memory in positioned mode (`positioned raw` in `8.05s`, `2,352 KiB` RSS;
+`positioned decoded` in `257.57s`, `3,160 KiB` RSS; `mapped raw` in `6.93s`;
+`mapped decoded` in `256.72s`).
+
+Local 6-mode (`oracle`, `raw`, `decoded` x `mapped`, `positioned`) acceptance
+runs across five reference and commercial books (`1.40M` to `86.77M` entries)
+matched baseline entry and move-occurrence totals identically while keeping
+`positioned raw` footprint near `1.26 MiB` and `positioned decoded` under
+`2.95 MiB`.
+
+#### 2. Bitboard piece-ordinal experiment (evaluated, not adopted)
+
+`experiment/ctg-bitboard-ordinals` (`c27d177`) was audited across all nine
+local books (`228,697,037` entries, `232,736,748` moves) and produced `0`
+ordinal or move-sum diffs against the baseline reader. However, its public paired
+benchmark workflow failed (`KeyError: 'open_allocations'` in `native-book-bench.py`),
+and alternating local release runs on `24.6M`–`27.8M`-entry books showed a
+`~10–12%` slowdown on multi-threaded `verify --children` despite minor
+(`~4–12%`) single-thread probe speedups. It remains unadopted on this branch.
+
+#### 3. Underpromotion omission and opt-in child probing
+
+Scanning six local books established `18,660` stored queen-promotion parent
+continuations, `26` `queen + underpromotion` parent entries (where only the
+queen move appears in the parent table), and `587` underpromotion-only child
+positions (`614` instances total: `256` knight, `295` rook, `63` bishop; `489`
+captures, `125` quiet) whose promotion moves are omitted from parent CTG move
+tables. Across the corpus, `4` parent entries satisfied
+`encoded_other + promo_children > parent.games`, proving transposition ambiguity:
+child-position existence cannot be safely attributed as a stored parent
+continuation.
+
+`DiscoveredPromotion` and opt-in `probe_promotion_children` methods on `Book`,
+`NativeBook`, and `AdaptiveBook` distinguish natively stored parent
+continuations (`encoded_in_parent`) from legal promotion targets discovered only
+by probing the child position key.
+
+#### 4. Special promotion corpus and 1-byte move-table limits
+
+All three local special v3 books stopped at `212` entries and ply `33`
+(`17.<White>` leaves with `0` moves), before ply-`37+` promotions; additionally,
+games starting from `[SetUp "1"]` FEN roots were excluded on import. In
+`MOVE_TABLE`, `179` byte slots are already mapped (covering up to 3 queens,
+rooks, bishops, and knights per color: ordinals `0..=2`), leaving `77` free slots
+versus `592` distinct White-canonical `(role, ordinal, df, dr)` cells
+(`count >= 3`, ordinals `0..=9`) present in the deep coverage PGN. Arbitrary
+4th+ promoted pieces therefore cannot all fit in CTG's 1-byte move table.
+
+**Manual ChessBase regeneration parameters (non-destructive v4 copy):**
+1. Open the full `.2cbh`/`.cbh` source database without filtering out mainline
+   move depth (note `[SetUp "1"]` games are ignored by standard CTG import).
+2. Set opening book creation length to unlimited or at least `260` plies
+   (`>= 130` full moves, exceeding the max `257`-ply coverage PGN lines; max
+   standard PGN is `222` plies / `111` moves).
+3. Enable unconditional variation inclusion (`Include variations`) and set
+   minimum games per line to `1`.
+4. Create a new destination book (`*-v4.ctg`, without overwriting `v3` fixtures)
+   and verify ply coverage beyond ply `37` rather than relying on Page 0 header
+   bytes (ChessBase does not serialize the dialog length limit there).
+
+#### 5. Controlled statistical oracle findings
+
+Independent replay of all `212 / 212` entries in the three special v3 books
+matched `games`, `wins`, `draws`, `losses`, and `raw_score` identically,
+confirming unfinished (`*`) games add `+5` to `raw_score` for White-to-move
+entries and `+0` for Black-to-move entries. Whole-database replay of a
+`3,410,497`-game `.2cbh`/`.ctg` pair confirmed per-visit root counting
+(`3,398,310 + 12` mainline start-position revisits `= 3,398,322`), selective RAV
+inclusion (`rav_ply0 = 14,102`), and 32-bit Elo accumulator halving
+(`rated_games /= 2, rating_sum /= 2` on `u32::MAX` overflow).

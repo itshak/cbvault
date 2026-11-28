@@ -6,11 +6,12 @@ use std::path::PathBuf;
 use std::sync::{Arc, Barrier};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use cbvault::book::{AdaptiveBook, Book, LookupMode, NativeBook, NativeProbe};
+use cbvault::book::{AdaptiveBook, Book, DiscoveredPromotion, LookupMode, NativeBook, NativeProbe};
 use cbvault_chess::ctg::{key_candidates, stored_form};
 use cbvault_format::ctg::cto::validate_directory_bytes;
 use cbvault_format::ctg::{Entries, PAGE_SIZE};
 use gigachess::Board;
+use gigachess::Role;
 use gigachess::fen::parse_fen;
 use gigachess::san::san_to_move;
 
@@ -726,4 +727,118 @@ fn index_free_stream_is_ordered_bounded_and_recovers_damage() {
     assert_eq!((stats.end, stats.errors, stats.delivered, damage), (StreamEnd::Exhausted, 1, 4, 1));
     assert!(!stats.complete());
     assert!(AdaptiveBook::open_verified(&path, ReadMode::Positioned).is_err());
+}
+
+#[test]
+fn promotion_and_underpromotion_discovery_distinguishes_parent_continuations() {
+    let dir = TempDir::new("underpromo-discovery");
+    // 1. Queen promotion only (c7c8q via 0xec)
+    let p_q = "4k3/2P5/8/8/8/8/8/6K1 w - - 0 1";
+    let c_q = "2Q1k3/8/8/8/8/8/8/6K1 b - - 0 1";
+    // 2. Knight underpromotion only (e7e8n omitted)
+    let p_n = "7k/4P3/8/8/8/8/8/6K1 w - - 0 1";
+    let c_n = "4N2k/8/8/8/8/8/8/6K1 b - - 0 1";
+    // 3. Rook underpromotion only (d7d8r omitted)
+    let p_r = "7k/3P4/8/8/8/8/8/6K1 w - - 0 1";
+    let c_r = "3R3k/8/8/8/8/8/8/6K1 b - - 0 1";
+    // 4. Bishop underpromotion only (b7b8b omitted)
+    let p_b = "7k/1P6/8/8/8/8/8/6K1 w - - 0 1";
+    let c_b = "1B5k/8/8/8/8/8/8/6K1 b - - 0 1";
+    // 5a. Multiple choices from same parent: Q encoded (0xec) + N & R children present
+    let p_multi_q = "2k5/5P2/8/8/8/8/8/6K1 w - - 0 1";
+    let c_mq_q = "2k2Q2/8/8/8/8/8/8/6K1 b - - 0 1";
+    let c_mq_n = "2k2N2/8/8/8/8/8/8/6K1 b - - 0 1";
+    let c_mq_r = "2k2R2/8/8/8/8/8/8/6K1 b - - 0 1";
+    // 5b. Multiple underpromotions without Q (N & B omitted on g7g8)
+    let p_multi_u = "1k6/6P1/8/8/8/8/8/6K1 w - - 0 1";
+    let c_mu_n = "1k4N1/8/8/8/8/8/8/6K1 b - - 0 1";
+    let c_mu_b = "1k4B1/8/8/8/8/8/8/6K1 b - - 0 1";
+    // 6a. Capture promotions (e7xf8q encoded via 0x8b; e7xf8r & e7xd8n omitted; child sum > parent games)
+    let p_cap = "3n1r1k/4P3/8/8/8/8/8/6K1 w - - 0 1";
+    let c_cap_q = "3n1Q1k/8/8/8/8/8/8/6K1 b - - 0 1";
+    let c_cap_r = "3n1R1k/8/8/8/8/8/8/6K1 b - - 0 1";
+    let c_cap_n = "3N1r1k/8/8/8/8/8/8/6K1 b - - 0 1";
+    // 6b. Black-to-move capture underpromotion (e2xd1n omitted; distinct king squares from 3-piece WTM cases)
+    let p_blk = "8/k7/8/8/8/8/4p3/3R3K b - - 0 1";
+    let c_blk_n = "8/k7/8/8/8/8/8/3n3K w - - 0 1";
+
+    let entries = vec![
+        ctg_entry(&key_for(p_q), &[(0xec, 0)], 10, 5, 2, 3),
+        ctg_entry(&key_for(c_q), &[], 10, 2, 5, 3),
+        ctg_entry(&key_for(p_n), &[], 3, 1, 1, 1),
+        ctg_entry(&key_for(c_n), &[], 3, 1, 1, 1),
+        ctg_entry(&key_for(p_r), &[], 2, 0, 1, 1),
+        ctg_entry(&key_for(c_r), &[], 2, 1, 0, 1),
+        ctg_entry(&key_for(p_b), &[], 1, 0, 0, 1),
+        ctg_entry(&key_for(c_b), &[], 1, 0, 0, 1),
+        ctg_entry(&key_for(p_multi_q), &[(0xec, 0)], 8, 3, 3, 2),
+        ctg_entry(&key_for(c_mq_q), &[], 5, 2, 2, 1),
+        ctg_entry(&key_for(c_mq_n), &[], 2, 1, 1, 0),
+        ctg_entry(&key_for(c_mq_r), &[], 1, 0, 0, 1),
+        ctg_entry(&key_for(p_multi_u), &[], 4, 2, 1, 1),
+        ctg_entry(&key_for(c_mu_n), &[], 3, 1, 1, 1),
+        ctg_entry(&key_for(c_mu_b), &[], 1, 0, 1, 0),
+        ctg_entry(&key_for(p_cap), &[(0x8b, 0)], 5, 2, 1, 2),
+        ctg_entry(&key_for(c_cap_q), &[], 4, 1, 2, 1),
+        ctg_entry(&key_for(c_cap_r), &[], 2, 0, 1, 1),
+        ctg_entry(&key_for(c_cap_n), &[], 1, 0, 0, 1),
+        ctg_entry(&key_for(p_blk), &[], 2, 1, 0, 1),
+        ctg_entry(&key_for(c_blk_n), &[], 2, 0, 1, 1),
+    ];
+    let ctg = build_ctg(&[ctg_page(&entries)]);
+    let (cto, ctb) = build_small_trie_cto_ctb(1);
+    let path = dir.write("underpromo.ctg", &ctg);
+    dir.write("underpromo.cto", &cto);
+    dir.write("underpromo.ctb", &ctb);
+
+    let scan = Book::open(&path).unwrap();
+    let r = scan.verify(true).unwrap();
+    assert!(r.ok(true), "{r:?}");
+    assert_eq!(r.promotions, 3); // strictly c7c8q, f7f8q, e7xf8q
+
+    let native = NativeBook::open(&path).unwrap();
+    assert_eq!(native.validate().unwrap(), entries.len() as u64);
+    let adaptive = AdaptiveBook::open(&path).unwrap();
+    assert_eq!(adaptive.mode(), LookupMode::NativeUnverified);
+
+    let check = |fen: &str, expected: &[(&str, bool, u32)]| {
+        let b = parse_fen(fen).unwrap();
+        let s_res = scan.probe_promotion_children(&b).unwrap().unwrap();
+        let NativeProbe::Found(n_res) = native.probe_promotion_children(&b).unwrap() else { panic!() };
+        let NativeProbe::Found(a_res) = adaptive.probe_promotion_children(&b).unwrap() else { panic!() };
+        assert_eq!(s_res, n_res);
+        assert_eq!(n_res, a_res);
+
+        // Stored parent continuations must strictly reflect parent bytes (never omitted underpromotions).
+        let tree = scan.probe_tree(&b).unwrap().unwrap();
+        let encoded_count = expected.iter().filter(|&&(_, enc, _)| enc).count();
+        assert_eq!(tree.parent.moves.len(), encoded_count);
+        for m in &tree.parent.moves {
+            assert_eq!(m.mv.unwrap().promotion(), Some(Role::Queen));
+        }
+
+        let got: Vec<(String, bool, u32)> = s_res
+            .iter()
+            .map(|d: &DiscoveredPromotion| (d.mv.to_string(), d.encoded_in_parent, d.child.stats.games))
+            .collect();
+        for &(uci, enc, g) in expected {
+            assert!(got.contains(&(uci.to_string(), enc, g)), "{fen}: missing ({uci}, {enc}, {g}) in {got:?}");
+        }
+        assert_eq!(got.len(), expected.len(), "{fen}: unexpected count in {got:?}");
+    };
+
+    check(p_q, &[("c7c8q", true, 10)]);
+    // Escalates unverified AdaptiveBook on first missing candidate cleanly:
+    check(p_n, &[("e7e8n", false, 3)]);
+    assert_eq!(adaptive.mode(), LookupMode::NativeValidated);
+    check(p_r, &[("d7d8r", false, 2)]);
+    check(p_b, &[("b7b8b", false, 1)]);
+    check(p_multi_q, &[("f7f8q", true, 5), ("f7f8r", false, 1), ("f7f8n", false, 2)]);
+    check(p_multi_u, &[("g7g8b", false, 1), ("g7g8n", false, 3)]);
+    check(p_cap, &[("e7f8q", true, 4), ("e7f8r", false, 2), ("e7d8n", false, 1)]);
+    check(p_blk, &[("e2d1n", false, 2)]);
+
+    let missing_parent = parse_fen("7k/8/8/8/8/8/P7/6K1 w - - 0 1").unwrap();
+    assert!(scan.probe_promotion_children(&missing_parent).unwrap().is_none());
+    assert!(matches!(adaptive.probe_promotion_children(&missing_parent).unwrap(), NativeProbe::Absent));
 }

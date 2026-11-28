@@ -98,6 +98,25 @@ pub struct BookTree {
     pub children: Vec<Option<BookPositionStats>>,
 }
 
+/// One legal promotion move whose resulting child position exists in the book.
+///
+/// Separates promotions represented in the parent's 1-byte move table
+/// (`encoded_in_parent == true`, only possible for queen promotions in `.ctg`)
+/// from independently discovered legal child positions
+/// (`encoded_in_parent == false`, such as omitted underpromotions or
+/// transposition-reachable queen promotions). When `encoded_in_parent` is
+/// `false`, child existence and counters may originate from independent
+/// transpositions rather than moves played from this parent.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DiscoveredPromotion {
+    /// Legal promotion move from the probed parent board.
+    pub mv: Move,
+    /// `true` when the parent entry's native move bytes decode to this `mv`.
+    pub encoded_in_parent: bool,
+    /// Statistics of the resulting child position.
+    pub child: BookPositionStats,
+}
+
 /// One move of a book position.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BookMove {
@@ -235,6 +254,23 @@ impl Book {
             })
             .collect::<Result<Vec<_>>>()?;
         Ok(Some(BookTree { parent, children }))
+    }
+
+    /// Discovers legal promotion children present in the book without ever
+    /// misrepresenting omitted underpromotions as stored parent continuations.
+    pub fn probe_promotion_children(&self, board: &Board) -> Result<Option<Vec<DiscoveredPromotion>>> {
+        let Some(parent) = self.probe(board)? else {
+            return Ok(None);
+        };
+        match collect_discovered_promotions(board, &parent, |mv| {
+            Ok(match self.probe_stats_after(board, mv)? {
+                Some(child) => NativeProbe::Found(child),
+                None => NativeProbe::Absent,
+            })
+        })? {
+            NativeProbe::Found(list) => Ok(Some(list)),
+            NativeProbe::Absent | NativeProbe::UnverifiedMiss => Ok(None),
+        }
     }
 
     /// Whether the book has an entry with exactly `key`.
@@ -507,6 +543,25 @@ fn entry_stats(stored: &Stored, entry: &Entry<'_>) -> BookPositionStats {
     }
 }
 
+fn collect_discovered_promotions(
+    board: &Board,
+    parent: &BookPosition,
+    mut probe_child: impl FnMut(Move) -> Result<NativeProbe<BookPositionStats>>,
+) -> Result<NativeProbe<Vec<DiscoveredPromotion>>> {
+    let mut out = Vec::new();
+    for mv in board.legal_moves().into_iter().filter(|m| m.promotion().is_some()) {
+        match probe_child(mv)? {
+            NativeProbe::Found(child) => {
+                let encoded_in_parent = parent.moves.iter().any(|m| m.mv == Ok(mv));
+                out.push(DiscoveredPromotion { mv, encoded_in_parent, child });
+            }
+            NativeProbe::Absent => {}
+            NativeProbe::UnverifiedMiss => return Ok(NativeProbe::UnverifiedMiss),
+        }
+    }
+    Ok(NativeProbe::Found(out))
+}
+
 /// Native directory reader with zero synthesized scan index.
 ///
 /// Exact hits are authoritative immediately; misses return
@@ -696,6 +751,18 @@ impl NativeBook {
             children.push(child);
         }
         Ok(NativeProbe::Found(BookTree { parent, children }))
+    }
+
+    /// Discovers legal promotion children via native directory lookups,
+    /// returning [`NativeProbe::UnverifiedMiss`] if completeness is unverified
+    /// and any legal promotion child is missing from native slots.
+    pub fn probe_promotion_children(&self, board: &Board) -> Result<NativeProbe<Vec<DiscoveredPromotion>>> {
+        let parent = match self.probe(board)? {
+            NativeProbe::Found(p) => p,
+            NativeProbe::Absent => return Ok(NativeProbe::Absent),
+            NativeProbe::UnverifiedMiss => return Ok(NativeProbe::UnverifiedMiss),
+        };
+        collect_discovered_promotions(board, &parent, |mv| self.probe_stats_after(board, mv))
     }
 
     /// Probes a raw encoded key without decoding chess moves.
@@ -945,6 +1012,13 @@ impl AdaptiveBook {
     /// Probes one level of the opening tree (parent moves + child statistics).
     pub fn probe_tree(&self, board: &Board) -> Result<NativeProbe<BookTree>> {
         self.dispatch(|n| n.probe_tree(board), |s| s.probe_tree(board))
+    }
+
+    /// Discovers legal promotion children without misrepresenting omitted
+    /// underpromotions as stored parent continuations. Triggers validation or
+    /// scan fallback if any legal promotion child hits an unverified miss.
+    pub fn probe_promotion_children(&self, board: &Board) -> Result<NativeProbe<Vec<DiscoveredPromotion>>> {
+        self.dispatch(|n| n.probe_promotion_children(board), |s| s.probe_promotion_children(board))
     }
 
     /// Probes a raw encoded key without decoding chess moves.
