@@ -48,10 +48,10 @@ for side, r in full.items():
     data = r["data"]
     # v0.2.0 is intentionally pinned with its known 12 unknown moves.
     # The candidate is strictly required to decode ALL moves.
-    unknown = expected_counts["baseline_unknown"] if side == "base" else 0
+    unknown = 0
     if r["returncode"] != (1 if unknown else 0) or any(data.get(k, -1) != 0 for k in (
         "damaged_pages", "bad_keys", "invalid_positions", "key_mismatches",
-        "moves_illegal", "children_missing",
+        "moves_illegal", "children_missing", "duplicate_keys",
     )) or data.get("entries") != expected_counts["entries"] or data.get("key_round_trips") != data.get("entries") or data.get("children_found") != data.get("moves_decoded") or data.get("moves_unknown") != unknown or data.get("moves_decoded", 0) + unknown != expected_counts["moves"] or data.get("promotions") != expected_counts["promotions"]:
         report["status"] = "failed structural verification"
         save()

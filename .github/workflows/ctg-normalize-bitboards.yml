@@ -1,0 +1,57 @@
+name: CTG position normalization paired benchmark
+on:
+  push:
+    branches: [experiment/ctg-normalize-bitboards]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: native-book-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  paired-book:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      RAYON_NUM_THREADS: '4'
+      BASELINE: 61286419e55edad10852f12a1ef318d9b15dd998
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: 61286419e55edad10852f12a1ef318d9b15dd998
+          path: baseline-src
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.97.1'
+          components: clippy
+      - name: Build paired readers and probe driver
+        run: |
+          set -euo pipefail
+          cargo +1.97.1 build --locked --release -p cbvault-cli --manifest-path baseline-src/Cargo.toml --target-dir "$RUNNER_TEMP/base-target"
+          cargo +1.97.1 build --locked --release -p cbvault-cli --target-dir "$RUNNER_TEMP/head-target"
+          cp crates/cbvault/examples/native_book_workload.rs baseline-src/crates/cbvault/examples/native_book_workload.rs
+          cargo +1.97.1 build --locked --release -p cbvault --example native_book_workload --manifest-path baseline-src/Cargo.toml --target-dir "$RUNNER_TEMP/base-target"
+          cargo +1.97.1 build --locked --release -p cbvault --example native_book_workload --target-dir "$RUNNER_TEMP/head-target"
+      - name: CTG correctness regressions
+        run: |
+          cargo +1.97.1 test --locked --release -p cbvault-chess ctg:: --target-dir "$RUNNER_TEMP/head-target"
+          cargo +1.97.1 test --locked --release -p cbvault --test ctg_native_and_validation --target-dir "$RUNNER_TEMP/head-target"
+          cargo +1.97.1 test --locked --release -p cbvault --test ctg_regressions --target-dir "$RUNNER_TEMP/head-target"
+          cargo +1.97.1 clippy --locked -p cbvault-chess -p cbvault-format -p cbvault --lib --target-dir "$RUNNER_TEMP/head-target" -- -D warnings
+      - name: Verify and extract CTG companions
+        run: |
+          mkdir -p benchmark-report
+          { rustc --version; uname -a; lscpu; echo "base=$BASELINE"; git rev-parse HEAD; df -h "$RUNNER_TEMP"; } > benchmark-report/environment.txt
+          python3 scripts/bench-corpus/native-book-fetch.py scripts/bench-corpus/native-book-manifest.json "$RUNNER_TEMP/book" > benchmark-report/fixture.json
+      - name: Strict full-book verification and paired probe benchmarks
+        run: |
+          python3 scripts/bench-corpus/native-book-bench.py --book "$RUNNER_TEMP/book/realistic-3410497.ctg" --base "$RUNNER_TEMP/base-target/release/cbvault" --head "$RUNNER_TEMP/head-target/release/cbvault" --base-workload "$RUNNER_TEMP/base-target/release/examples/native_book_workload" --head-workload "$RUNNER_TEMP/head-target/release/examples/native_book_workload" --report benchmark-report/ctg.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-ctg-${{ github.run_id }}
+          path: benchmark-report/
+          retention-days: 14
+          if-no-files-found: ignore
