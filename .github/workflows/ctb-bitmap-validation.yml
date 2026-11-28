@@ -1,0 +1,52 @@
+name: CTB split bitmap real-book validation
+on:
+  push:
+    branches: [experiment/ctg-ctb-bitmap-validation]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  routing:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      RAYON_NUM_THREADS: '4'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.97.1'
+          components: clippy
+      - name: Build and test native routing hypothesis
+        run: |
+          cargo +1.97.1 test --locked -p cbvault-format cto::
+          cargo +1.97.1 clippy --locked -p cbvault-format -p cbvault --lib --example native_cto_audit -- -D warnings
+          cargo +1.97.1 test --locked -p cbvault --test ctg_native_and_validation
+          cargo +1.97.1 build --locked --release -p cbvault --example native_cto_audit --example book_stream_workload
+      - name: Fetch checksum-verified public book
+        run: |
+          mkdir -p benchmark-report
+          python3 scripts/bench-corpus/native-book-fetch.py scripts/bench-corpus/native-book-manifest.json "$RUNNER_TEMP/book" > benchmark-report/fixture.json
+      - name: Check every stored key reaches its physical page
+        run: |
+          set -o pipefail
+          target/release/examples/native_cto_audit "$RUNNER_TEMP/book/realistic-3410497.ctg" | tee benchmark-report/cto.json
+          python3 -c 'import json; r=json.load(open("benchmark-report/cto.json")); assert r["positions"]==85834993 and r["missed"]==0 and r["ambiguous_routes"]==0'
+      - name: Validate CTB leaves and every native route without mmap
+        env:
+          CBVAULT_NO_MMAP: "1"
+        run: |
+          target/release/examples/native_cto_audit "$RUNNER_TEMP/book/realistic-3410497.ctg" > benchmark-report/cto-positioned.json
+          python3 - <<'PY'
+          import json
+          a=json.load(open("benchmark-report/cto.json"))
+          b=json.load(open("benchmark-report/cto-positioned.json"))
+          for r in (a,b):
+              assert r["positions"]==85834993 and r["ctb_leaves"]==1938035 and r["occupied"]==1938035
+              assert all(r[k]==0 for k in ("missed","ambiguous_routes","duplicate_page_slots","unreferenced_pages"))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ctb-bitmap-validation
+          path: benchmark-report/
