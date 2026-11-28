@@ -86,8 +86,8 @@ fn en_passant_file(board: &Board) -> Option<u8> {
         .then_some(ep.file())
 }
 
-/// The stored form of `board`.
-pub fn stored_form(board: &Board) -> Stored {
+#[cfg(test)]
+fn stored_form_reference(board: &Board) -> Stored {
     let flipped = board.turn() == Color::Black;
     let mut raw = RawPosition::empty();
     for i in 0..64u8 {
@@ -134,6 +134,33 @@ pub fn stored_form(board: &Board) -> Stored {
         raw.squares = squares;
         raw.ep_file = raw.ep_file.map(|f| 7 - f);
     }
+    Stored { raw, flipped, mirrored }
+}
+
+/// The stored form of `board`.
+pub fn stored_form(board: &Board) -> Stored {
+    let flipped = board.turn() == Color::Black;
+    let rights = board.castling_rights() & 0xf;
+    let mirrored = rights == 0 && board.king_square(board.turn()).file() < 4;
+    let mut raw = RawPosition::empty();
+    // Both transforms are XOR permutations of rank-major square indices.
+    // Walk occupied squares directly by color and role, avoiding piece_at's
+    // repeated bitboard searches and the separate mirror pass.
+    let mask = (if flipped { 56 } else { 0 }) | (if mirrored { 7 } else { 0 });
+    for color in [Color::White, Color::Black] {
+        let white = (color == Color::White) != flipped;
+        for role in [Role::Pawn, Role::Knight, Role::Bishop, Role::Rook, Role::Queen, Role::King] {
+            let mut bits = board.piece_bb(color, role);
+            let man = Some(Man { white, kind: kind_of(role) });
+            while bits != 0 {
+                let i = bits.trailing_zeros() as usize;
+                raw.squares[i ^ mask] = man;
+                bits &= bits - 1;
+            }
+        }
+    }
+    raw.castling = if flipped { ((rights & 3) << 2) | ((rights & 12) >> 2) } else { rights };
+    raw.ep_file = en_passant_file(board).map(|f| if mirrored { 7 - f } else { f });
     Stored { raw, flipped, mirrored }
 }
 
@@ -298,6 +325,38 @@ mod tests {
         0x56, 0xb6, 0x0f, 0x79, 0x60, 0xf3, 0xa6, 0x0f, 0x58, 0xb0, 0x78, 0xe0, 0xc1, 0xe1, 0xa6, 0x0f, 0x59, 0x60,
         0xf3, 0xb6, 0x0f, 0x7f,
     ];
+
+    #[test]
+    fn bitboard_normalization_matches_reference() {
+        let check = |b: &Board| {
+            let old = stored_form_reference(b);
+            let new = stored_form(b);
+            assert_eq!(new, old, "{}", b.to_fen());
+            assert_eq!(keys(&new), keys(&old));
+        };
+        for fen in [
+            "r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1",
+            "4k3/P7/8/3pP3/8/8/8/4K3 w - d6 0 1",
+            "7k/8/8/8/NNNNNNNN/N7/8/1K6 w - - 0 1",
+            "1k6/8/n7/nnnnnnnn/8/8/8/7K b - - 0 1",
+            "2k5/8/8/8/3pP3/8/8/6K1 b - e3 0 1",
+        ] {
+            check(&parse_fen(fen).unwrap());
+        }
+        let mut seed = 0x62c0_998f_e321_1f23u64;
+        for _ in 0..256 {
+            let mut board = Board::startpos();
+            for _ in 0..160 {
+                check(&board);
+                let moves = board.legal_moves();
+                if moves.is_empty() {
+                    break;
+                }
+                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+                board.play(moves[(seed >> 32) as usize % moves.len()]).unwrap();
+            }
+        }
+    }
 
     #[test]
     fn shared_legal_list_and_stack_keys_preserve_decoding() {
