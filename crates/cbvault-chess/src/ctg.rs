@@ -164,12 +164,48 @@ pub fn key_candidates(stored: &Stored) -> impl Iterator<Item = ([u8; MAX_ENCODED
 
 /// The stored square (`rank * 8 + file`) of the `ordinal`-th white piece of
 /// `kind`, counting in the key's square order (a1, a2, …, a8, b1, …, h8).
+#[cfg(test)]
 fn nth_piece(raw: &RawPosition, kind: Kind, ordinal: u8) -> Option<usize> {
     let wanted = Some(Man { white: true, kind });
     (0..8)
         .flat_map(|file| (0..8).map(move |rank| rank * 8 + file))
         .filter(|&i| raw.squares[i] == wanted)
         .nth(usize::from(ordinal))
+}
+
+// Locate the ordinal directly from gigachess's piece bitboard. CTG
+// counts files first, then ranks; a stored transform reverses the
+// corresponding iteration order in real coordinates.
+#[inline]
+fn nth_piece_bb(board: &Board, stored: &Stored, kind: Kind, mut ordinal: u8) -> Option<usize> {
+    let role = match kind {
+        Kind::Pawn => Role::Pawn,
+        Kind::Knight => Role::Knight,
+        Kind::Bishop => Role::Bishop,
+        Kind::Rook => Role::Rook,
+        Kind::Queen => Role::Queen,
+        Kind::King => Role::King,
+    };
+    let pieces = board.piece_bb(board.turn(), role);
+    for file in 0..8 {
+        let actual_file = if stored.mirrored { 7 - file } else { file };
+        let mut bits = pieces & (0x0101_0101_0101_0101u64 << actual_file);
+        let count = bits.count_ones() as u8;
+        if ordinal >= count {
+            ordinal -= count;
+            continue;
+        }
+        for _ in 0..ordinal {
+            if stored.flipped {
+                bits ^= 1u64 << (63 - bits.leading_zeros());
+            } else {
+                bits &= bits - 1;
+            }
+        }
+        let rank = if stored.flipped { bits.leading_zeros() / 8 } else { bits.trailing_zeros() / 8 };
+        return Some(rank as usize * 8 + file);
+    }
+    None
 }
 
 /// Turns move code `code` of the stored position into a legal move of `board`.
@@ -179,14 +215,15 @@ pub fn decode_move(board: &Board, stored: &Stored, code: MoveCode) -> Result<Mov
 }
 
 /// Resolve a code with a legal move list already generated for this exact board.
-/// The caller must supply the complete legal move list for `board`.
+/// The caller must supply the complete legal move list for `board` and its
+/// corresponding `stored_form(board)`.
 pub fn decode_move_with_legal(
     board: &Board,
     stored: &Stored,
     code: MoveCode,
     legal: &[Move],
 ) -> Result<Move, MoveError> {
-    let from_i = nth_piece(&stored.raw, code.kind, code.ordinal).ok_or(MoveError::NoSuchPiece)?;
+    let from_i = nth_piece_bb(board, stored, code.kind, code.ordinal).ok_or(MoveError::NoSuchPiece)?;
     let (file, rank) = (from_i % 8, from_i / 8);
     let to_i = ((rank + usize::from(code.drank)) % 8) * 8 + (file + usize::from(code.dfile)) % 8;
     let from = real_square(stored, from_i);
@@ -298,6 +335,47 @@ mod tests {
         0x56, 0xb6, 0x0f, 0x79, 0x60, 0xf3, 0xa6, 0x0f, 0x58, 0xb0, 0x78, 0xe0, 0xc1, 0xe1, 0xa6, 0x0f, 0x59, 0x60,
         0xf3, 0xb6, 0x0f, 0x7f,
     ];
+
+    #[test]
+    fn bitboard_ordinals_match_raw_scan_in_all_orientations() {
+        let mut seed = 0x12ab_7731_fa97_29c1u64;
+        let check = |board: &Board| {
+            let stored = stored_form(board);
+            for kind in [Kind::Pawn, Kind::Knight, Kind::Bishop, Kind::Rook, Kind::Queen, Kind::King] {
+                for ordinal in 0..12 {
+                    assert_eq!(
+                        nth_piece_bb(board, &stored, kind, ordinal),
+                        nth_piece(&stored.raw, kind, ordinal),
+                        "{} {kind:?} {ordinal}",
+                        board.to_fen()
+                    );
+                }
+            }
+        };
+        for fen in [
+            "7k/8/8/8/8/2N5/NN6/1K6 w - - 0 1",
+            "1k6/nn6/2n5/8/8/8/8/7K b - - 0 1",
+            "7k/8/8/8/8/2N5/NN6/6K1 w - - 0 1",
+            "6k1/nn6/2n5/8/8/8/8/7K b - - 0 1",
+            "7k/8/8/8/NNNNNNNN/N7/8/1K6 w - - 0 1",
+            "1k6/8/n7/nnnnnnnn/8/8/8/7K b - - 0 1",
+        ] {
+            check(&parse_fen(fen).unwrap());
+        }
+        for _ in 0..128 {
+            let mut board = Board::startpos();
+            for _ in 0..128 {
+                check(&board);
+                let moves = board.legal_moves();
+                if moves.is_empty() {
+                    break;
+                }
+                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+                let mv = moves[(seed >> 32) as usize % moves.len()];
+                board.play(mv).unwrap();
+            }
+        }
+    }
 
     #[test]
     fn shared_legal_list_and_stack_keys_preserve_decoding() {
