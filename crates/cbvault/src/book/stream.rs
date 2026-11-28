@@ -10,7 +10,9 @@ use std::path::Path;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum StreamPolicy {
     #[default]
+    /// Stop with the first source error.
     Strict,
+    /// Report damage and continue where framing permits.
     Recover,
 }
 
@@ -18,21 +20,32 @@ pub enum StreamPolicy {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum StreamEnd {
     #[default]
+    /// Traversal is still in progress.
     Running,
+    /// All data pages were visited.
     Exhausted,
+    /// Cancellation predicate returned true.
     Cancelled,
+    /// Page limit reached before exhaustion.
     PageBudget,
+    /// Entry limit reached before exhaustion.
     EntryBudget,
+    /// Consumer requested an early stop.
     SinkStopped,
 }
 
 /// Physical scan counters. A recovered scan can exhaust the file with errors.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct StreamStats {
+    /// Data pages attempted, including damaged pages.
     pub pages: u32,
+    /// Successfully framed physical entries.
     pub entries: u64,
+    /// Raw or valid decoded entries delivered to the consumer.
     pub delivered: u64,
+    /// Recoverable diagnostic events delivered.
     pub errors: u64,
+    /// Why traversal stopped.
     pub end: StreamEnd,
 }
 
@@ -47,11 +60,17 @@ impl StreamStats {
 /// polled before each page and each entry, including in recovery mode.
 #[derive(Default)]
 pub struct StreamOptions<'a> {
+    /// Error handling policy.
     pub policy: StreamPolicy,
+    /// Decode chess positions and moves instead of delivering raw records.
     pub decode: bool,
+    /// Maximum data pages attempted; None is unlimited.
     pub max_pages: Option<u32>,
+    /// Maximum framed entries visited; None is unlimited.
     pub max_entries: Option<u64>,
+    /// Progress interval in pages; zero disables events.
     pub progress_every_pages: u32,
+    /// Optional cooperative cancellation predicate.
     pub cancelled: Option<&'a dyn Fn() -> bool>,
 }
 
@@ -59,18 +78,26 @@ pub struct StreamOptions<'a> {
 /// outlive the callback. Return false to stop without scanning further pages.
 #[allow(clippy::large_enum_variant)]
 pub enum StreamEvent<'a> {
+    /// Framed raw entry; chess contents not validated.
     Raw(Entry<'a>),
     /// Position in its canonical stored orientation (White to move).
     /// No child lookups are performed.
     Decoded {
+        /// Original physical record.
         raw: Entry<'a>,
+        /// Reconstructed board in stored orientation.
         board: Board,
+        /// Validated moves and parsed statistics.
         position: BookPosition,
     },
+    /// Recoverable framing or decoding error.
     Damage {
+        /// Physical data page number.
         page: u32,
+        /// Diagnostic valid for the callback duration.
         error: &'a Error,
     },
+    /// Periodic cumulative counters.
     Progress(StreamStats),
 }
 
@@ -82,18 +109,22 @@ pub struct BookStream {
 }
 
 impl BookStream {
+    /// Open only the CTG using the default environment policy.
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         Self::open_with_mode(path, ReadMode::from_environment())
     }
 
+    /// Open only the CTG with an explicit I/O policy.
     pub fn open_with_mode(path: impl AsRef<Path>, mode: ReadMode) -> Result<Self> {
         Ok(Self { ctg: Ctg::open_with_mode(path, mode)? })
     }
 
+    /// Number of physical pages, including the header.
     pub fn pages(&self) -> u32 {
         self.ctg.pages()
     }
 
+    /// Traverse from the first data page, delivering synchronous events.
     pub fn visit(
         &self,
         options: &StreamOptions<'_>,
